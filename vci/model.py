@@ -1,6 +1,5 @@
 """
 Model class
-
 """
 
 import warnings
@@ -34,7 +33,7 @@ class SkipBlock(nn.Module):
         """
         Given input X of size in_features
         - out = layernorm(x + MLP(MLP(X))
-        
+
         """
         super().__init__()
         self.dim = in_features
@@ -42,14 +41,16 @@ class SkipBlock(nn.Module):
         self.dense = nn.Linear(in_features*2, in_features, bias=True)
         self.activation = nn.SiLU()
         self.layer_norm = nn.LayerNorm(in_features)
-    
+
     def forward(self, x):
         residual = x
-        x = self.intermediate_dense(x) 
+        x = self.intermediate_dense(x)
         x = self.activation(x)
         x = self.dense(x)
         x = self.layer_norm(x + residual)
         return x
+
+
 '''
 class Scheduler(_LRScheduler):
     # https://kikaben.com/transformers-training-details/
@@ -75,7 +76,7 @@ class Scheduler(_LRScheduler):
 
     def calc_lr(self, step, dim_embed, warmup_steps):
         return dim_embed ** (-0.5) * min(step ** (-0.5),
-                                         step * warmup_steps ** (-1.5)) 
+                                         step * warmup_steps ** (-1.5))
 '''
 class PositionalEncoding(nn.Module):
 
@@ -99,13 +100,13 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
+
 class LitUCEModel(L.LightningModule):
     def __init__(self, token_dim: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, output_dim:int, dropout: float = 0.0, 
+                 nlayers: int, output_dim:int, dropout: float = 0.0,
                  warmup_steps: int = 0, gradient_accumulation_steps: int = 1,
-                 compiled: bool = False, num_datasets: int = 0, dataset_embedding_dim: int = 16, max_lr=4e-4
-                
-                ):
+                 compiled: bool = False, num_datasets: int = 0, dataset_embedding_dim: int = 16, max_lr=4e-4,
+                  emb_cnt=145469, emb_size=5120):
         super().__init__()
         self.save_hyperparameters()
         self.compiled = compiled
@@ -123,18 +124,14 @@ class LitUCEModel(L.LightningModule):
                                      nn.SiLU(), # Changed to SiLU
                                     )
 
-
-
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=True, activation="gelu") # switch to gelu activation
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 
         if compiled:
             self.transformer_encoder = torch.compile(self.transformer_encoder)
 
-
         self.d_model = d_model
         self.dropout = dropout
-
 
         self.decoder = nn.Sequential(SkipBlock(d_model),
                                      nn.Linear(d_model, output_dim, bias=True),
@@ -145,7 +142,7 @@ class LitUCEModel(L.LightningModule):
 
         self.dataset_embedding_dim = dataset_embedding_dim
         self.dataset_num_embedding = nn.Embedding(num_datasets, self.dataset_embedding_dim, max_norm=True)
-        
+
         self.binary_decoder = nn.Sequential(
             SkipBlock(output_dim + d_model + self.dataset_embedding_dim),
             SkipBlock(output_dim + d_model + self.dataset_embedding_dim),
@@ -161,8 +158,7 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.gene_embedding_layer = torch.compile(self.gene_embedding_layer)
 
-        self.pe_embedding = None
-        
+        self.pe_embedding = nn.Embedding(emb_cnt, emb_size)
 
     def forward(self, src: Tensor, mask: Tensor):
         """
@@ -188,7 +184,6 @@ class LitUCEModel(L.LightningModule):
             (torch.hstack((cell_embedding, gene_embeddings)))
         return dec
 
-    
     def shared_step(self, batch, batch_idx):
         criterion = BCEWithLogitsLoss()
         batch_sentences = batch[0]
@@ -202,18 +197,18 @@ class LitUCEModel(L.LightningModule):
         cell_outputs_X_pe = self.pe_embedding(
             cell_outputs_X_pe.long())
         dataset_num_emb = self.dataset_num_embedding(dataset_nums) # batch x emb shap
-        
+
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2) # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
-        
+
         _, embedding = self.forward(batch_sentences, mask=mask)
-        
+
         X = cell_outputs_X_pe
         Y = cell_outputs_Y
         X = self.gene_embedding_layer(X)
         embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
         # add dataset num to decoder
         dataset_num_emb = dataset_num_emb.unsqueeze(1).repeat(1, X.shape[1], 1) # batch x (P+N) x emb
-        
+
         combine = torch.cat((X, embs, dataset_num_emb), dim=2)
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
@@ -227,14 +222,13 @@ class LitUCEModel(L.LightningModule):
         self.log("train_loss", loss)
         self.log("seq_len", seq_len)
         return loss
-        
 
     def configure_optimizers(self):
         # Marcel Code
         max_lr = self.max_lr
-        optimizer = torch.optim.AdamW(self.parameters(), lr=max_lr, weight_decay=0.01)       
+        optimizer = torch.optim.AdamW(self.parameters(), lr=max_lr, weight_decay=0.01)
         total_steps = self.trainer.estimated_stepping_batches * 2 # not sure why need to do this
-        
+
         linear_warmup = LinearLR(optimizer, start_factor=1e-4, end_factor=1.0, total_iters=int(0.03 * total_steps))
         cosine_decay = CosineAnnealingLR(optimizer, eta_min=max_lr * 0.3, T_max=total_steps)
         scheduler = ChainedScheduler([

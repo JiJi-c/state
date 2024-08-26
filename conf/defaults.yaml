@@ -1,0 +1,54 @@
+experiment:
+  name: "run_1"
+  path: "/checkpoint/ctc/ML/uce/model_checkpoints/"
+  local: "local"
+  compiled: False
+  num_epochs: 16
+  num_nodes: 1
+  num_gpus_per_node: 4
+  master: localhost
+  port: 12355
+  checkpoint:
+    save_top_k: 4
+    every_n_epochs: 1
+    every_n_train_steps: 2000
+
+embeddings:
+  esm2:
+    checkpoint: "/checkpoint/ctc/ML/uce/all_species_pe_tokens.torch"
+    # TODO: Eliminate the need for these attributes. This informtation can be
+    # read from the above file.
+    cnt: 145469
+    size: 5120
+
+dataset:
+  name: "vci_h5ad"
+  path: "/checkpoint/ctc/ML/uce/h5ad_train_dataset.csv"
+  data_dir: "/large_experiments/goodarzilab/mohsen/cellxgene/processed"
+  protein_emb_file_format: "/checkpoint/ctc/ML/uce/gene_embidx_mapping.torch"
+  pad_length: 2048
+  pad_token_idx: 0
+  cls_token_idx: 3
+  chrom_token_right_idx: 2
+  P: 512
+  N: 512
+  num_cells:  36238464 # TODO: Is this required
+
+tokenizer:
+  token_dim: 5120
+
+model:
+  name: 'vci'
+  batch_size: 128
+  sample_size: 1024
+  emsize: 256
+  d_hid: 1024
+  nhead: 8
+  nlayers: 4
+  dropout: 0.0
+  output_dim: 256 # TODO: Is emsize different from this?
+
+optimizer:
+  max_lr: 4e-4
+  max_grad_norm: 1.0
+  gradient_accumulation_steps: 1

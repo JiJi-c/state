@@ -3,20 +3,17 @@ Utils
 
 """
 
-import warnings
-warnings.filterwarnings("ignore")
 import pandas as pd
-import sys
 import numpy as np
 
 
 def get_shapes_dict(dataset_path):
-    shapes_dict = {}
     datasets_df = pd.read_csv(dataset_path)
     sorted_dataset_names = sorted(datasets_df["names"])
 
+    shapes_dict = {}
     for name in sorted_dataset_names:
-        breakpoint
+
         shapes_dict[name] = (int(datasets_df.set_index("names").loc[name]["num_cells"]), 8000)
 
     shapes_dict["dev_immune_mouse"] = (443697, 4786)
@@ -64,4 +61,4 @@ def get_shapes_dict(dataset_path):
         if not np.isnan(ngenes):
             shapes_dict[name] = (int(ncells), int(ngenes))
 
-    return shapes_dict
+    return datasets_df, sorted_dataset_names, shapes_dict

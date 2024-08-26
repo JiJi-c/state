@@ -1,0 +1,31 @@
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11
+  - tensorboard
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - lightning
+  - numpy
+  - pandas
+  - pip
+  - pip:
+    - h5py
+    - jinja2
+    - scanpy
+    - hydra-core
+    - pytest
+    - jupyterlab
+    - matplotlib
+    - tqdm
+    - wandb>=0.12.10
+    - rich
+    - scipy
+    - accelerate
+    - requests
