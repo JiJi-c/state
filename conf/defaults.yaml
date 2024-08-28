@@ -1,6 +1,5 @@
 experiment:
   name: "run_1"
-  path: "/checkpoint/ctc/ML/uce/model_checkpoints/"
   local: "local"
   compiled: False
   num_epochs: 16
@@ -8,11 +7,12 @@ experiment:
   num_gpus_per_node: 4
   master: localhost
   port: 12355
-  val_check_interval: 10000 # Number of steps between tests
+  val_check_interval: 200 # Number of steps between tests
+  limit_val_batches: 0.01 # Use 10% of validation dataset
   checkpoint:
+    path: "/checkpoint/ctc/ML/uce/model_checkpoints/"
     save_top_k: 4
-    every_n_epochs: 1
-    every_n_train_steps: 2000
+    monitor: train_loss
 
 embeddings:
   esm2:

@@ -61,8 +61,8 @@ def main(cfg):
 
     run_name, chk = get_latest_checkpoint(cfg)
     if chk:
+        print(f'******** Loading chkpoint {run_name} {chk}...')
         model = LitUCEModel.load_from_checkpoint(chk)
-        print(f'******** Loding chkpoint {run_name} {chk}...')
     else:
         print(f'******** Initialized fresh {run_name}...')
         model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
@@ -89,11 +89,10 @@ def main(cfg):
         model = torch.compile(model, dynamic=False)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=cfg.experiment.path,
+        dirpath=cfg.experiment.checkpoint.path,
         filename=f"{run_name}"+"-{epoch}-{step}",
-        # every_n_train_steps=cfg.experiment.checkpoint.every_n_train_steps,
         save_top_k=cfg.experiment.checkpoint.save_top_k,
-        monitor='train_loss',
+        monitor=cfg.experiment.checkpoint.monitor,
     )
 
     wandb_logger = WandbLogger(project=cfg.model.name, name=cfg.experiment.name)
@@ -115,10 +114,11 @@ def main(cfg):
                         logger=wandb_logger,
                         #profiler=PyTorchProfiler(),
                         fast_dev_run=False,
+                        limit_val_batches=cfg.experiment.limit_val_batches,
                        )
     trainer.fit(model=model,
                 train_dataloaders=train_dataloader,
                 val_dataloaders=val_dataloader)
 
-    trainer.save_checkpoint(os.path.join(cfg.experiment.path,
+    trainer.save_checkpoint(os.path.join(cfg.experiment.checkpoint.path,
                             f"{run_name}_final.pt"))

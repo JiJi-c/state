@@ -1,3 +1,4 @@
+import time
 import argparse
 import subprocess
 from jinja2 import Template
@@ -16,12 +17,14 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --output=outputs/{{ exp_name }}.log
 #SBATCH --open-mode=append
 #SBATCH --account=vci
+{{ sbatch_overrides }}
 
-GPUS_PER_NODE={{ num_gpus_per_node }}
+NUM_NODES={{ num_nodes }}
+NUM_GPUS_PER_NODE={{ num_gpus_per_node }}
 
 # Get the names of all nodes involved in training.
 scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
-sed -i "s/$/ slots=${GPUS_PER_NODE}/" hostfile
+sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
 MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
 MASTER_PORT='12355'
@@ -29,12 +32,10 @@ MASTER_PORT='12355'
 NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
 
-# WAR for an issue with SLURM version and Pytorch lightning
-SLURM_NTASKS_PER_NODE={{ num_gpus_per_node }}
-
-srun python -m vci.train \\
-    experiment.master=${MASTER_ADDR} \\
-    experiment.port=${MASTER_PORT} {{ exp_overrides }}
+srun \\
+    python -m vci.train \\
+        experiment.master=${MASTER_ADDR} \\
+        experiment.port=${MASTER_PORT} {{ exp_overrides }}
 """
 
 def parse_vars(extra_vars):
@@ -76,6 +77,13 @@ if __name__ == '__main__':
         help="Number of GPUs per node",
     )
     parser.add_argument(
+        "-r", "--reservation",
+        dest='reservation',
+        type=str,
+        default=None,
+        help="Slurm reservation to use for this job.",
+    )
+    parser.add_argument(
         "-d", "--dryrun",
         dest='dryrun',
         action='store_true',
@@ -107,15 +115,22 @@ if __name__ == '__main__':
 
     overrides =  {
         "experiment.name": args.exp_name,
-        "experiment.num_nodes": args.num_nodes,
-        "experiment.num_gpus_per_node": args.gpus_per_nodes,
+        "experiment.num_nodes": "${NUM_NODES}",
+        "experiment.num_gpus_per_node": "${NUM_GPUS_PER_NODE}",
     }
     overrides.update(parse_vars(args.set))
     exp_overrides = ''
     for key, value in overrides.items():
-        exp_overrides = exp_overrides + f'\\\n\t{key}={value} '
+        exp_overrides = exp_overrides + f'\\\n\t\t{key}={value} '
+
+    # SLURM changes
+    sbatch_overrides = None
+    if args.reservation:
+        sbatch_overrides = f'#SBATCH --reservation={args.reservation}\n'
 
     bind_param['exp_overrides'] = exp_overrides
+    if sbatch_overrides:
+        bind_param['sbatch_overrides'] = sbatch_overrides
 
     template = Template(sbatch_script_template)
     rendered_script = template.render(bind_param)
@@ -127,4 +142,5 @@ if __name__ == '__main__':
     if not args.dryrun:
         subprocess.call(['sbatch', slurm_script])
         if args.tail:
+            time.sleep(5)
             subprocess.call(['tail', '-f', f'outputs/{args.exp_name}.log'])

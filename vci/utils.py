@@ -11,7 +11,7 @@ def get_latest_checkpoint(cfg):
         cfg.optimizer.max_lr,
         cfg.model.output_dim)
 
-    chks = glob.glob(os.path.join(cfg.experiment.path, f'{run_name}*'))
+    chks = glob.glob(os.path.join(cfg.experiment.checkpoint.path, f'{run_name}*'))
 
     chk = None
     if chks:

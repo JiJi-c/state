@@ -21,7 +21,7 @@ from vci.train.trainer import get_ESM2_embeddings
 log = logging.getLogger(__name__)
 
 
-checkpoint = '/checkpoint/ctc/ML/uce/model_checkpoints/exp_ds_medium_100_layers_4_dmodel_256_samples_1024_max_lr_0.0004_op_dim_256-epoch=6-step=82397.ckpt'
+checkpoint = '/checkpoint/ctc/ML/uce/model_checkpoints/exp_ds_medium_100_layers_4_dmodel_256_samples_1024_max_lr_0.0004_op_dim_256-epoch=9-step=117710.ckpt'
 emb_file = '/checkpoint/ctc/ML/uce/embeddings1.h5'
 
 def update_data(embeddings, losses, f):
@@ -35,7 +35,7 @@ def update_data(embeddings, losses, f):
     f['loss'][-losses.shape[0]:] = losses
 
 
-@hydra.main(config_path="../conf", config_name="eval")
+@hydra.main(config_path="../conf", config_name="defaults")
 def main(cfg: DictConfig):
     log.info(f'Embeddings will be saved at {emb_file}')
     log.info(f'Loading checkpoint from {checkpoint}')
