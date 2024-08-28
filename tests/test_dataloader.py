@@ -2,7 +2,9 @@ import os
 import sys
 import time
 import logging
+import pandas as pd
 
+from random import randrange
 from hydra import compose, initialize
 from torch.utils.data import DataLoader
 
@@ -18,19 +20,46 @@ logging.basicConfig(
 log = logging.getLogger("tests")
 
 
+def test_index_compute():
+    with initialize(version_base=None, config_path="../conf"):
+        cfg = compose(config_name="defaults")
+        df = pd.read_csv(cfg.dataset.path)
+        num_cell_idx = df.num_cells.cumsum()
+        file_cnt = num_cell_idx.shape[0]
+
+        ds = MultiDatasetSentences(cfg)
+        test_cnt = 10
+        for i in range(test_cnt):
+            ds_num = randrange(0, file_cnt)
+            if ds_num == 0:
+                lower_bound = 0
+            else:
+                lower_bound = num_cell_idx[ds_num - 1]
+            upper_bond = num_cell_idx[ds_num]
+
+            test_idx = randrange(lower_bound, upper_bond)
+            expected_file_index = test_idx - lower_bound
+            expected_ds_num = ds_num
+
+            act_ds_name, act_file_index = ds._compute_index(test_idx)
+            act_ds_num = ds.datasets_to_num[act_ds_name]
+            assert expected_file_index == act_file_index
+            assert expected_ds_num == act_ds_num
+
+
 def test_data_index():
     with initialize(version_base=None, config_path="../conf"):
         cfg = compose(config_name="defaults")
 
         t_0 = time.time()
         dataset = MultiDatasetSentences(cfg)
-        multi_dataset_sentence_collator = MultiDatasetSentenceCollator(cfg)
+        multi_ds_sent_collator = MultiDatasetSentenceCollator(cfg)
 
         # Make the dataloader outside of the
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=True,
-                                collate_fn=multi_dataset_sentence_collator,
+                                collate_fn=multi_ds_sent_collator,
                                 num_workers=8,
                                 persistent_workers=True)
 

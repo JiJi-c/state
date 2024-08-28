@@ -14,6 +14,7 @@ from lightning.pytorch.strategies import DDPStrategy
 from vci.model import LitUCEModel
 from vci.data import MultiDatasetSentences, MultiDatasetSentenceCollator
 from vci.train.callbacks import LogLR
+from vci.utils import get_latest_checkpoint
 
 
 def get_ESM2_embeddings(cfg):
@@ -38,32 +39,32 @@ def main(cfg):
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     warmup_steps = EPOCH_LENGTH * 6 # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
 
-    # Setup Data
-    dataset = MultiDatasetSentences(cfg)
-    multi_dataset_sentence_collator = MultiDatasetSentenceCollator(cfg)
+    dataset_sentence_collator = MultiDatasetSentenceCollator(cfg)
 
-    # Make the dataloader outside of the
-    dataloader = DataLoader(dataset,
-                            batch_size=cfg.model.batch_size,
-                            shuffle=True,
-                            collate_fn=multi_dataset_sentence_collator,
-                            num_workers=8,
-                            persistent_workers=True)
+    # Training dataloader
+    train_dataset = MultiDatasetSentences(cfg)
+    train_dataloader = DataLoader(train_dataset,
+                                  batch_size=cfg.model.batch_size,
+                                  shuffle=False,
+                                  collate_fn=dataset_sentence_collator,
+                                  num_workers=8,
+                                  persistent_workers=True)
 
-    model_run_name = "exp_{0}_layers_{1}_dmodel_{2}_samples_{3}_max_lr_{4}_op_dim_{5}".format(
-        cfg.experiment.name,
-        cfg.model.nlayers,
-        cfg.model.emsize,
-        cfg.model.sample_size,
-        cfg.optimizer.max_lr,
-        cfg.model.output_dim)
+    val_dataset = MultiDatasetSentences(cfg, test=True)
+    # dataset_sentence_collator = MultiDatasetSentenceCollator(self.cfg)
+    val_dataloader = DataLoader(val_dataset,
+                        batch_size=cfg.model.batch_size,
+                        shuffle=False,
+                        collate_fn=dataset_sentence_collator,
+                        num_workers=8,
+                        persistent_workers=True)
 
-    chks = glob.glob(os.path.join(cfg.experiment.path, f'{model_run_name}*'))
-    if chks:
-        model = LitUCEModel.load_from_checkpoint(sorted(chks)[-1])
-        print(f'******** Loding chkpoint {model_run_name} {sorted(chks)[-1]}...')
+    run_name, chk = get_latest_checkpoint(cfg)
+    if chk:
+        model = LitUCEModel.load_from_checkpoint(chk)
+        print(f'******** Loding chkpoint {run_name} {chk}...')
     else:
-        print(f'******** Initialized fresh {model_run_name}...')
+        print(f'******** Initialized fresh {run_name}...')
         model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
                             d_model=cfg.model.emsize,
                             nhead=cfg.model.nhead,
@@ -74,10 +75,11 @@ def main(cfg):
                             warmup_steps=warmup_steps,
                             gradient_accumulation_steps=cfg.optimizer.gradient_accumulation_steps,
                             compiled=False,
-                            num_datasets=len(dataset.datasets),
+                            num_datasets=len(train_dataset.datasets),
                             max_lr=cfg.optimizer.max_lr,
                             emb_cnt=cfg.embeddings.esm2.cnt,
-                            emb_size=cfg.embeddings.esm2.size).cuda()
+                            emb_size=cfg.embeddings.esm2.size,
+                            cfg=cfg).cuda()
         all_pe = get_ESM2_embeddings(cfg)
         all_pe.requires_grad= False
         model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
@@ -88,7 +90,7 @@ def main(cfg):
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=cfg.experiment.path,
-        filename=f"{model_run_name}"+"-{epoch}-{step}",
+        filename=f"{run_name}"+"-{epoch}-{step}",
         # every_n_train_steps=cfg.experiment.checkpoint.every_n_train_steps,
         save_top_k=cfg.experiment.checkpoint.save_top_k,
         monitor='train_loss',
@@ -108,12 +110,15 @@ def main(cfg):
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
                         precision="bf16-mixed",
                         strategy=DDPStrategy(process_group_backend="nccl"),
+                        val_check_interval=cfg.experiment.val_check_interval,
                         # Logging
                         logger=wandb_logger,
                         #profiler=PyTorchProfiler(),
                         fast_dev_run=False,
                        )
-    trainer.fit(model=model, train_dataloaders=dataloader)
+    trainer.fit(model=model,
+                train_dataloaders=train_dataloader,
+                val_dataloaders=val_dataloader)
 
     trainer.save_checkpoint(os.path.join(cfg.experiment.path,
-                            f"{model_run_name}_final.pt"))
+                            f"{run_name}_final.pt"))

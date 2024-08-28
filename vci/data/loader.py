@@ -18,10 +18,14 @@ log = logging.getLogger(__file__)
 
 
 class MultiDatasetSentences(data.Dataset):
-    def __init__(self, cfg) -> None:
+    def __init__(self, cfg, test=False) -> None:
         super(MultiDatasetSentences, self).__init__()
 
-        _, self.datasets, self.shapes_dict = utils.get_shapes_dict(cfg.dataset.path)
+        ds_path = cfg.dataset.train
+        if test:
+            ds_path = cfg.dataset.test
+        _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
+
         self.cfg = cfg
 
         self.num_cells = {}
@@ -39,41 +43,45 @@ class MultiDatasetSentences(data.Dataset):
             k: v for k, v in zip(self.datasets, range(len(self.datasets)))
         }
 
+    def _compute_index(self, idx):
+        for dataset in sorted(self.datasets):
+            if idx < self.num_cells[dataset]:
+                return dataset, idx
+            else:
+                idx -= self.num_cells[dataset]
+        raise IndexError
+
     def __getitem__(self, idx):
         if isinstance(idx, int):
-            for dataset in sorted(self.datasets):
-                if idx < self.num_cells[dataset]:
-                    datafile = os.path.join(
-                        f"{self.cfg.dataset.data_dir}", f"{dataset}.h5ad"
+            dataset, idx = self._compute_index(idx)
+            datafile = os.path.join(
+                f"{self.cfg.dataset.data_dir}", f"{dataset}.h5ad"
+            )
+            with h5py.File(datafile, "r") as h5f:
+                attrs = dict(h5f['X'].attrs)
+                if attrs['encoding-type'] == 'csr_matrix':
+                    indptrs = h5f["/X/indptr"]
+                    start_ptr = indptrs[idx]
+                    end_ptr = indptrs[idx + 1]
+                    sub_data = torch.tensor(
+                        h5f["/X/data"][start_ptr:end_ptr],
+                        dtype=torch.int32)
+                    sub_indices = torch.tensor(
+                        h5f["/X/indices"][start_ptr:end_ptr],
+                        dtype=torch.int32)
+
+                    counts = torch.sparse_csr_tensor(
+                        [0,],
+                        sub_indices,
+                        sub_data,
+                        (1, self.num_genes[dataset]),
                     )
-                    with h5py.File(datafile, "r") as h5f:
-                        attrs = dict(h5f['X'].attrs)
-                        if attrs['encoding-type'] == 'csr_matrix':
-                            indptrs = h5f["/X/indptr"]
-                            start_ptr = indptrs[idx]
-                            end_ptr = indptrs[idx + 1]
-                            sub_data = torch.tensor(
-                                h5f["/X/data"][start_ptr:end_ptr],
-                                dtype=torch.int32)
-                            sub_indices = torch.tensor(
-                                h5f["/X/indices"][start_ptr:end_ptr],
-                                dtype=torch.int32)
-
-                            counts = torch.sparse_csr_tensor(
-                                [0,],
-                                sub_indices,
-                                sub_data,
-                                (1, self.num_genes[dataset]),
-                            )
-                            counts = counts.to_dense()
-                        else:
-                            counts = torch.tensor(h5f["X"][idx]).unsqueeze(0)
-
-                    dataset_num = self.datasets_to_num[dataset]
-                    return counts, idx, dataset, dataset_num
+                    counts = counts.to_dense()
                 else:
-                    idx -= self.num_cells[dataset]
-            raise IndexError
+                    counts = torch.tensor(h5f["X"][idx]).unsqueeze(0)
+
+            dataset_num = self.datasets_to_num[dataset]
+            return counts, idx, dataset, dataset_num
         else:
             raise NotImplementedError
 

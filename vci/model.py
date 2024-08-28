@@ -13,10 +13,10 @@ sys.path.append('../')
 from typing import Any
 import torch
 import lightning as L
-from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ChainedScheduler, LinearLR, LRScheduler, CosineAnnealingLR
-from torch.optim import Optimizer
-import numpy as np
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ChainedScheduler, LinearLR, CosineAnnealingLR
+
+from vci.data import MultiDatasetSentences, MultiDatasetSentenceCollator
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -106,9 +106,10 @@ class LitUCEModel(L.LightningModule):
                  nlayers: int, output_dim:int, dropout: float = 0.0,
                  warmup_steps: int = 0, gradient_accumulation_steps: int = 1,
                  compiled: bool = False, num_datasets: int = 0, dataset_embedding_dim: int = 16, max_lr=4e-4,
-                  emb_cnt=145469, emb_size=5120):
+                  emb_cnt=145469, emb_size=5120, cfg=None):
         super().__init__()
         self.save_hyperparameters()
+        self.cfg = cfg
         self.compiled = compiled
         self.model_type = 'Transformer'
         self.pos_encoder = PositionalEncoding(d_model, dropout)
@@ -159,6 +160,7 @@ class LitUCEModel(L.LightningModule):
             self.gene_embedding_layer = torch.compile(self.gene_embedding_layer)
 
         self.pe_embedding = nn.Embedding(emb_cnt, emb_size)
+        self.step_ctr = 0
 
     def forward(self, src: Tensor, mask: Tensor):
         """
@@ -221,6 +223,12 @@ class LitUCEModel(L.LightningModule):
         loss, seq_len = self.shared_step(batch, batch_idx)
         self.log("train_loss", loss)
         self.log("seq_len", seq_len)
+        return loss
+
+    @torch.compile(disable=True)
+    def validation_step(self, batch, batch_idx):
+        loss, _ = self.shared_step(batch, batch_idx)
+        self.log("val_loss", loss)
         return loss
 
     def configure_optimizers(self):

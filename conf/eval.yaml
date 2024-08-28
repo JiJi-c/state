@@ -8,7 +8,6 @@ experiment:
   num_gpus_per_node: 4
   master: localhost
   port: 12355
-  val_check_interval: 10000 # Number of steps between tests
   checkpoint:
     save_top_k: 4
     every_n_epochs: 1
@@ -24,10 +23,10 @@ embeddings:
 
 dataset:
   name: "vci_h5ad"
-  train: "/checkpoint/ctc/ML/uce/h5ad_train_dataset.csv"
+  train: "/checkpoint/ctc/ML/uce/h5ad_train_dataset_sapiens.csv"
   test: "/checkpoint/ctc/ML/uce/h5ad_test_dataset.csv"
-  data_dir: "/large_experiments/goodarzilab/mohsen/cellxgene/processed"
-  protein_emb_file_format: "/checkpoint/ctc/ML/uce/gene_embidx_mapping.torch"
+  data_dir: "/large_experiments/ctc/ML/data/cell/unpublished/"
+  protein_emb_file_format: "/checkpoint/ctc/ML/uce/gene_embidx_mapping_sapient.torch"
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3
@@ -41,7 +40,7 @@ tokenizer:
 
 model:
   name: 'vci'
-  batch_size: 128
+  batch_size: 32
   sample_size: 1024
   emsize: 256
   d_hid: 1024
