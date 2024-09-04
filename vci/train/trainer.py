@@ -1,5 +1,4 @@
 import os
-import glob
 import torch
 import lightning as L
 
@@ -12,7 +11,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from vci.model import LitUCEModel
-from vci.data import MultiDatasetSentences, MultiDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 from vci.train.callbacks import LogLR
 from vci.utils import get_latest_checkpoint
 
@@ -39,10 +38,10 @@ def main(cfg):
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     warmup_steps = EPOCH_LENGTH * 6 # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
 
-    dataset_sentence_collator = MultiDatasetSentenceCollator(cfg)
+    dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
 
     # Training dataloader
-    train_dataset = MultiDatasetSentences(cfg)
+    train_dataset = H5adDatasetSentences(cfg)
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
@@ -50,8 +49,7 @@ def main(cfg):
                                   num_workers=8,
                                   persistent_workers=True)
 
-    val_dataset = MultiDatasetSentences(cfg, test=True)
-    # dataset_sentence_collator = MultiDatasetSentenceCollator(self.cfg)
+    val_dataset = H5adDatasetSentences(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
                         batch_size=cfg.model.batch_size,
                         shuffle=False,
@@ -59,35 +57,30 @@ def main(cfg):
                         num_workers=8,
                         persistent_workers=True)
 
-    run_name, chk = get_latest_checkpoint(cfg)
-    if chk:
-        print(f'******** Loading chkpoint {run_name} {chk}...')
-        model = LitUCEModel.load_from_checkpoint(chk)
-    else:
-        print(f'******** Initialized fresh {run_name}...')
-        model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
-                            d_model=cfg.model.emsize,
-                            nhead=cfg.model.nhead,
-                            d_hid=cfg.model.d_hid,
-                            nlayers=cfg.model.nlayers,
-                            output_dim=cfg.model.output_dim,
-                            dropout=cfg.model.dropout,
-                            warmup_steps=warmup_steps,
-                            gradient_accumulation_steps=cfg.optimizer.gradient_accumulation_steps,
-                            compiled=False,
-                            num_datasets=len(train_dataset.datasets),
-                            max_lr=cfg.optimizer.max_lr,
-                            emb_cnt=cfg.embeddings.esm2.cnt,
-                            emb_size=cfg.embeddings.esm2.size,
-                            cfg=cfg).cuda()
-        all_pe = get_ESM2_embeddings(cfg)
-        all_pe.requires_grad= False
-        model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
+    model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
+                        d_model=cfg.model.emsize,
+                        nhead=cfg.model.nhead,
+                        d_hid=cfg.model.d_hid,
+                        nlayers=cfg.model.nlayers,
+                        output_dim=cfg.model.output_dim,
+                        dropout=cfg.model.dropout,
+                        warmup_steps=warmup_steps,
+                        gradient_accumulation_steps=cfg.optimizer.gradient_accumulation_steps,
+                        compiled=False,
+                        num_datasets=len(train_dataset.datasets),
+                        max_lr=cfg.optimizer.max_lr,
+                        emb_cnt=cfg.embeddings.esm2.cnt,
+                        emb_size=cfg.embeddings.esm2.size,
+                        cfg=cfg).cuda()
+    all_pe = get_ESM2_embeddings(cfg)
+    all_pe.requires_grad= False
+    model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
 
     model = model.train()
     if cfg.experiment.compiled:
         model = torch.compile(model, dynamic=False)
 
+    run_name, chk = get_latest_checkpoint(cfg)
     checkpoint_callback = ModelCheckpoint(
         dirpath=cfg.experiment.checkpoint.path,
         filename=f"{run_name}"+"-{epoch}-{step}",
@@ -107,7 +100,7 @@ def main(cfg):
                         # Accumulation
                         gradient_clip_val=cfg.optimizer.max_grad_norm,
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
-                        precision="bf16-mixed",
+                        # precision="bf16-mixed",
                         strategy=DDPStrategy(process_group_backend="nccl"),
                         val_check_interval=cfg.experiment.val_check_interval,
                         # Logging
@@ -116,9 +109,20 @@ def main(cfg):
                         fast_dev_run=False,
                         limit_val_batches=cfg.experiment.limit_val_batches,
                        )
+
+    if chk:
+        print(f'******** Loading chkpoint {run_name} {chk}...')
+    else:
+        model.log('val_loss', 0)
+        model.log('epoch', 0)
+        model.log('step', 0)
+        model.log('train_loss', 0)
+        print(f'******** Initialized fresh {run_name}...')
+
     trainer.fit(model=model,
                 train_dataloaders=train_dataloader,
-                val_dataloaders=val_dataloader)
+                val_dataloaders=val_dataloader,
+                ckpt_path=chk)
 
     trainer.save_checkpoint(os.path.join(cfg.experiment.checkpoint.path,
                             f"{run_name}_final.pt"))

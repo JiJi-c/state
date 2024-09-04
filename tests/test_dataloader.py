@@ -9,7 +9,7 @@ from hydra import compose, initialize
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from vci.data import MultiDatasetSentences, MultiDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 
 
 logging.basicConfig(
@@ -27,7 +27,7 @@ def test_index_compute():
         num_cell_idx = df.num_cells.cumsum()
         file_cnt = num_cell_idx.shape[0]
 
-        ds = MultiDatasetSentences(cfg)
+        ds = H5adDatasetSentences(cfg)
         test_cnt = 10
         for i in range(test_cnt):
             ds_num = randrange(0, file_cnt)
@@ -52,15 +52,15 @@ def test_data_index():
         cfg = compose(config_name="defaults")
 
         t_0 = time.time()
-        dataset = MultiDatasetSentences(cfg)
-        multi_ds_sent_collator = MultiDatasetSentenceCollator(cfg)
+        dataset = H5adDatasetSentences(cfg)
+        multi_ds_sent_collator = VCIDatasetSentenceCollator(cfg)
 
         # Make the dataloader outside of the
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=True,
                                 collate_fn=multi_ds_sent_collator,
-                                num_workers=8,
+                                num_workers=1,
                                 persistent_workers=True)
 
         t_1 = time.time()
@@ -71,8 +71,8 @@ def test_data_index():
             assert batch[0].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
             assert batch[1].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
 
-            assert batch[2].shape == (cfg.model.batch_size, cfg.model.sample_size)
-            assert batch[3].shape == (cfg.model.batch_size, cfg.model.sample_size)
+            assert batch[2].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
+            assert batch[3].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
 
             assert batch[4].shape == (cfg.model.batch_size,)
             assert batch[5].shape == (cfg.model.batch_size,)
