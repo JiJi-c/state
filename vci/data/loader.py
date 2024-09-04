@@ -1,13 +1,10 @@
-"""
-Dataloaders
-
-"""
-
 import os
 import h5py
 import logging
 import torch
+import pickle
 import torch.utils.data as data
+import numpy as np
 
 from typing import Dict
 
@@ -17,9 +14,9 @@ import vci.data.utils as utils
 log = logging.getLogger(__file__)
 
 
-class MultiDatasetSentences(data.Dataset):
+class H5adDatasetSentences(data.Dataset):
     def __init__(self, cfg, test=False) -> None:
-        super(MultiDatasetSentences, self).__init__()
+        super(H5adDatasetSentences, self).__init__()
 
         ds_path = cfg.dataset.train
         if test:
@@ -53,7 +50,7 @@ class MultiDatasetSentences(data.Dataset):
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
-            dataset, idx = self._compute_index(idx)
+            dataset, ds_idx = self._compute_index(idx)
             datafile = os.path.join(
                 f"{self.cfg.dataset.data_dir}", f"{dataset}.h5ad"
             )
@@ -61,8 +58,8 @@ class MultiDatasetSentences(data.Dataset):
                 attrs = dict(h5f['X'].attrs)
                 if attrs['encoding-type'] == 'csr_matrix':
                     indptrs = h5f["/X/indptr"]
-                    start_ptr = indptrs[idx]
-                    end_ptr = indptrs[idx + 1]
+                    start_ptr = indptrs[ds_idx]
+                    end_ptr = indptrs[ds_idx + 1]
                     sub_data = torch.tensor(
                         h5f["/X/data"][start_ptr:end_ptr],
                         dtype=torch.int32)
@@ -78,7 +75,7 @@ class MultiDatasetSentences(data.Dataset):
                     )
                     counts = counts.to_dense()
                 else:
-                    counts = torch.tensor(h5f["X"][idx]).unsqueeze(0)
+                    counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
 
             dataset_num = self.datasets_to_num[dataset]
             return counts, idx, dataset, dataset_num
@@ -92,7 +89,7 @@ class MultiDatasetSentences(data.Dataset):
         return self.num_genes
 
 
-class MultiDatasetSentenceCollator(object):
+class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):
         self.pad_length = cfg.dataset.pad_length
         self.P = cfg.dataset.P
@@ -141,8 +138,7 @@ class MultiDatasetSentenceCollator(object):
             mask[:, :max_len],
             Xs,
             Ys,
-            idxs,
-            dataset_nums.long(),
+            idxs
         )
 
     def sample_cell_sentences_batched(self, batch):
@@ -157,18 +153,21 @@ class MultiDatasetSentenceCollator(object):
         return (cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y)
 
 
+    def softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum()
+
     def sample_cell_sentences(self, counts, dataset):
+        batch_weights = torch.log1p(counts)
+        batch_weights = (batch_weights / torch.sum(batch_weights))
 
         dataset_idxs = self.dataset_to_protein_embeddings[dataset]
-        cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
-        mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length), dtype=bool)
+        cell_sentences = torch.zeros((counts.shape[0],  self.cfg.dataset.pad_length))
 
-        cell_outputs_X = torch.zeros(
-            (counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N)
-        )
-        cell_outputs_Y = torch.zeros(
-            (counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N)
-        )
+        mask = torch.zeros((counts.shape[0],  self.cfg.dataset.pad_length), dtype=bool)
+
+        cell_outputs_X = torch.zeros((counts.shape[0],  self.cfg.dataset.P +  self.cfg.dataset.N))
+        cell_outputs_Y = torch.zeros((counts.shape[0],  self.cfg.dataset.P +  self.cfg.dataset.N))
 
         for c, cell in enumerate(counts):
             pos_genes = torch.where(counts[c] > 0)[0]
@@ -176,69 +175,59 @@ class MultiDatasetSentenceCollator(object):
             if len(pos_genes) == 0:
                 pos_genes = neg_genes
 
-            weights = torch.log1p(counts)[c]
-
-            # drop these out
+            weights = batch_weights[c]
+            # 20% random dropout
             mask_weights = torch.randperm(len(pos_genes))[:max(1, round(len(pos_genes) * 0.2))]
             mask_weights = pos_genes[mask_weights]
+
             weights[mask_weights] = 0
             weights[weights < 0] = 0
-            # weights = weights / weights.sum()  # NORM after mask
             weights = torch.nan_to_num(weights, nan=0, neginf=0)
-
             weights = torch.nn.functional.softmax(weights, dim=0)
+
             choice_idx = torch.multinomial(weights,
-                                            self.cfg.model.sample_size,
-                                            replacement=True)
+                                           self.cfg.dataset.pad_length - 1,
+                                           replacement=True)
 
             ordered_choice_idx = torch.full((self.cfg.dataset.pad_length,),
-                                         self.cfg.dataset.cls_token_idx)
+                                            self.cfg.dataset.cls_token_idx)
+
             i = 1  # continue on to the rest of the sequence with left bracket being assumed.\
+            ordered_choice_idx[i:(self.cfg.dataset.pad_length)] = dataset_idxs[choice_idx]
+            i = i + self.cfg.dataset.pad_length - 1
 
-            ordered_choice_idx[i:(i + len(choice_idx))] = dataset_idxs[choice_idx]  # convert
-            i += len(choice_idx)
-            ordered_choice_idx[i:] = self.cfg.dataset.chrom_token_right_idx  # mask
-            i += 1
+            remainder_len = ( self.cfg.dataset.pad_length - i)
 
-            remainder_len = self.cfg.dataset.pad_length - i
-            cell_mask = torch.concat(
-                (
-                    torch.zeros(i, dtype=bool),
-                    # pay attention to all of these tokens, ignore the rest!
-                    torch.ones(remainder_len, dtype=bool),
-                )
-            )
+            cell_mask = torch.concat((torch.zeros(i, dtype=bool),
+                                      torch.ones(remainder_len, dtype=bool)))
 
             mask[c, :] = cell_mask
 
-            ordered_choice_idx[i:] = self.cfg.dataset.pad_token_idx  # mask
+            ordered_choice_idx[i:] =  self.cfg.dataset.pad_token_idx  # mask
 
             cell_sentences[c, :] = ordered_choice_idx
-
             choice_idx_ouput_p = mask_weights  # use the masked genes as task
-            if len(mask_weights) > self.cfg.dataset.P:
-                # subset of masked genes
+            if len(choice_idx_ouput_p) >  self.cfg.dataset.P:
                 choice_idx_ouput_p = mask_weights[\
                     torch.randperm(len(mask_weights))[:self.cfg.dataset.P]]
-            elif len(mask_weights) < self.cfg.dataset.P:
-                # remaining to be choosen
-                choice_idx_ouput_p = torch.randint(len(mask_weights), (self.cfg.dataset.P,))
+            elif len(choice_idx_ouput_p) <  self.cfg.dataset.P:
+                remainder =  self.cfg.dataset.P - len(choice_idx_ouput_p)  # remaining to be choosen
+                choice_idx_ouput_p = torch.cat((choice_idx_ouput_p,
+                                                pos_genes[torch.randint(len(pos_genes), (remainder,))]))
 
-            if self.cfg.dataset.N > len(neg_genes):
-                choice_idx_ouput_n = torch.randint(len(neg_genes), (self.cfg.dataset.N,))
-            else:
+            if  self.cfg.dataset.N <= len(neg_genes):
                 choice_idx_ouput_n = torch.randperm(len(neg_genes))[:self.cfg.dataset.N]
+            else:
+                choice_idx_ouput_n = torch.randint(len(neg_genes), (self.cfg.dataset.N,))
+
             choice_idx_ouput_n = neg_genes[choice_idx_ouput_n]
 
             cell_outputs_X[c] = torch.tensor(
-                torch.cat((choice_idx_ouput_p, choice_idx_ouput_n))
-            )
-            cell_outputs_Y[c] = torch.cat(
-                (torch.ones(self.cfg.dataset.P), torch.zeros(self.cfg.dataset.N))
-            )
+                np.concatenate((choice_idx_ouput_p, choice_idx_ouput_n)))
+            cell_outputs_Y[c] = torch.cat((torch.ones( self.cfg.dataset.P), torch.zeros( self.cfg.dataset.N)))
 
-        cell_sentences_pe = cell_sentences.long()
-        cell_outputs_X_pe = dataset_idxs[cell_outputs_X.long()]
+        cell_sentences_pe = cell_sentences.long()  # .unsqueeze(2) # all_pe[cell_sentences.long(), :]
+        cell_outputs_X_pe = dataset_idxs[
+            cell_outputs_X.long()]  # .unsqueeze(2) # all_pe[dataset_idxs[cell_outputs_X.long()], :]
 
-        return (cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y)
-
+        return cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y

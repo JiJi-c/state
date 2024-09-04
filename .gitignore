@@ -5,3 +5,4 @@ log/
 
 hostfile
 vci_job_*
+wandb

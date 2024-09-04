@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.nn import BCEWithLogitsLoss
 
 sys.path.append('.')
-from vci.data import MultiDatasetSentences, MultiDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 from vci.model import LitUCEModel
 from vci.train.trainer import get_ESM2_embeddings
 
@@ -48,8 +48,8 @@ def main(cfg: DictConfig):
     model.eval()
 
     # Setup Data
-    dataset = MultiDatasetSentences(cfg)
-    multi_dataset_sentence_collator = MultiDatasetSentenceCollator(cfg)
+    dataset = H5adDatasetSentences(cfg)
+    multi_dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
 
     # Make the dataloader outside of the
     dataloader = DataLoader(dataset,

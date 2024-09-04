@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 
 
-full_dataset = '/checkpoint/ctc/ML/uce/h5ad_dataset.csv'
-train_dataset = '/checkpoint/ctc/ML/uce/h5ad_train_dataset.csv'
-test_dataset = '/checkpoint/ctc/ML/uce/h5ad_test_dataset.csv'
+full_dataset = '/large_storage/ctc/public/dataset/vci/h5ad_dataset.csv'
+test_dataset = '/large_storage/ctc/public/dataset/vci/h5ad_test_dataset.csv'
+train_dataset = '/large_storage/ctc/public/dataset/vci/h5ad_train_dataset.csv'
 
 df = pd.read_csv(full_dataset)
 msk = np.random.rand(df.shape[0]) < 0.9

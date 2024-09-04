@@ -7,7 +7,7 @@ def get_latest_checkpoint(cfg):
         cfg.experiment.name,
         cfg.model.nlayers,
         cfg.model.emsize,
-        cfg.model.sample_size,
+        cfg.dataset.pad_length,
         cfg.optimizer.max_lr,
         cfg.model.output_dim)
 
