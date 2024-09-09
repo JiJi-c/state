@@ -104,8 +104,9 @@ class PositionalEncoding(nn.Module):
 class LitUCEModel(L.LightningModule):
     def __init__(self, token_dim: int, d_model: int, nhead: int, d_hid: int,
                  nlayers: int, output_dim:int, dropout: float = 0.0,
-                 warmup_steps: int = 0, gradient_accumulation_steps: int = 1,
-                 compiled: bool = False, num_datasets: int = 0, dataset_embedding_dim: int = 16, max_lr=4e-4,
+                 warmup_steps: int = 0,
+                 compiled: bool = False,
+                 max_lr=4e-4,
                  emb_cnt=145469, emb_size=5120, cfg=None):
         super().__init__()
         self.save_hyperparameters()
@@ -116,7 +117,6 @@ class LitUCEModel(L.LightningModule):
         self.d_model = d_model
         self.warmup_steps = warmup_steps
         self.dropout = dropout
-        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.max_lr = max_lr
         # Encodes Tokens
         self.encoder = nn.Sequential(#SkipBlock(token_dim), # Add an extra layer here with skip connection
@@ -145,9 +145,6 @@ class LitUCEModel(L.LightningModule):
 
         if compiled:
             self.decoder = torch.compile(self.decoder)
-
-        self.dataset_embedding_dim = dataset_embedding_dim
-        # self.dataset_num_embedding = nn.Embedding(num_datasets, self.dataset_embedding_dim, max_norm=True)
 
         self.binary_decoder = nn.Sequential(
             SkipBlock(output_dim + d_model),

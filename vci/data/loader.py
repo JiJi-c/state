@@ -2,7 +2,7 @@ import os
 import h5py
 import logging
 import torch
-import pickle
+import functools
 import torch.utils.data as data
 import numpy as np
 
@@ -48,34 +48,39 @@ class H5adDatasetSentences(data.Dataset):
                 idx -= self.num_cells[dataset]
         raise IndexError
 
+    @functools.lru_cache
+    def dataset_file(self, dataset):
+        datafile = os.path.join(self.cfg.dataset.data_dir, f"{dataset}.h5ad")
+        return h5py.File(datafile, "r")
+
     def __getitem__(self, idx):
         if isinstance(idx, int):
             dataset, ds_idx = self._compute_index(idx)
-            datafile = os.path.join(
-                f"{self.cfg.dataset.data_dir}", f"{dataset}.h5ad"
-            )
-            with h5py.File(datafile, "r") as h5f:
-                attrs = dict(h5f['X'].attrs)
-                if attrs['encoding-type'] == 'csr_matrix':
-                    indptrs = h5f["/X/indptr"]
-                    start_ptr = indptrs[ds_idx]
-                    end_ptr = indptrs[ds_idx + 1]
-                    sub_data = torch.tensor(
-                        h5f["/X/data"][start_ptr:end_ptr],
-                        dtype=torch.int32)
-                    sub_indices = torch.tensor(
-                        h5f["/X/indices"][start_ptr:end_ptr],
-                        dtype=torch.int32)
+            # datafile = os.path.join(
+            #     self.cfg.dataset.data_dir, f"{dataset}.h5ad"
+            # )
+            h5f = self.dataset_file(dataset)
+            attrs = dict(h5f['X'].attrs)
+            if attrs['encoding-type'] == 'csr_matrix':
+                indptrs = h5f["/X/indptr"]
+                start_ptr = indptrs[ds_idx]
+                end_ptr = indptrs[ds_idx + 1]
+                sub_data = torch.tensor(
+                    h5f["/X/data"][start_ptr:end_ptr],
+                    dtype=torch.int32)
+                sub_indices = torch.tensor(
+                    h5f["/X/indices"][start_ptr:end_ptr],
+                    dtype=torch.int32)
 
-                    counts = torch.sparse_csr_tensor(
-                        [0,],
-                        sub_indices,
-                        sub_data,
-                        (1, self.num_genes[dataset]),
-                    )
-                    counts = counts.to_dense()
-                else:
-                    counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
+                counts = torch.sparse_csr_tensor(
+                    [0,],
+                    sub_indices,
+                    sub_data,
+                    (1, self.num_genes[dataset]),
+                )
+                counts = counts.to_dense()
+            else:
+                counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
 
             dataset_num = self.datasets_to_num[dataset]
             return counts, idx, dataset, dataset_num
