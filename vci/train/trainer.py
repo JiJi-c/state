@@ -46,7 +46,7 @@ def main(cfg):
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
-                                  num_workers=8,
+                                  num_workers=3,
                                   persistent_workers=True)
 
     val_dataset = H5adDatasetSentences(cfg, test=True)
@@ -54,7 +54,7 @@ def main(cfg):
                         batch_size=cfg.model.batch_size,
                         shuffle=False,
                         collate_fn=dataset_sentence_collator,
-                        num_workers=8,
+                        num_workers=3,
                         persistent_workers=True)
 
     model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
@@ -65,9 +65,7 @@ def main(cfg):
                         output_dim=cfg.model.output_dim,
                         dropout=cfg.model.dropout,
                         warmup_steps=warmup_steps,
-                        gradient_accumulation_steps=cfg.optimizer.gradient_accumulation_steps,
                         compiled=False,
-                        num_datasets=len(train_dataset.datasets),
                         max_lr=cfg.optimizer.max_lr,
                         emb_cnt=cfg.embeddings.esm2.cnt,
                         emb_size=cfg.embeddings.esm2.size,
@@ -82,7 +80,7 @@ def main(cfg):
 
     run_name, chk = get_latest_checkpoint(cfg)
     checkpoint_callback = ModelCheckpoint(
-        dirpath=cfg.experiment.checkpoint.path,
+        dirpath=os.path.join(cfg.experiment.checkpoint.path, cfg.experiment.name),
         filename=f"{run_name}"+"-{epoch}-{step}",
         save_top_k=cfg.experiment.checkpoint.save_top_k,
         monitor=cfg.experiment.checkpoint.monitor,

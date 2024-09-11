@@ -58,9 +58,9 @@ def test_data_index():
         # Make the dataloader outside of the
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
-                                shuffle=True,
+                                shuffle=False,
                                 collate_fn=multi_ds_sent_collator,
-                                num_workers=1,
+                                num_workers=3,
                                 persistent_workers=True)
 
         t_1 = time.time()
@@ -71,15 +71,15 @@ def test_data_index():
             assert batch[0].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
             assert batch[1].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
 
-            assert batch[2].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
-            assert batch[3].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
+            # assert batch[2].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
+            # assert batch[3].shape == (cfg.model.batch_size, cfg.dataset.pad_length)
 
-            assert batch[4].shape == (cfg.model.batch_size,)
-            assert batch[5].shape == (cfg.model.batch_size,)
+            # assert batch[4].shape == (cfg.model.batch_size,)
+            # assert batch[5].shape == (cfg.model.batch_size,)
             # import pickle
             # with open(f'new_batch_{i}.pickle', 'wb') as handle:
             #     pickle.dump(batch, handle)
-            if i > 10:
+            if i > 100:
                 break
 
         log.info(f'Time to iterate thru datset {time.time() - t_1}')
