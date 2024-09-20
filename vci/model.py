@@ -13,10 +13,10 @@ sys.path.append('../')
 from typing import Any
 import torch
 import lightning as L
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ChainedScheduler, LinearLR, CosineAnnealingLR
-
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
+from torch.optim.lr_scheduler import (ChainedScheduler,
+                                      LinearLR,
+                                      CosineAnnealingLR,
+                                      ReduceLROnPlateau)
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -217,7 +217,15 @@ class LitUCEModel(L.LightningModule):
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
         sch = self.lr_schedulers()
-        sch.step()
+
+        for scheduler in sch._schedulers:
+            if isinstance(scheduler, ReduceLROnPlateau):
+                scheduler.step(loss)
+            else:
+                scheduler.step()
+        sch._last_lr = [group['lr'] for group in sch._schedulers[-1].optimizer.param_groups]
+
+        # sch.step(metrics=loss)
         return loss
 
     @torch.compile(disable=True)
@@ -240,19 +248,31 @@ class LitUCEModel(L.LightningModule):
                                       weight_decay=self.cfg.optimizer.weight_decay)
         total_steps = self.trainer.estimated_stepping_batches * 2 # not sure why need to do this
 
-        linear_warmup = LinearLR(optimizer,
-                                 start_factor=self.cfg.optimizer.start,
-                                 end_factor=self.cfg.optimizer.end,
-                                 total_iters=int(0.03 * total_steps))
-        cosine_decay = CosineAnnealingLR(optimizer, eta_min=max_lr * 0.3, T_max=total_steps)
-        scheduler = ChainedScheduler([
-            linear_warmup, cosine_decay
-        ])
+        lr_schedulers = [LinearLR(optimizer,
+                                  start_factor=self.cfg.optimizer.start,
+                                  end_factor=self.cfg.optimizer.end,
+                                  total_iters=int(0.03 * total_steps))]
+        lr_schedulers.append(CosineAnnealingLR(optimizer,
+                                               eta_min=max_lr * 0.3,
+                                               T_max=total_steps))
+        # lr_schedulers.append(ReduceLROnPlateau(optimizer,
+        #                                        mode='min',
+        #                                        verbose=True))
+        scheduler = ChainedScheduler(lr_schedulers)
 
-        lr_scheduler = {
-            'scheduler': scheduler,
-            'name': 'learning_rate',
-            'interval': 'step',
-            'frequency': 1,
+        # lr_scheduler = {
+        #     'scheduler': scheduler,
+        #     'name': 'learning_rate',
+        #     'interval': 'step',
+        #     'frequency': 1,
+        # }
+        # return [optimizer], scheduler
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor': 'train_loss',
+                'interval': 'step',
+                'frequency': 1
+            }
         }
-        return [optimizer], [lr_scheduler]

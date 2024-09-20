@@ -7,7 +7,7 @@ experiment:
   num_gpus_per_node: 4
   master: localhost
   port: 12355
-  val_check_interval: 1000 # Number of steps between tests
+  val_check_interval: 1001 # Number of steps between tests
   limit_val_batches: 0.01 # Use 1% of validation dataset
   checkpoint:
     path: "/scratch/ctc/vci/checkpoint"
@@ -51,8 +51,8 @@ model:
 
 optimizer:
   max_lr: 4e-4
-  weight_decay: 0.005
-  start: 9e-5
-  end: 1
+  weight_decay: 0.01
+  start: 1e-4
+  end: 1.0
   max_grad_norm: 1.0
   gradient_accumulation_steps: 1
