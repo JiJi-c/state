@@ -15,11 +15,9 @@ def get_latest_checkpoint(cfg):
 
     chk_dir = os.path.join(cfg.experiment.checkpoint.path,
                            cfg.experiment.name)
-    chks = glob.glob(os.path.join(chk_dir, f'{run_name}*'))
-
-    chk = None
-    if chks:
-        chk = sorted(chks)[-1]
+    chk = os.path.join(chk_dir, f'last.ckpt')
+    if not os.path.exists(chk) or len(chk) == 0:
+        chk = None
 
     return run_name, chk
 

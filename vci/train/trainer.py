@@ -80,8 +80,10 @@ def main(cfg):
 
     run_name, chk = get_latest_checkpoint(cfg)
     checkpoint_callback = ModelCheckpoint(
+        every_n_train_steps=cfg.experiment.checkpoint.every_n_train_steps,
         dirpath=os.path.join(cfg.experiment.checkpoint.path, cfg.experiment.name),
         filename=f"{run_name}"+"-{epoch}-{step}",
+        save_last=True,
         save_top_k=cfg.experiment.checkpoint.save_top_k,
         monitor=cfg.experiment.checkpoint.monitor,
     )
