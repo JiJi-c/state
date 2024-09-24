@@ -13,6 +13,7 @@ experiment:
     path: "/scratch/ctc/vci/checkpoint"
     save_top_k: 4
     monitor: train_loss
+    every_n_train_steps: 1000
 
 embeddings:
   esm2:
@@ -51,8 +52,8 @@ model:
 
 optimizer:
   max_lr: 4e-4
-  weight_decay: 0.005
-  start: 9e-5
-  end: 1
+  weight_decay: 0.01
+  start: 1e-4
+  end: 1.0
   max_grad_norm: 1.0
   gradient_accumulation_steps: 1

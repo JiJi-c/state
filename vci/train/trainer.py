@@ -13,7 +13,7 @@ from lightning.pytorch.strategies import DDPStrategy
 from vci.model import LitUCEModel
 from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 from vci.train.callbacks import LogLR
-from vci.utils import get_latest_checkpoint
+from vci.utils import get_latest_checkpoint, parse_chk_info
 
 
 def get_ESM2_embeddings(cfg):
@@ -80,8 +80,10 @@ def main(cfg):
 
     run_name, chk = get_latest_checkpoint(cfg)
     checkpoint_callback = ModelCheckpoint(
+        every_n_train_steps=cfg.experiment.checkpoint.every_n_train_steps,
         dirpath=os.path.join(cfg.experiment.checkpoint.path, cfg.experiment.name),
         filename=f"{run_name}"+"-{epoch}-{step}",
+        save_last=True,
         save_top_k=cfg.experiment.checkpoint.save_top_k,
         monitor=cfg.experiment.checkpoint.monitor,
     )
@@ -103,7 +105,6 @@ def main(cfg):
                         val_check_interval=cfg.experiment.val_check_interval,
                         # Logging
                         logger=wandb_logger,
-                        #profiler=PyTorchProfiler(),
                         fast_dev_run=False,
                         limit_val_batches=cfg.experiment.limit_val_batches,
                        )
@@ -111,10 +112,10 @@ def main(cfg):
     if chk:
         print(f'******** Loading chkpoint {run_name} {chk}...')
     else:
-        model.log('val_loss', 0)
-        model.log('epoch', 0)
-        model.log('step', 0)
-        model.log('train_loss', 0)
+        # model.log('val_loss', 0)
+        # model.log('epoch', 0)
+        # model.log('step', 0)
+        # model.log('train_loss', 0)
         print(f'******** Initialized fresh {run_name}...')
 
     trainer.fit(model=model,
