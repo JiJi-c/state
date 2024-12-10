@@ -11,6 +11,6 @@
 #SBATCH --open-mode=append
 #SBATCH --account=ctc
 
-cd /home/rajesh.ilango/Projects/github/vci_starter
+##cd /home/rajesh.ilango/Projects/github/vci_starter
 
 python3 ./scripts/processing.py

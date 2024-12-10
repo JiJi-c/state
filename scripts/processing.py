@@ -129,35 +129,35 @@ if __name__ == '__main__':
         "--data_path",
         type=str,
         # required=True,
-        default='/large_experiments/goodarzilab/mohsen/cellxgene/datasets',
+        default='/common_datasets/external/references/cellxgene',
         help="Directory containing all H5AD files for training",
     )
     parser.add_argument(
         "--destination",
         type=str,
         # required=True,
-        default='/large_experiments/goodarzilab/mohsen/cellxgene/processed',
+        default='/large_storage/ctc/ML/data/cell/processed',
         help="Directory to store the processed files",
     )
     parser.add_argument(
         "--summary_file",
         type=str,
         # required=True,
-        default='/home/rajesh.ilango/h5ad_train_dataset.csv',
+        default='/scratch/ctc/ML/uce/h5ad_train_dataset_10.csv',
         help="Path to save the output summary file",
     )
     parser.add_argument(
         "--emb_idx_file",
         type=str,
         # required=True,
-        default='/home/rajesh.ilango/gene_embidx_mapping.torch',
+        default='/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch',
         help="Path to save the output summary file",
     )
     parser.add_argument(
         "--embedding_file",
         type=str,
         # required=True,
-        default='/checkpoint/ctc/ML/uce/model_files/protein_embeddings/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt',
+        default='/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt',
         help="Path to save the output summary file",
     )
     parser.add_argument(
