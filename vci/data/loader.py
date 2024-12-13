@@ -80,7 +80,14 @@ class H5adDatasetSentences(data.Dataset):
                 )
                 counts = counts.to_dense()
             else:
-                counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
+                print('debugging', ds_idx, 'end')
+
+                try:
+                    print(ds_idx)
+                    counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
+                except:
+                    print('-->', dataset, 'DIDNT WORK<--')
+                    return 
 
             dataset_num = self.datasets_to_num[dataset]
             return counts, idx, dataset, dataset_num

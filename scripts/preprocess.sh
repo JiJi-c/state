@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --partition=cpu_batch
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=750G
+#SBATCH --mem=250G
 #SBATCH --time=7-00:00:00
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/preprocess.log

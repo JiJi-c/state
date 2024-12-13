@@ -10,6 +10,7 @@ import numpy as np
 def get_shapes_dict(dataset_path):
     datasets_df = pd.read_csv(dataset_path)
     sorted_dataset_names = sorted(datasets_df["names"])
+    datasets_df = datasets_df.drop_duplicates() ## TODO: there should be no duplicates
 
     shapes_dict = {}
     for name in sorted_dataset_names:

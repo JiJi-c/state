@@ -70,7 +70,12 @@ class Preprocessor:
         sc.pp.filter_cells(adata, min_genes=25)
         basic_flt_shape = adata.shape
 
-        adata = adata[:, adata.var.feature_name.str.lower().isin(self.gene_filter)]
+        try:
+            adata = adata[:, adata.var.feature_name.str.lower().isin(self.gene_filter)]
+        except:
+            adata.var['feature_name'] = adata.var.index.values
+            adata = adata[:, adata.var.feature_name.str.lower().isin(self.gene_filter)]
+
         emb_flt_shape = adata.shape
 
         log.info(f'{h5ad_file} Original size: {original_shape}.'
@@ -129,21 +134,22 @@ if __name__ == '__main__':
         "--data_path",
         type=str,
         # required=True,
-        default='/common_datasets/external/references/cellxgene',
+        default ='/home/yhr/scRecount/data/recount/mouse',
+        #default='/common_datasets/external/references/cellxgene',
         help="Directory containing all H5AD files for training",
     )
     parser.add_argument(
         "--destination",
         type=str,
         # required=True,
-        default='/large_storage/ctc/ML/data/cell/processed',
+        default='/large_storage/ctc/ML/data/cell/recount/processed',
         help="Directory to store the processed files",
     )
     parser.add_argument(
         "--summary_file",
         type=str,
         # required=True,
-        default='/scratch/ctc/ML/uce/h5ad_train_dataset_10.csv',
+        default='/scratch/ctc/ML/vci/h5ad_recount.csv',
         help="Path to save the output summary file",
     )
     parser.add_argument(
@@ -164,7 +170,7 @@ if __name__ == '__main__':
         "--species",
         type=str,
         # required=True,
-        default='human',
+        default='mouse',
         help="Path to save the output summary file",
     )
 
