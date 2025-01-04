@@ -16,8 +16,12 @@ conda env update --file=environment.yml --prune
 ```
 
 ## Data preprocessing
-Data preprocessing scripts are at `scripts/`. To run preprocessing:
+Training data needs to be preprocessed for:
+- Filtering cells and genes with less than minimum count.
+- Supported datastructure for X. Current version does not support CSC matrix due to training time runtime performance.
+- Create a summary/metadata files. This file is input to dataloader to improve training startup time.
 
+To run preprocessing:
 ```
 sbatch scripts/preprocess.sh
 ```
@@ -36,20 +40,16 @@ To start training
 python3 -m vci.tools.slurm --exp_name <<EXP_NUM_1>>
 ```
 
-Logs for the current run can be found at `outputs/<<exp_name>>.log.
+This creates the training config and the slurm script to start the training in ./output directory. This slurm script can be used for restarting training.
+
+Logs for the current run can be found at `outputs/<<exp_name>>/training.log`.
 Checkpoints and wandb names will also carry the `exp_name`.
 
-To submit and tail the log file, please use `-t` option. For e.g.
-```
-python3 -m vci.tools.slurm -t --exp_name <<EXP_NUM_1>>
-```
-
-One can override default values at `conf/defaults.yml` in the command. To override the dataset path, please use the following command:
+One can override default values in `conf/defaults.yml` in the command. To override the dataset path, please use the following command:
 ```
 python3 -m vci.tools.slurm \
     --exp_name vci_medium_dataset \
     --set dataset.path=/checkpoint/ctc/ML/uce/h5ad_train_dataset_100.csv \
           datasest.name=<<dataset name>>
 ```
-
-The script records the slurm script in the local dir before submitting the sbatch job.
+As mentioned before the script records the slurm script at `./output/<<exp_name>>` direectory.

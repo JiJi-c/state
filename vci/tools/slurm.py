@@ -1,7 +1,20 @@
+import os
 import time
+import yaml
 import argparse
+import logging
 import subprocess
+
+from pathlib import Path
+from omegaconf import OmegaConf
+from hydra import compose, initialize
 from jinja2 import Template
+
+log = logging.getLogger(__name__)
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(levelname)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S',)
 
 sbatch_script_template = """#!/bin/bash
 
@@ -9,17 +22,16 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --nodes={{ num_nodes }}
 #SBATCH --gres=gpu:{{ num_gpus_per_node }}
 #SBATCH --ntasks-per-node={{ num_gpus_per_node }}
-#SBATCH --partition=gpu_batch
 ##SBATCH --cpus-per-task=8
 #SBATCH --mem=200G
 #SBATCH --time={{ duration }}
 #SBATCH --signal=B:SIGINT@300
-#SBATCH --output=outputs/{{ exp_name }}.log
+#SBATCH --output=outputs/{{ exp_name }}/training.log
 #SBATCH --open-mode=append
+#SBATCH --partition={{ partition }}
 #SBATCH --account=vci
 {{ sbatch_overrides }}
 
-NUM_NODES={{ num_nodes }}
 NUM_GPUS_PER_NODE={{ num_gpus_per_node }}
 
 # Get the names of all nodes involved in training.
@@ -33,9 +45,7 @@ NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
 
 srun \\
-    python -m vci.train \\
-        experiment.master=${MASTER_ADDR} \\
-        experiment.port=${MASTER_PORT} {{ exp_overrides }}
+    python -m vci.train --config {{ traing_config_file }}
 """
 
 def parse_vars(extra_vars):
@@ -58,10 +68,13 @@ if __name__ == '__main__':
         description="Create dataset list CSV file"
     )
     parser.add_argument(
+        '-c', "--config",
+        type=str,
+        help="Training configuration file.",
+    )
+    parser.add_argument(
         '-e', "--exp_name",
         type=str,
-        required=True,
-        default='vci_training',
         help="Experiment name. This will be used to name generated artifacts.",
     )
     parser.add_argument(
@@ -84,6 +97,13 @@ if __name__ == '__main__':
         help="Slurm reservation to use for this job.",
     )
     parser.add_argument(
+        "-p", "--partition",
+        dest='partition',
+        type=str,
+        default='gpu_batch',
+        help="Slurm partition to use.",
+    )
+    parser.add_argument(
         "--duration",
         dest='duration',
         type=str,
@@ -91,18 +111,18 @@ if __name__ == '__main__':
         help="SLURM job durarion. Pleae refer Slurm documenation for time format",
     )
     parser.add_argument(
+        "-f", "--force",
+        dest='force',
+        action='store_true',
+        default=False,
+        help="Overwrite config and submit the job.",
+    )
+    parser.add_argument(
         "-d", "--dryrun",
         dest='dryrun',
         action='store_true',
         default=False,
         help="Only generate slurm sbatch script",
-    )
-    parser.add_argument(
-        "-t", "--tail",
-        dest='tail',
-        action='store_true',
-        default=False,
-        help="Tails the log file. Killing will not kill the training.",
     )
     parser.add_argument(
         "--set",
@@ -119,36 +139,61 @@ if __name__ == '__main__':
         "num_nodes": args.num_nodes,
         "num_gpus_per_node": args.gpus_per_nodes,
         "duration": args.duration,
+        "partition": args.partition,
     }
 
-    overrides =  {
-        "experiment.name": args.exp_name,
-        "experiment.num_nodes": "${NUM_NODES}",
-        "experiment.num_gpus_per_node": "${NUM_GPUS_PER_NODE}",
-    }
-    overrides.update(parse_vars(args.set))
-    exp_overrides = ''
-    for key, value in overrides.items():
-        exp_overrides = exp_overrides + f'\\\n\t\t{key}={value} '
+    if args.config:
+        bind_param['traing_config_file'] = args.config
+    else:
+        assert args.exp_name, "Experiment name is required when config is not provided."
+        log.info(f'Creating config for {args.exp_name}...')
+        trn_conf_dir = Path(f'outputs/{args.exp_name}/conf')
+        if not args.force:
+            assert not os.path.exists(trn_conf_dir.parent), f"Conf dir {trn_conf_dir.parent.absolute()} already exists."
+
+        overrides=[
+            f"experiment.name={args.exp_name}",
+            f"experiment.num_nodes={args.num_nodes}",
+            f"experiment.num_gpus_per_node={args.gpus_per_nodes}",
+            ]
+
+        if args.set:
+            log.info(f'Applying overrides: {parse_vars(args.set)}')
+            for key, value in parse_vars(args.set).items():
+                overrides.append(f'{key}={value}')
+            log.info(f'Applying overrides: {overrides}')
+
+        config_dir = Path(os.path.join(os.path.dirname(__file__), '../..', 'conf'))
+        config_dir = os.path.relpath(config_dir, Path(__file__).parent)
+        log.info(config_dir)
+
+        with initialize(version_base=None, config_path=config_dir):
+            cfg = compose(
+                config_name="defaults.yaml",
+                overrides=overrides,
+            )
+            cfg = OmegaConf.to_container(cfg, resolve=True)
+
+            os.makedirs(trn_conf_dir, exist_ok=True)
+            trn_conf_file = Path(f'{trn_conf_dir}/training.yaml')
+            with open(trn_conf_file, 'w') as file:
+                yaml.dump(cfg, file)
+            bind_param['traing_config_file'] = trn_conf_file.absolute()
 
     # SLURM changes
     sbatch_overrides = None
     if args.reservation:
         sbatch_overrides = f'#SBATCH --reservation={args.reservation}\n'
 
-    bind_param['exp_overrides'] = exp_overrides
     if sbatch_overrides:
         bind_param['sbatch_overrides'] = sbatch_overrides
 
     template = Template(sbatch_script_template)
     rendered_script = template.render(bind_param)
 
-    slurm_script = f"vci_job_{args.exp_name}.slurm"
+    slurm_script = f"outputs/{args.exp_name}/slurm.sh"
     with open(slurm_script, "w") as f:
         f.write(rendered_script)
 
     if not args.dryrun:
         subprocess.call(['sbatch', slurm_script])
-        if args.tail:
-            time.sleep(5)
-            subprocess.call(['tail', '-f', f'outputs/{args.exp_name}.log'])

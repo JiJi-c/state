@@ -21,8 +21,8 @@ from vci.train.trainer import get_ESM2_embeddings
 log = logging.getLogger(__name__)
 
 
-checkpoint = '/checkpoint/ctc/ML/uce/model_checkpoints/exp_ds_medium_100_layers_4_dmodel_256_samples_1024_max_lr_0.0004_op_dim_256-epoch=9-step=117710.ckpt'
-emb_file = '/checkpoint/ctc/ML/uce/embeddings1.h5'
+checkpoint = '/scratch/ctc/vci/checkpoint/pre_1/exp_pre_1_layers_4_dmodel_512_samples_2048_max_lr_0.0004_op_dim_256-epoch=1-step=91280.ckpt'
+emb_file = '/large_storage/goodarzilab/userspace/mohsen/VCI/ZeroShotCellType_Replogle_jurkat_edist_train/predictions/scvi_pred_map_random.h5ad'
 
 def update_data(embeddings, losses, f):
     embeddings = np.vstack(embeddings)
@@ -72,7 +72,7 @@ def main(cfg: DictConfig):
             mask = batch[1].to(model.device)
             X = batch[2].to(model.device)
             Y = batch[3].to(model.device).squeeze()
-            dataset_nums = batch[5].to(model.device)
+            # dataset_nums = batch[5].to(model.device)
 
             batch_sentences = model.pe_embedding(
                 batch_sentences.long())
@@ -81,21 +81,21 @@ def main(cfg: DictConfig):
 
             embeddings.append(embedding.detach().cpu().numpy())
 
-            dataset_num_emb = model.dataset_num_embedding(dataset_nums)
+            # dataset_num_emb = model.dataset_num_embedding(dataset_nums)
             X = model.pe_embedding(X.long())
             X = model.gene_embedding_layer(X)
 
             embedding = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
-            dataset_num_emb = dataset_num_emb.unsqueeze(1).repeat(1, X.shape[1], 1)
+            # dataset_num_emb = dataset_num_emb.unsqueeze(1).repeat(1, X.shape[1], 1)
 
-            combine = torch.cat((X, embedding, dataset_num_emb), dim=2)
+            combine = torch.cat((X, embedding), dim=2)
             decs = model.binary_decoder(combine).squeeze()
 
             loss = criterion(input=decs, target=Y)
             losses.append(loss.detach().cpu().numpy())
             i = i + 1
 
-            if i % 100 == 0:
+            if i % 10 == 0:
                 if not os.path.exists(emb_file):
                     embeddings = np.vstack(embeddings)
                     losses = np.vstack(losses)
@@ -115,9 +115,9 @@ def main(cfg: DictConfig):
                 embeddings = []
                 losses = []
 
-        if embeddings and losses:
-            with h5py.File(emb_file, "a") as h5f:
-                update_data(embeddings, losses, h5f)
+        # if embeddings and losses:
+        #     with h5py.File(emb_file, "a") as h5f:
+        #         update_data(embeddings, losses, h5f)
 
 
 if __name__ == "__main__":
