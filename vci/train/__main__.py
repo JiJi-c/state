@@ -15,8 +15,8 @@ log = logging.getLogger(__name__)
 def main(config_file):
     config_file = Path(config_file)
     config_path = os.path.relpath(Path(config_file).parent, Path(__file__).parent)
-    with initialize(version_base=None, config_name=config_path):
-        log.info(f'Creating config for {args.exp_name}...')
+    with initialize(version_base=None, config_path=config_path):
+        log.info(f'Loading config {config_file}...')
         cfg = compose(config_name=config_file.name)
 
     os.environ['MASTER_ADDR'] = cfg.experiment.master

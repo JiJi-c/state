@@ -88,7 +88,7 @@ def main(cfg):
         monitor=cfg.experiment.checkpoint.monitor,
     )
 
-    wandb_logger = WandbLogger(project=cfg.model.name, name=cfg.experiment.name)
+    wandb_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
     wandb_logger.watch(model, log_freq=1000)
 
     trainer = L.Trainer(max_epochs=cfg.experiment.num_epochs,
@@ -112,10 +112,6 @@ def main(cfg):
     if chk:
         print(f'******** Loading chkpoint {run_name} {chk}...')
     else:
-        # model.log('val_loss', 0)
-        # model.log('epoch', 0)
-        # model.log('step', 0)
-        # model.log('train_loss', 0)
         print(f'******** Initialized fresh {run_name}...')
 
     trainer.fit(model=model,

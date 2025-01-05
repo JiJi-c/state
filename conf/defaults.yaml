@@ -15,6 +15,9 @@ experiment:
     monitor: train_loss
     every_n_train_steps: 1000
 
+wandb:
+  project: "vci"
+
 embeddings:
   esm2:
     checkpoint: "/scratch/ctc/ML/uce/all_species_pe_tokens.torch"
@@ -24,10 +27,10 @@ embeddings:
     size: 5120
 
 dataset:
-  name: "vci_recount"
+  name: "vci"
   train: "/scratch/ctc/ML/vci/h5ad_recount_train.csv"
   test: "/scratch/ctc/ML/vci/h5ad_recount_test.csv"
-  data_dir: "/large_storage/ctc/ML/data/cell/recount/processed"
+  data_dir: "/large_storage/ctc/ML/data/cell/recount/czi_processed"
   protein_emb_file_format: "/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch"
   pad_length: 2048
   pad_token_idx: 0
@@ -41,12 +44,12 @@ tokenizer:
   token_dim: 5120
 
 model:
-  name: 'vci_recount'
-  batch_size: 32
+  name: 'vci'
+  batch_size: 64
   emsize: 256
   d_hid: 1024
-  nhead: 8
-  nlayers: 4
+  nhead: 16
+  nlayers: 8
   dropout: 0.1
   output_dim: 256 # TODO: Is emsize different from this?
 
