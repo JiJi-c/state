@@ -10,9 +10,9 @@ experiment:
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.01 # Use 1% of validation dataset
   checkpoint:
-    path: "/scratch/ctc/ML/vci/checkpoint"
+    path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
-    monitor: train_loss
+    monitor: trainer/train_loss
     every_n_train_steps: 1000
 
 wandb:

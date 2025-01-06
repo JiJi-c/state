@@ -53,3 +53,5 @@ python3 -m vci.tools.slurm \
           datasest.name=<<dataset name>>
 ```
 As mentioned before the script records the slurm script at `./output/<<exp_name>>` direectory.
+
+To create a record of all jobs in progress and to reproduce config file one can create bash script such as ./script/pretrain.sh. At some point default.conf must considered immutable, except when new properties are added.
