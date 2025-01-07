@@ -91,6 +91,7 @@ def main(cfg):
     wandb_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
     wandb_logger.watch(model, log_freq=1000)
 
+    val_interval = int(cfg.experiment.val_check_interval * cfg.experiment.num_gpus_per_node * cfg.experiment.num_nodes)
     trainer = L.Trainer(max_epochs=cfg.experiment.num_epochs,
                         callbacks=[checkpoint_callback,
                                    LogLR(100),
@@ -102,7 +103,7 @@ def main(cfg):
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
                         # precision="bf16-mixed",
                         strategy=DDPStrategy(process_group_backend="nccl"),
-                        val_check_interval=cfg.experiment.val_check_interval,
+                        val_check_interval=val_interval,
                         # Logging
                         logger=wandb_logger,
                         fast_dev_run=False,
