@@ -1,9 +1,10 @@
 import os
 import sys
-import hydra
 import logging
+import argparse
 
-from omegaconf import DictConfig
+from pathlib import Path
+from hydra import compose, initialize
 
 sys.path.append('../../')
 import vci.train.trainer as train
@@ -11,8 +12,13 @@ import vci.train.trainer as train
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="../../conf", config_name="defaults")
-def main(cfg: DictConfig):
+def main(config_file):
+    config_file = Path(config_file)
+    config_path = os.path.relpath(Path(config_file).parent, Path(__file__).parent)
+    with initialize(version_base=None, config_path=config_path):
+        log.info(f'Loading config {config_file}...')
+        cfg = compose(config_name=config_file.name)
+
     os.environ['MASTER_ADDR'] = cfg.experiment.master
     os.environ['MASTER_PORT'] = str(cfg.experiment.port)
 
@@ -34,4 +40,14 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Create dataset list CSV file"
+    )
+    parser.add_argument(
+        '-c', "--config",
+        type=str,
+        help="Training configuration file.",
+    )
+    args = parser.parse_args()
+
+    main(args.config)

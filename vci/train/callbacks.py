@@ -19,6 +19,6 @@ class LogLR(L.Callback):
             # print(f'{batch_idx=}, {trainer.global_step=}, {self.interval=} {pl_module.lr_schedulers().get_last_lr()=}')
             if trainer.global_step % self.interval == 0 and trainer.logger is not None:
                 trainer.logger.log_metrics(
-                    {"learning_rate": pl_module.lr_schedulers().get_last_lr()[0]},
+                    {"trainer/learning_rate": pl_module.lr_schedulers().get_last_lr()[0]},
                     step=trainer.global_step,
                 )

@@ -231,13 +231,13 @@ class LitUCEModel(L.LightningModule):
     @torch.compile(disable=True)
     def training_step(self, batch, batch_idx):
         loss = self.shared_step(batch, batch_idx)
-        self.log("train_loss", loss)
+        self.log("trainer/train_loss", loss)
         return loss
 
     @torch.compile(disable=True)
     def validation_step(self, batch, batch_idx):
         loss = self.shared_step(batch, batch_idx)
-        self.log("val_loss", loss)
+        self.log("validation/val_loss", loss)
         return loss
 
     def configure_optimizers(self):

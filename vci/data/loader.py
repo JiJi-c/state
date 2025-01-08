@@ -56,38 +56,35 @@ class H5adDatasetSentences(data.Dataset):
     def __getitem__(self, idx):
         if isinstance(idx, int):
             dataset, ds_idx = self._compute_index(idx)
-            # datafile = os.path.join(
-            #     self.cfg.dataset.data_dir, f"{dataset}.h5ad"
-            # )
             h5f = self.dataset_file(dataset)
             attrs = dict(h5f['X'].attrs)
-            if attrs['encoding-type'] == 'csr_matrix':
-                indptrs = h5f["/X/indptr"]
-                start_ptr = indptrs[ds_idx]
-                end_ptr = indptrs[ds_idx + 1]
-                sub_data = torch.tensor(
-                    h5f["/X/data"][start_ptr:end_ptr],
-                    dtype=torch.int32)
-                sub_indices = torch.tensor(
-                    h5f["/X/indices"][start_ptr:end_ptr],
-                    dtype=torch.int32)
+            try:
+                if attrs['encoding-type'] == 'csr_matrix':
+                    # num_genes = attrs['shape'][1]
+                    indptrs = h5f["/X/indptr"]
+                    start_ptr = indptrs[ds_idx]
+                    end_ptr = indptrs[ds_idx + 1]
+                    sub_data = torch.tensor(
+                        h5f["/X/data"][start_ptr:end_ptr],
+                        dtype=torch.int32)
+                    sub_indices = torch.tensor(
+                        h5f["/X/indices"][start_ptr:end_ptr],
+                        dtype=torch.int32)
 
-                counts = torch.sparse_csr_tensor(
-                    [0,],
-                    sub_indices,
-                    sub_data,
-                    (1, self.num_genes[dataset]),
-                )
-                counts = counts.to_dense()
-            else:
-                print('debugging', ds_idx, 'end')
-
-                try:
-                    print(ds_idx)
+                    counts = torch.sparse_csr_tensor(
+                        [0,],
+                        sub_indices,
+                        sub_data,
+                        (1, self.num_genes[dataset]),
+                    )
+                    counts = counts.to_dense()
+                else:
+                    log.info('debugging', ds_idx, 'end')
+                    log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
-                except:
-                    print('-->', dataset, 'DIDNT WORK<--')
-                    return 
+            except IndexError as iex:
+                log.exception(f"Error in dataset {dataset} at index {ds_idx}")
+                raise iex
 
             dataset_num = self.datasets_to_num[dataset]
             return counts, idx, dataset, dataset_num
