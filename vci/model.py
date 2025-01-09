@@ -1,9 +1,3 @@
-"""
-Model class
-"""
-
-import warnings
-warnings.filterwarnings("ignore")
 import math
 from torch import nn, Tensor
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, BCEWithLogitsLoss
@@ -51,33 +45,6 @@ class SkipBlock(nn.Module):
         return x
 
 
-'''
-class Scheduler(_LRScheduler):
-    # https://kikaben.com/transformers-training-details/
-    def __init__(self,
-                 optimizer: Optimizer,
-                 dim_embed: int,
-                 warmup_steps: int,
-                 last_epoch: int = -1,
-                 verbose: bool = False,
-                 gradient_accumulation_steps: int = 4
-                ) -> None:
-        self.dim_embed = dim_embed
-        self.warmup_steps = warmup_steps
-        self.num_param_groups = len(optimizer.param_groups)
-        self.gradient_accumulation_steps = gradient_accumulation_steps
-        super().__init__(optimizer, last_epoch, verbose)
-
-    def get_lr(self) -> float:
-        lr = self.calc_lr(self._step_count, self.dim_embed, self.warmup_steps)
-        lr *= np.sqrt(self.gradient_accumulation_steps) # add this
-        return [lr] * self.num_param_groups
-
-
-    def calc_lr(self, step, dim_embed, warmup_steps):
-        return dim_embed ** (-0.5) * min(step ** (-0.5),
-                                         step * warmup_steps ** (-1.5))
-'''
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 1536):
@@ -255,18 +222,8 @@ class LitUCEModel(L.LightningModule):
         lr_schedulers.append(CosineAnnealingLR(optimizer,
                                                eta_min=max_lr * 0.3,
                                                T_max=total_steps))
-        # lr_schedulers.append(ReduceLROnPlateau(optimizer,
-        #                                        mode='min',
-        #                                        verbose=True))
         scheduler = ChainedScheduler(lr_schedulers)
 
-        # lr_scheduler = {
-        #     'scheduler': scheduler,
-        #     'name': 'learning_rate',
-        #     'interval': 'step',
-        #     'frequency': 1,
-        # }
-        # return [optimizer], scheduler
         return {
             'optimizer': optimizer,
             'lr_scheduler': {

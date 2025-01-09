@@ -1,8 +1,8 @@
-import os
 import logging
 import torch
+import anndata
 
-from omegaconf import OmegaConf
+from tqdm import tqdm
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -20,6 +20,7 @@ class Inference():
         self._vci_conf = cfg
         self.model = None
         self.collator = None
+        self.protein_embeds = None
 
     def load_model(self, checkpoint):
         # Load and initialize model for eval
@@ -31,6 +32,8 @@ class Inference():
         self.model.pe_embedding.to(self.model.device)
         self.model.binary_decoder.requires_grad = False
         self.model.eval()
+
+        self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
 
     def create_dataloader(self,
                           datasets,
@@ -53,6 +56,19 @@ class Inference():
                                 persistent_workers=True)
         return dataloader
 
+    def get_gene_embedding(self, genes):
+        protein_embeds = [self.protein_embeds[x] \
+                          if x in self.protein_embeds else torch.zeros(5120) for x in genes]
+        protein_embeds = torch.stack(protein_embeds).to(self.model.device)
+        return self.model.gene_embedding_layer(protein_embeds)
+
+    def resize_batch(self, cell_embeds, task_embeds):
+        A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)  # (batch_size, num_genes, embed_dim)
+        B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)  # (batch_size, num_genes, embed_dim)
+        # Concatenating along the last dimension (embedding dimension)
+        mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
+        return mlp_input
+
     def encode(self, dataloader):
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
@@ -67,10 +83,17 @@ class Inference():
 
                 yield embeddings
 
-    def decode(self, adata_path: str, emb_key: str):
-        # X = self.model.pe_embedding(X.long())
-        # X = self.model.gene_embedding_layer(X)
-        # embedding = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
-        # combine = torch.cat((X, embedding), dim=2)
-        # decs = self.model.binary_decoder(combine).squeeze()
-        pass
+    def decode(self, adata_path: str, emb_key: str, batch_size=32):
+        adata = anndata.read_h5ad(adata_path)
+        genes = adata.var.index
+        cell_embs = adata.obsm[emb_key]
+        cell_embs = torch.Tensor(cell_embs).to(self.model.device)
+
+        gene_embeds = self.get_gene_embedding(genes)
+        for i in tqdm(range(0, cell_embs.size(0), batch_size),
+                      total=int(cell_embs.size(0) // batch_size)):
+            cell_embeds_batch = cell_embs[i:i + batch_size]
+            merged_embs = self.resize_batch(cell_embeds_batch, gene_embeds)
+            logprobs_batch = self.model.binary_decoder(merged_embs)
+            logprobs_batch = logprobs_batch.detach().cpu().numpy()
+            yield logprobs_batch.squeeze()

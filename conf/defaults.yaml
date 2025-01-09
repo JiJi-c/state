@@ -21,6 +21,7 @@ wandb:
 embeddings:
   esm2:
     checkpoint: "/scratch/ctc/ML/uce/all_species_pe_tokens.torch"
+    embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     # TODO: Eliminate the need for these attributes. This informtation can be
     # read from the above file.
     cnt: 145469
