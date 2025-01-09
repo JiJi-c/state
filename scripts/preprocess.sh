@@ -11,6 +11,12 @@
 #SBATCH --open-mode=append
 #SBATCH --account=ctc
 
-##cd /home/rajesh.ilango/Projects/github/vci_starter
-
 python3 ./scripts/processing.py
+
+# Prep for unit test
+# python3 ./scripts/processing.py \
+#     --data_path    /tmp/data_for_test \
+#     --destination  /home/rajesh.ilango/Projects/vci/pert-bench/tests/data/inference \
+#     --summary_file /home/rajesh.ilango/Projects/vci/pert-bench/tests/data/inference/summary.csv \
+#     --emb_idx_file /home/rajesh.ilango/Projects/vci/pert-bench/tests/data/inference/test_embidx_mapping.torch \
+#     --species human

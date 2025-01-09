@@ -15,13 +15,19 @@ log = logging.getLogger(__file__)
 
 
 class H5adDatasetSentences(data.Dataset):
-    def __init__(self, cfg, test=False) -> None:
+    def __init__(self, cfg, test=False, datasets=None, shape_dict=None) -> None:
         super(H5adDatasetSentences, self).__init__()
 
-        ds_path = cfg.dataset.train
-        if test:
-            ds_path = cfg.dataset.test
-        _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
+        if datasets is None:
+            ds_path = cfg.dataset.train
+            if test:
+                ds_path = cfg.dataset.test
+            _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
+        else:
+            assert shape_dict is not None
+            assert len(datasets) == len(shape_dict)
+            self.datasets = datasets
+            self.shapes_dict = shape_dict
 
         self.cfg = cfg
 
