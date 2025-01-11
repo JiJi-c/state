@@ -86,8 +86,7 @@ class LitUCEModel(L.LightningModule):
         self.dropout = dropout
         self.max_lr = max_lr
         # Encodes Tokens
-        self.encoder = nn.Sequential(#SkipBlock(token_dim), # Add an extra layer here with skip connection
-                                     nn.Linear(token_dim, d_model, bias=True),
+        self.encoder = nn.Sequential(nn.Linear(token_dim, d_model, bias=True),
                                      nn.LayerNorm(d_model), # Moved before activation
                                      nn.SiLU(), # Changed to SiLU
                                     )
@@ -128,7 +127,7 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.gene_embedding_layer = torch.compile(self.gene_embedding_layer)
 
-        self.pe_embedding = nn.Embedding(emb_cnt, emb_size)
+        self.pe_embedding = None
         self.step_ctr = 0
 
     def forward(self, src: Tensor, mask: Tensor):
@@ -148,13 +147,6 @@ class LitUCEModel(L.LightningModule):
         embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
         return gene_output, embedding
 
-
-    def predict(self, cell_embedding, gene_embeddings):
-        gene_embeddings = self.gene_embedding_layer(gene_embeddings)
-        dec = self.binary_decoder \
-            (torch.hstack((cell_embedding, gene_embeddings)))
-        return dec
-
     def shared_step(self, batch, batch_idx):
         criterion = BCEWithLogitsLoss()
         batch_sentences = batch[0]
@@ -170,16 +162,12 @@ class LitUCEModel(L.LightningModule):
         # dataset_num_emb = self.dataset_num_embedding(dataset_nums) # batch x emb shap
 
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2) # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
-
         _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = cell_outputs_X_pe
         Y = cell_outputs_Y
         X = self.gene_embedding_layer(X)
         embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
-        # add dataset num to decoder
-        # dataset_num_emb = dataset_num_emb.unsqueeze(1).repeat(1, X.shape[1], 1) # batch x (P+N) x emb
-
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
@@ -191,8 +179,6 @@ class LitUCEModel(L.LightningModule):
             else:
                 scheduler.step()
         sch._last_lr = [group['lr'] for group in sch._schedulers[-1].optimizer.param_groups]
-
-        # sch.step(metrics=loss)
         return loss
 
     @torch.compile(disable=True)

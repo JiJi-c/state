@@ -12,7 +12,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 from vci.model import LitUCEModel
 from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
-from vci.train.callbacks import LogLR
+from vci.train.callbacks import LogLR, PerformanceMonitorCallback
 from vci.utils import get_latest_checkpoint, parse_chk_info
 
 
@@ -95,7 +95,8 @@ def main(cfg):
     trainer = L.Trainer(max_epochs=cfg.experiment.num_epochs,
                         callbacks=[checkpoint_callback,
                                    LogLR(100),
-                                   RichProgressBar()],
+                                   RichProgressBar(),
+                                   PerformanceMonitorCallback()],
                         devices=cfg.experiment.num_gpus_per_node,
                         num_nodes=cfg.experiment.num_nodes,
                         # Accumulation

@@ -8,7 +8,7 @@ import numpy as np
 
 from typing import Dict
 
-import vci.data.utils as utils
+import vci.utils as utils
 
 
 log = logging.getLogger(__file__)
