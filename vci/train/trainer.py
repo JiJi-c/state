@@ -94,11 +94,14 @@ def main(cfg):
                  LogLR(100),
                  RichProgressBar()]
 
+    max_steps = -1
     if cfg.experiment.profile.enable_profiler:
         callbacks.append(ProfilerCallback(cfg=cfg))
+        max_steps = cfg.experiment.profile.max_steps
 
     val_interval = int(cfg.experiment.val_check_interval * cfg.experiment.num_gpus_per_node * cfg.experiment.num_nodes)
     trainer = L.Trainer(max_epochs=cfg.experiment.num_epochs,
+                        max_steps=max_steps,
                         callbacks=callbacks,
                         devices=cfg.experiment.num_gpus_per_node,
                         num_nodes=cfg.experiment.num_nodes,

@@ -5,6 +5,7 @@ experiment:
   profile:
     enable_profiler: false
     profile_steps: [10, 100]
+    max_steps: 110 # This is used only when profile is enabled
   num_epochs: 16
   num_nodes: 1
   num_gpus_per_node: 1
