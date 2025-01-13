@@ -2,15 +2,18 @@ experiment:
   name: "run_1"
   local: "local"
   compiled: false
+  profile:
+    enable_profiler: false
+    profile_steps: [10, 100]
   num_epochs: 16
   num_nodes: 1
-  num_gpus_per_node: 2
+  num_gpus_per_node: 1
   master: localhost
   port: 12355
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.01 # Use 1% of validation dataset
   checkpoint:
-    path: /scratch/ctc/ML/vci/checkpoint/pretrain
+    path: /large_storage/ctc/userspace/rajesh.ilango/chkpt/vci
     save_top_k: 4
     monitor: trainer/train_loss
     every_n_train_steps: 1000
@@ -20,7 +23,7 @@ wandb:
 
 embeddings:
   esm2:
-    checkpoint: "/scratch/ctc/ML/uce/all_species_pe_tokens.torch"
+    checkpoint: /scratch/ctc/ML/uce/all_species_pe_tokens.torch
     embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     # TODO: Eliminate the need for these attributes. This informtation can be
     # read from the above file.
@@ -29,10 +32,10 @@ embeddings:
 
 dataset:
   name: "vci"
-  train: "/scratch/ctc/ML/vci/h5ad_recount_train.csv"
-  test: "/scratch/ctc/ML/vci/h5ad_recount_test.csv"
-  data_dir: "/large_storage/ctc/ML/data/cell/recount/czi_processed"
-  protein_emb_file_format: "/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch"
+  train: /scratch/ctc/ML/uce/h5ad_dataset.csv
+  test: /scratch/ctc/ML/uce/h5ad_test_dataset.csv
+  data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed/
+  protein_emb_file_format: /scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3
