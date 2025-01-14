@@ -1,16 +1,23 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import math
 import anndata
+import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
 from torch import nn, Tensor
-from torch.nn import TransformerEncoder, TransformerEncoderLayer, BCEWithLogitsLoss
+from torch.nn import (TransformerEncoder,
+                      TransformerEncoderLayer,
+                      BCEWithLogitsLoss)
 
 import sys
 sys.path.append('../')
 import torch
 import lightning as L
 
+from tqdm.auto import tqdm
 from typing import Any
 from torch.optim.lr_scheduler import (ChainedScheduler,
                                       LinearLR,
@@ -160,12 +167,15 @@ class LitUCEModel(L.LightningModule):
                                        adata=adata,
                                        adata_name=dataset_name)
         embs = []
-        for _, batch in enumerate(dataloader):
+        for batch in tqdm(dataloader,
+                          position=0,
+                          leave=True,
+                          ascii=True,
+                          dynamic_ncols=True,
+                          desc=f"Embeddings for {dataset_name}"):
             torch.cuda.empty_cache()
             _, _, emb = self._compute_embedding_for_batch(batch)
             embs.append(emb.cpu().numpy())
-            if len(embs) > 100:
-                break
         return embs
 
     def forward(self, src: Tensor, mask: Tensor):
@@ -216,6 +226,9 @@ class LitUCEModel(L.LightningModule):
 
     def on_validation_epoch_end(self):
         if self.cfg.validations.diff_exp:
+            if self.global_step < self.cfg.experiment.val_check_interval:
+                return
+
             if self.cnt_de_genes is None:
                 de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
                 sc.tl.rank_genes_groups(de_val_adata,
@@ -231,8 +244,8 @@ class LitUCEModel(L.LightningModule):
                 tmp_adata,
                 self.cfg.validations.diff_exp.dataset_name)
             adata_emb = anndata.AnnData(np.vstack(X),
-                                    obs=tmp_adata.obs,
-                                    obsm=tmp_adata.obsm)
+                                        obs=tmp_adata.obs,
+                                        obsm=tmp_adata.obsm)
 
             sc.tl.rank_genes_groups(adata_emb,
                                     groupby=self.cfg.validations.diff_exp.obs_pert_col,
@@ -240,12 +253,11 @@ class LitUCEModel(L.LightningModule):
                                     rankby_abs=True,
                                     n_genes=self.cfg.validations.diff_exp.top_k_rank,
                                     method=self.cfg.validations.diff_exp.method)
-            val_cnt_de_genes = pd.DataFrame(tmp_adata.uns['rank_genes_groups']['names'])
+            val_cnt_de_genes = pd.DataFrame(adata_emb.uns['rank_genes_groups']['names'])
             del tmp_adata
 
             de_metrics = compute_gene_overlap_cross_pert(self.cnt_de_genes, val_cnt_de_genes)
-            self.log("validation/de",
-                     np.array(list(de_metrics.values())).mean())
+            self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
     def configure_optimizers(self):
         # Marcel Code

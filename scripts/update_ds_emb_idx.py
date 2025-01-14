@@ -1,3 +1,5 @@
+#!/bin/env python3
+
 import logging
 import argparse
 import anndata
@@ -38,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--emb_idx_file",
         type=str,
-        default='/large_storage/ctc/public/dataset/vci/gene_embidx_mapping.torch',
+        default='/large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch',
         help="Path to save the output summary file",
     )
     parser.add_argument(
