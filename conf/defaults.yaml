@@ -11,7 +11,7 @@ experiment:
   num_gpus_per_node: 1
   master: localhost
   port: 12355
-  val_check_interval: 10 # Number of steps between tests
+  val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.01 # Use 1% of validation dataset
   checkpoint:
     path: /large_storage/ctc/userspace/rajesh.ilango/chkpt/vci
