@@ -1,14 +1,14 @@
+import os
 import logging
 import torch
 import anndata
 
 from tqdm import tqdm
 from torch import nn
-from torch.utils.data import DataLoader
 
 from vci.model import LitUCEModel
 from vci.train.trainer import get_ESM2_embeddings
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, create_dataloader
 
 
 log = logging.getLogger(__name__)
@@ -23,8 +23,10 @@ class Inference():
         self.protein_embeds = None
 
     def load_model(self, checkpoint):
-        # Load and initialize model for eval
+        if self.model:
+            raise ValueError('Model already initialized')
 
+        # Load and initialize model for eval
         self.model = LitUCEModel.load_from_checkpoint(checkpoint)
         all_pe = get_ESM2_embeddings(self._vci_conf)
         all_pe.requires_grad = False
@@ -35,26 +37,15 @@ class Inference():
 
         self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
 
-    def create_dataloader(self,
-                          datasets,
-                          shape_dict,
-                          batch_size=32,
-                          workers=1,
-                          data_dir=None):
-        if data_dir:
-            self._vci_conf.dataset.data_dir = data_dir
-
-        dataset = H5adDatasetSentences(self._vci_conf,
-                                       datasets=datasets,
-                                       shape_dict=shape_dict)
-        sentence_collator = VCIDatasetSentenceCollator(self._vci_conf)
-        dataloader = DataLoader(dataset,
-                                batch_size=batch_size,
-                                shuffle=False,
-                                collate_fn=sentence_collator,
-                                num_workers=workers,
-                                persistent_workers=True)
-        return dataloader
+    def init_from_model(self, model, protein_embeds=None):
+        '''
+        Intended for use during training
+        '''
+        self.model = model
+        if protein_embeds:
+            self.protein_embeds = protein_embeds
+        else:
+            self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
 
     def get_gene_embedding(self, genes):
         protein_embeds = [self.protein_embeds[x] \
@@ -82,6 +73,24 @@ class Inference():
                 embeddings = embedding.detach().cpu().numpy()
 
                 yield embeddings
+
+    def encode_adata(self,
+                     input_adata_path: str,
+                     output_adata_path: str,
+                     emb_key: str = 'X_emb',
+                     batch_size: int = 32,):
+        shape_dict = self.__load_dataset_meta(input_adata_path)
+        datasets = list(shape_dict.keys())
+
+        dataloader = create_dataloader(datasets=datasets,
+                                       shape_dict=shape_dict,
+                                       batch_size=batch_size,
+                                       data_dir=os.path.dirname(input_adata_path))
+
+        for embeddings in self.encode(dataloader):
+            self._save_data(input_adata_path, output_adata_path, emb_key, embeddings)
+
+        return output_adata_path
 
     def decode(self, adata_path: str, emb_key: str, batch_size=32):
         adata = anndata.read_h5ad(adata_path)

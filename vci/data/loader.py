@@ -8,20 +8,66 @@ import numpy as np
 
 from typing import Dict
 
+from torch.utils.data import DataLoader
 import vci.utils as utils
 
 
 log = logging.getLogger(__file__)
 
 
+def create_dataloader(cfg,
+                      batch_size=32,
+                      workers=1,
+                      data_dir=None,
+                      datasets=None,
+                      shape_dict=None,
+                      adata=None,
+                      adata_name=None):
+        '''
+        Expected to be used for inference
+        Either datasets and shape_dict or adata and adata_name should be provided
+        '''
+        if datasets is None and adata is None:
+            raise ValueError('Either datasets and shape_dict or adata and adata_name should be provided')
+
+        if data_dir:
+            cfg.dataset.data_dir = data_dir
+
+        dataset = H5adDatasetSentences(cfg,
+                                       datasets=datasets,
+                                       shape_dict=shape_dict,
+                                       adata=adata,
+                                       adata_name=adata_name)
+        sentence_collator = VCIDatasetSentenceCollator(cfg)
+        dataloader = DataLoader(dataset,
+                                batch_size=batch_size,
+                                shuffle=False,
+                                collate_fn=sentence_collator,
+                                num_workers=workers,
+                                persistent_workers=True)
+        return dataloader
+
+
 class H5adDatasetSentences(data.Dataset):
-    def __init__(self, cfg, test=False, datasets=None, shape_dict=None) -> None:
+    def __init__(self,
+                 cfg,
+                 test=False,
+                 datasets=None,
+                 shape_dict=None,
+                 adata=None,
+                 adata_name=None) -> None:
         super(H5adDatasetSentences, self).__init__()
 
-        if datasets is None:
+        self.adata = None
+        self.adata_name = adata_name
+        if adata is not None:
+            self.adata = adata
+            self.datasets = [adata_name]
+            self.shapes_dict = {self.datasets[0]: adata.shape}
+        elif datasets is None:
             ds_path = cfg.dataset.train
             if test:
-                ds_path = cfg.dataset.test
+                ds_path = cfg.dataset.val
             _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
@@ -61,6 +107,12 @@ class H5adDatasetSentences(data.Dataset):
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
+            if self.adata is not None:
+                counts = torch.tensor(self.adata.X[idx].todense())
+                dataset = self.adata_name
+                dataset_num = 0
+                return counts, idx, dataset, dataset_num
+
             dataset, ds_idx = self._compute_index(idx)
             h5f = self.dataset_file(dataset)
             attrs = dict(h5f['X'].attrs)

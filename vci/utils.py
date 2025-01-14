@@ -24,6 +24,19 @@ def get_latest_checkpoint(cfg):
     return run_name, chk
 
 
+def compute_gene_overlap_cross_pert(DE_pred, DE_true,
+                                    control_pert='non-targeting', k=50):
+
+    all_overlaps = {}
+    for itr, c in enumerate(DE_pred.index):
+        if c == control_pert:
+            continue
+        all_overlaps[c] = len(set(DE_true.loc[c].values).intersection(
+                              set(DE_pred.loc[c].values))) /k
+
+    return all_overlaps
+
+
 def parse_chk_info(chk):
     chk_filename = Path(chk)
     epoch = chk_filename.stem.split('_')[-1].split('-')[1].split('=')[1]

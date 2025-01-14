@@ -1,16 +1,21 @@
 import math
+import pandas as pd
+import scanpy as sc
 from torch import nn, Tensor
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, BCEWithLogitsLoss
 
 import sys
 sys.path.append('../')
-from typing import Any
 import torch
 import lightning as L
+
+from typing import Any
 from torch.optim.lr_scheduler import (ChainedScheduler,
                                       LinearLR,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
+from vci.data import create_dataloader
+from vci.utils import compute_gene_overlap_cross_pert
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -130,6 +135,33 @@ class LitUCEModel(L.LightningModule):
         self.pe_embedding = None
         self.step_ctr = 0
 
+        self.cnt_de_genes = None
+
+    def _compute_embedding_for_batch(self, batch):
+        batch_sentences = batch[0]
+        mask = batch[1]
+        X = batch[2]
+        Y = batch[3]
+
+        batch_sentences = self.pe_embedding(batch_sentences.long())
+        X = self.pe_embedding(X.long())
+
+        # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
+        batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
+        _, embedding = self.forward(batch_sentences, mask=mask)
+
+        X = self.gene_embedding_layer(X)
+        embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
+        return X, Y, embs
+
+    def _compute_embedding_for_dataloader(self, adata):
+        dataloader = create_dataloader(self.cfg, adata=adata, adata_name='adata')
+        embs = []
+        for _, batch in enumerate(dataloader):
+            torch.cuda.empty_cache()
+            embs.append(self._compute_embedding_for_batch(batch))
+        return embs
+
     def forward(self, src: Tensor, mask: Tensor):
         """
         Args:
@@ -149,25 +181,7 @@ class LitUCEModel(L.LightningModule):
 
     def shared_step(self, batch, batch_idx):
         criterion = BCEWithLogitsLoss()
-        batch_sentences = batch[0]
-        mask = batch[1]
-        cell_outputs_X_pe = batch[2]
-        cell_outputs_Y = batch[3]
-        # dataset_nums = batch[5]
-
-        batch_sentences = self.pe_embedding(
-            batch_sentences.long())
-        cell_outputs_X_pe = self.pe_embedding(
-            cell_outputs_X_pe.long())
-        # dataset_num_emb = self.dataset_num_embedding(dataset_nums) # batch x emb shap
-
-        batch_sentences = nn.functional.normalize(batch_sentences, dim=2) # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
-        _, embedding = self.forward(batch_sentences, mask=mask)
-
-        X = cell_outputs_X_pe
-        Y = cell_outputs_Y
-        X = self.gene_embedding_layer(X)
-        embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
+        X, Y, embs = self._compute_embedding_for_batch(batch)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
@@ -192,6 +206,32 @@ class LitUCEModel(L.LightningModule):
         loss = self.shared_step(batch, batch_idx)
         self.log("validation/val_loss", loss)
         return loss
+
+    def on_validation_epoch_end(self):
+        if self.cfg.validations.diff_exp:
+            if self.cnt_de_genes is None:
+                de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
+                sc.tl.rank_genes_groups(de_val_adata,
+                                        groupby=self.cfg.validations.diff_exp.obs_pert_col,
+                                        reference=self.cfg.validations.diff_exp.obs_filter_label,
+                                        rankby_abs=True,
+                                        n_genes=self.cfg.validations.diff_exp.top_k_rank,
+                                        method=self.cfg.validations.diff_exp.method)
+                self.cnt_de_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
+
+            tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
+            tmp_adata.X = self._compute_embedding_for_dataloader(tmp_adata)
+
+            sc.tl.rank_genes_groups(tmp_adata.X,
+                                    groupby=self.cfg.validations.diff_exp.obs_pert_col,
+                                    reference=self.cfg.validations.diff_exp.obs_filter_label,
+                                    rankby_abs=True,
+                                    n_genes=self.cfg.validations.diff_exp.top_k_rank,
+                                    method=self.cfg.validations.diff_exp.method)
+            val_cnt_de_genes = pd.DataFrame(self.t_adata.uns['rank_genes_groups']['names'])
+
+            de_metrics = compute_gene_overlap_cross_pert(self.cnt_de_genes, val_cnt_de_genes)
+            print(de_metrics)
 
     def configure_optimizers(self):
         # Marcel Code
