@@ -170,9 +170,8 @@ class LitUCEModel(L.LightningModule):
         for batch in tqdm(dataloader,
                           position=0,
                           leave=True,
-                          ascii=True,
-                          dynamic_ncols=True,
-                          desc=f"Embeddings for {dataset_name}"):
+                          ncols=100,
+                          desc=f"Embeddings for {dataset_name}",):
             torch.cuda.empty_cache()
             _, _, emb = self._compute_embedding_for_batch(batch)
             embs.append(emb.cpu().numpy())
