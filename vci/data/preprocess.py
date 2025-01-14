@@ -1,15 +1,10 @@
 import os
 import logging
-import argparse
 
 import torch
 import scanpy as sc
 
 from pathlib import Path
-'''
-Creates a CSV file with following columns.
-    #,path,species,num_cells,num_genes,names
-'''
 
 
 logging.basicConfig(
@@ -40,17 +35,10 @@ class Preprocessor:
         self.gene_embs = {gene.lower(): emb for gene, emb in self.gene_embs.items()}
         self.gene_filter = list(self.gene_embs.keys())
 
-        if not os.path.exists(summary_file):
-            with open(summary_file, 'w') as f:
-                f.write('species,path,names,num_cells,num_genes\n')
-
-    def _update_dataset_idx(self, dataset, idx):
-        dataset_emb_idx = {}
-        if os.path.exists(self.emb_idx_file):
-            dataset_emb_idx = torch.load(self.emb_idx_file)
-
-        dataset_emb_idx[dataset] = idx
-        torch.save(dataset_emb_idx, self.emb_idx_file)
+        if self.summary_file:
+            if not os.path.exists(summary_file):
+                with open(summary_file, 'w') as f:
+                    f.write('species,path,names,num_cells,num_genes\n')
 
     def _update_summary(self, adata, species, path, dataset):
         num_cells = adata.X.shape[0]
@@ -84,10 +72,24 @@ class Preprocessor:
 
         adata.var.feature_name = adata.var.feature_name.str.lower()
 
-        emb_idxs = torch.tensor([self.gene_filter.index(k) + self.emb_offset \
-                                 for k in adata.var.feature_name]).long()
+        return adata, species
 
-        return adata, species, emb_idxs
+    def update_dataset_emb_idx(self, adata, dataset):
+        if 'feature_name' not in adata.var:
+            adata.var['feature_name'] = adata.var.index.values
+            adata.var.feature_name = adata.var.feature_name.str.lower()
+        emb_idxs = torch.tensor([self.gene_filter.index(k) + self.emb_offset \
+                            for k in adata.var.feature_name]).long()
+
+        dataset_emb_idx = {}
+        if os.path.exists(self.emb_idx_file):
+            dataset_emb_idx = torch.load(self.emb_idx_file)
+
+        if dataset in dataset_emb_idx:
+            raise ValueError(f'{dataset} already exists in the emb_idx_file')
+
+        dataset_emb_idx[dataset] = emb_idxs
+        torch.save(dataset_emb_idx, self.emb_idx_file)
 
     def process(self):
         h5ad_files = [f.name for f in Path(self.source).iterdir() if f.is_file()]
@@ -110,13 +112,13 @@ class Preprocessor:
 
             if not os.path.exists(adata_tmp_path):
                 try:
-                    adata, species, emb_idxs = \
+                    adata, species = \
                         self._process(os.path.join(self.source, h5ad_file))
 
                     del adata.uns
                     adata.write(adata_tmp_path)
 
-                    self._update_dataset_idx(dataset, emb_idxs)
+                    self.update_dataset_emb_idx(adata, dataset)
                     self._update_summary(adata, species, path, dataset)
                     del adata
                 except Exception as ex:
@@ -124,61 +126,3 @@ class Preprocessor:
                     continue
 
             os.rename(adata_tmp_path, adata_path)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description="Create dataset list CSV file"
-    )
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        # required=True,
-        default ='/home/yhr/scRecount/data/recount/mouse',
-        #default='/common_datasets/external/references/cellxgene',
-        help="Directory containing all H5AD files for training",
-    )
-    parser.add_argument(
-        "--destination",
-        type=str,
-        # required=True,
-        default='/large_storage/ctc/ML/data/cell/recount/processed',
-        help="Directory to store the processed files",
-    )
-    parser.add_argument(
-        "--summary_file",
-        type=str,
-        # required=True,
-        default='/scratch/ctc/ML/vci/h5ad_recount.csv',
-        help="Path to save the output summary file",
-    )
-    parser.add_argument(
-        "--emb_idx_file",
-        type=str,
-        # required=True,
-        default='/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch',
-        help="Path to save the output summary file",
-    )
-    parser.add_argument(
-        "--embedding_file",
-        type=str,
-        # required=True,
-        default='/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt',
-        help="Path to save the output summary file",
-    )
-    parser.add_argument(
-        "--species",
-        type=str,
-        # required=True,
-        default='mouse',
-        help="Path to save the output summary file",
-    )
-
-    args = parser.parse_args()
-    preprocess = Preprocessor(args.species,
-                              args.data_path,
-                              args.destination,
-                              args.summary_file,
-                              args.embedding_file,
-                              args.emb_idx_file)
-    preprocess.process()

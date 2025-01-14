@@ -39,6 +39,7 @@ validations:
     top_k_rank: 50
     method: null
     dataset: /large_storage/ctc/public/dataset/vci/train_val_ds/rpe1.h5ad
+    dataset_name: rpe1
 
 dataset:
   name: "vci"
@@ -46,7 +47,7 @@ dataset:
   val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
   # test: /scratch/ctc/ML/uce/h5ad_test_dataset.csv
   data_dir: /large_storage/ctc/datasets/cellxgene/processed/
-  protein_emb_file_format: /scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch
+  protein_emb_file_format: /large_storage/ctc/public/dataset/vci/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3

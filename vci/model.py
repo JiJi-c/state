@@ -1,4 +1,6 @@
 import math
+import anndata
+import numpy as np
 import pandas as pd
 import scanpy as sc
 from torch import nn, Tensor
@@ -138,9 +140,9 @@ class LitUCEModel(L.LightningModule):
         self.cnt_de_genes = None
 
     def _compute_embedding_for_batch(self, batch):
-        batch_sentences = batch[0]
-        mask = batch[1]
-        X = batch[2]
+        batch_sentences = batch[0].to(self.device)
+        mask = batch[1].to(self.device)
+        X = batch[2].to(self.device)
         Y = batch[3]
 
         batch_sentences = self.pe_embedding(batch_sentences.long())
@@ -151,15 +153,19 @@ class LitUCEModel(L.LightningModule):
         _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
-        embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
-        return X, Y, embs
+        return X, Y, embedding
 
-    def _compute_embedding_for_dataloader(self, adata):
-        dataloader = create_dataloader(self.cfg, adata=adata, adata_name='adata')
+    def _compute_embedding_for_adata(self, adata, dataset_name):
+        dataloader = create_dataloader(self.cfg,
+                                       adata=adata,
+                                       adata_name=dataset_name)
         embs = []
         for _, batch in enumerate(dataloader):
             torch.cuda.empty_cache()
-            embs.append(self._compute_embedding_for_batch(batch))
+            _, _, emb = self._compute_embedding_for_batch(batch)
+            embs.append(emb.cpu().numpy())
+            if len(embs) > 100:
+                break
         return embs
 
     def forward(self, src: Tensor, mask: Tensor):
@@ -182,6 +188,7 @@ class LitUCEModel(L.LightningModule):
     def shared_step(self, batch, batch_idx):
         criterion = BCEWithLogitsLoss()
         X, Y, embs = self._compute_embedding_for_batch(batch)
+        embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
@@ -220,18 +227,25 @@ class LitUCEModel(L.LightningModule):
                 self.cnt_de_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
 
             tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
-            tmp_adata.X = self._compute_embedding_for_dataloader(tmp_adata)
+            X = self._compute_embedding_for_adata(
+                tmp_adata,
+                self.cfg.validations.diff_exp.dataset_name)
+            adata_emb = anndata.AnnData(np.vstack(X),
+                                    obs=tmp_adata.obs,
+                                    obsm=tmp_adata.obsm)
 
-            sc.tl.rank_genes_groups(tmp_adata.X,
+            sc.tl.rank_genes_groups(adata_emb,
                                     groupby=self.cfg.validations.diff_exp.obs_pert_col,
                                     reference=self.cfg.validations.diff_exp.obs_filter_label,
                                     rankby_abs=True,
                                     n_genes=self.cfg.validations.diff_exp.top_k_rank,
                                     method=self.cfg.validations.diff_exp.method)
-            val_cnt_de_genes = pd.DataFrame(self.t_adata.uns['rank_genes_groups']['names'])
+            val_cnt_de_genes = pd.DataFrame(tmp_adata.uns['rank_genes_groups']['names'])
+            del tmp_adata
 
             de_metrics = compute_gene_overlap_cross_pert(self.cnt_de_genes, val_cnt_de_genes)
-            print(de_metrics)
+            self.log("validation/de",
+                     np.array(list(de_metrics.values())).mean())
 
     def configure_optimizers(self):
         # Marcel Code
