@@ -1,5 +1,5 @@
 experiment:
-  name: "run_1"
+  name: "val_de"
   local: "local"
   compiled: false
   profile:
@@ -11,8 +11,8 @@ experiment:
   num_gpus_per_node: 1
   master: localhost
   port: 12355
-  val_check_interval: 10 # Number of steps between tests
-  limit_val_batches: 0.01 # Use 1% of validation dataset
+  val_check_interval: 1000 # Number of steps between tests
+  limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
@@ -34,11 +34,12 @@ embeddings:
 validations:
   diff_exp:
     enable: true
+    eval_interval_multiple: 5
     obs_pert_col: gene
     obs_filter_label: non-targeting
     top_k_rank: 50
     method: null
-    dataset: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
+    dataset: /large_storage/ctc/datasets/cellxgene/processed/rpe1_top5000_variable.h5ad
     dataset_name: rpe1_top5000_variable
 
 dataset:

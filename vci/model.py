@@ -3,7 +3,6 @@ warnings.filterwarnings("ignore")
 
 import math
 import anndata
-import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -224,8 +223,14 @@ class LitUCEModel(L.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        if self.cfg.validations.diff_exp:
-            if self.global_step < self.cfg.experiment.val_check_interval:
+        if self.global_rank != 0:
+            return
+
+        current_step = self.global_step
+        if self.cfg.validations.diff_exp.enable:
+            interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
+            if current_step < interval or current_step % interval != 0:
+                # Not to run after every eval epoch and before starting the training
                 return
 
             if self.cnt_de_genes is None:
