@@ -26,13 +26,12 @@ def get_latest_checkpoint(cfg):
 
 def compute_gene_overlap_cross_pert(DE_pred, DE_true,
                                     control_pert='non-targeting', k=50):
-
     all_overlaps = {}
-    for itr, c in enumerate(DE_pred.index):
-        if c == control_pert:
+    for c_gene in DE_pred.index:
+        if c_gene == control_pert:
             continue
-        all_overlaps[c] = len(set(DE_true.loc[c].values).intersection(
-                              set(DE_pred.loc[c].values))) /k
+        all_overlaps[c_gene] = len(set(DE_true.loc[c_gene].values).intersection(
+                              set(DE_pred.loc[c_gene].values))) /k
 
     return all_overlaps
 

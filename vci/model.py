@@ -143,7 +143,8 @@ class LitUCEModel(L.LightningModule):
         self.pe_embedding = None
         self.step_ctr = 0
 
-        self.cnt_de_genes = None
+        self.true_top_genes = None
+        self.protein_embeds = None
 
     def _compute_embedding_for_batch(self, batch):
         batch_sentences = batch[0].to(self.device)
@@ -161,11 +162,27 @@ class LitUCEModel(L.LightningModule):
         X = self.gene_embedding_layer(X)
         return X, Y, embedding
 
-    def _compute_embedding_for_adata(self, adata, dataset_name):
+    def get_gene_embedding(self, genes):
+        if self.protein_embeds is None:
+            self.protein_embeds = torch.load(self.cfg.embeddings.esm2.embedding_file)
+        protein_embeds = [self.protein_embeds[x] \
+                          if x in self.protein_embeds else torch.zeros(5120) for x in genes]
+        protein_embeds = torch.stack(protein_embeds).to(self.device)
+        return self.gene_embedding_layer(protein_embeds)
+
+    @staticmethod
+    def resize_batch(cell_embeds, task_embeds):
+        A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)
+        B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)
+        mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
+        return mlp_input
+
+    def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
                                        adata_name=dataset_name)
-        embs = []
+        gene_embeds = self.get_gene_embedding(adata.var.index)
+        logprobs_batchs = []
         for batch in tqdm(dataloader,
                           position=0,
                           leave=True,
@@ -173,8 +190,31 @@ class LitUCEModel(L.LightningModule):
                           desc=f"Embeddings for {dataset_name}",):
             torch.cuda.empty_cache()
             _, _, emb = self._compute_embedding_for_batch(batch)
-            embs.append(emb.cpu().numpy())
-        return embs
+
+            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds)
+            logprobs_batch = self.binary_decoder(merged_embs)
+            logprobs_batch = logprobs_batch.detach().cpu().numpy()
+            logprobs_batchs.append(logprobs_batch.squeeze())
+
+        logprobs_batchs = np.vstack(logprobs_batchs)
+        probs_df = pd.DataFrame(logprobs_batchs)
+        probs_df[pert_col] = adata.obs[pert_col].values
+
+        # Read config properties
+        k = self.cfg.validations.diff_exp.top_k_rank
+        pert_col = self.cfg.validations.diff_exp.obs_pert_col
+        non_targating_label = self.cfg.validations.diff_exp.obs_filter_label
+
+        probs_df = probs_df.groupby(pert_col).mean()
+        ctrl = probs_df.loc[non_targating_label].values
+        pert_effects = np.abs(probs_df - ctrl)
+        top_k_indices = np.argsort(pert_effects.values, axis=1)[:, -k:][:, ::-1]
+        top_k_genes = np.array(adata.var.index)[top_k_indices]
+
+        de_genes = pd.DataFrame(top_k_genes)
+        de_genes.index = pert_effects.index.values
+
+        return de_genes
 
     def forward(self, src: Tensor, mask: Tensor):
         """
@@ -229,11 +269,14 @@ class LitUCEModel(L.LightningModule):
         current_step = self.global_step
         if self.cfg.validations.diff_exp.enable:
             interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
+
+            # WAR for the global step being off by 1 when the training is restarted
+            current_step = current_step - (current_step % 10)
             if current_step < interval or current_step % interval != 0:
                 # Not to run after every eval epoch and before starting the training
                 return
 
-            if self.cnt_de_genes is None:
+            if self.true_top_genes is None:
                 de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
                 sc.tl.rank_genes_groups(de_val_adata,
                                         groupby=self.cfg.validations.diff_exp.obs_pert_col,
@@ -241,26 +284,16 @@ class LitUCEModel(L.LightningModule):
                                         rankby_abs=True,
                                         n_genes=self.cfg.validations.diff_exp.top_k_rank,
                                         method=self.cfg.validations.diff_exp.method)
-                self.cnt_de_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
+                self.true_top_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
+                self.true_top_genes = self.true_top_genes.T
+                del de_val_adata
 
             tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
-            X = self._compute_embedding_for_adata(
-                tmp_adata,
-                self.cfg.validations.diff_exp.dataset_name)
-            adata_emb = anndata.AnnData(np.vstack(X),
-                                        obs=tmp_adata.obs,
-                                        obsm=tmp_adata.obsm)
+            pred_exp = self._predict_exp_for_adata(tmp_adata,
+                                                   self.cfg.validations.diff_exp.dataset_name,
+                                                   self.cfg.validations.diff_exp.obs_pert_col)
 
-            sc.tl.rank_genes_groups(adata_emb,
-                                    groupby=self.cfg.validations.diff_exp.obs_pert_col,
-                                    reference=self.cfg.validations.diff_exp.obs_filter_label,
-                                    rankby_abs=True,
-                                    n_genes=self.cfg.validations.diff_exp.top_k_rank,
-                                    method=self.cfg.validations.diff_exp.method)
-            val_cnt_de_genes = pd.DataFrame(adata_emb.uns['rank_genes_groups']['names'])
-            del tmp_adata
-
-            de_metrics = compute_gene_overlap_cross_pert(self.cnt_de_genes, val_cnt_de_genes)
+            de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
             self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
     def configure_optimizers(self):

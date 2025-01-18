@@ -37,9 +37,9 @@ validations:
     eval_interval_multiple: 5
     obs_pert_col: gene
     obs_filter_label: non-targeting
-    top_k_rank: 50
+    top_k_rank: 200
     method: null
-    dataset: /large_storage/ctc/datasets/cellxgene/processed/rpe1_top5000_variable.h5ad
+    dataset: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
     dataset_name: rpe1_top5000_variable
 
 dataset:

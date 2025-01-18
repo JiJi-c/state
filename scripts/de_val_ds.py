@@ -7,7 +7,7 @@ Filters out cells with top 5000 expressed genes
 import scanpy as sc
 import numpy as np
 
-n_top_genes = 5000
+n_top_genes = 500
 input_file = '/large_storage/ctc/datasets/vci/validation/rpe1.h5ad'
 output_file = f'/large_storage/ctc/datasets/vci/validation/rpe1_top{n_top_genes}_variable.h5ad'
 

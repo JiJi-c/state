@@ -53,13 +53,6 @@ class Inference():
         protein_embeds = torch.stack(protein_embeds).to(self.model.device)
         return self.model.gene_embedding_layer(protein_embeds)
 
-    def resize_batch(self, cell_embeds, task_embeds):
-        A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)  # (batch_size, num_genes, embed_dim)
-        B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)  # (batch_size, num_genes, embed_dim)
-        # Concatenating along the last dimension (embedding dimension)
-        mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
-        return mlp_input
-
     def encode(self, dataloader):
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
@@ -102,7 +95,7 @@ class Inference():
         for i in tqdm(range(0, cell_embs.size(0), batch_size),
                       total=int(cell_embs.size(0) // batch_size)):
             cell_embeds_batch = cell_embs[i:i + batch_size]
-            merged_embs = self.resize_batch(cell_embeds_batch, gene_embeds)
+            merged_embs = LitUCEModel.resize_batch(cell_embeds_batch, gene_embeds)
             logprobs_batch = self.model.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
             yield logprobs_batch.squeeze()
