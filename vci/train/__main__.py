@@ -27,10 +27,10 @@ def main(config_file):
     os.environ['SLURM_NTASKS_PER_NODE'] = str(cfg.experiment.num_gpus_per_node)
 
     # TODO: Not sure why this is set. Delete if not necessary.
-    os.environ["OMP_NUM_THREADS"] = "10" # export OMP_NUM_THREADS=4
-    os.environ["OPENBLAS_NUM_THREADS"] = "10" # export OPENBLAS_NUM_THREADS=4
-    os.environ["MKL_NUM_THREADS"] = "10" # export MKL_NUM_THREADS=6
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "10" # export VECLIB_MAXIMUM_THREADS=4
+    os.environ["OMP_NUM_THREADS"] = "10"  # export OMP_NUM_THREADS=4
+    os.environ["OPENBLAS_NUM_THREADS"] = "10"  # export OPENBLAS_NUM_THREADS=4
+    os.environ["MKL_NUM_THREADS"] = "10"  # export MKL_NUM_THREADS=6
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "10"  # export VECLIB_MAXIMUM_THREADS=4
     os.environ["NUMEXPR_NUM_THREADS"] = "10"
 
     log.info(f'*************** Training {cfg.experiment.name} ***************')

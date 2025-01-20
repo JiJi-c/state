@@ -1,16 +1,29 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import math
+import anndata
+import numpy as np
+import pandas as pd
+import scanpy as sc
 from torch import nn, Tensor
-from torch.nn import TransformerEncoder, TransformerEncoderLayer, BCEWithLogitsLoss
+from torch.nn import (TransformerEncoder,
+                      TransformerEncoderLayer,
+                      BCEWithLogitsLoss)
 
 import sys
 sys.path.append('../')
-from typing import Any
 import torch
 import lightning as L
+
+from tqdm.auto import tqdm
+from typing import Any
 from torch.optim.lr_scheduler import (ChainedScheduler,
                                       LinearLR,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
+from vci.data import create_dataloader
+from vci.utils import compute_gene_overlap_cross_pert
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -86,8 +99,7 @@ class LitUCEModel(L.LightningModule):
         self.dropout = dropout
         self.max_lr = max_lr
         # Encodes Tokens
-        self.encoder = nn.Sequential(#SkipBlock(token_dim), # Add an extra layer here with skip connection
-                                     nn.Linear(token_dim, d_model, bias=True),
+        self.encoder = nn.Sequential(nn.Linear(token_dim, d_model, bias=True),
                                      nn.LayerNorm(d_model), # Moved before activation
                                      nn.SiLU(), # Changed to SiLU
                                     )
@@ -128,8 +140,81 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.gene_embedding_layer = torch.compile(self.gene_embedding_layer)
 
-        self.pe_embedding = nn.Embedding(emb_cnt, emb_size)
+        self.pe_embedding = None
         self.step_ctr = 0
+
+        self.true_top_genes = None
+        self.protein_embeds = None
+
+    def _compute_embedding_for_batch(self, batch):
+        batch_sentences = batch[0].to(self.device)
+        mask = batch[1].to(self.device)
+        X = batch[2].to(self.device)
+        Y = batch[3]
+
+        batch_sentences = self.pe_embedding(batch_sentences.long())
+        X = self.pe_embedding(X.long())
+
+        # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
+        batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
+        _, embedding = self.forward(batch_sentences, mask=mask)
+
+        X = self.gene_embedding_layer(X)
+        return X, Y, embedding
+
+    def get_gene_embedding(self, genes):
+        if self.protein_embeds is None:
+            self.protein_embeds = torch.load(self.cfg.embeddings.esm2.embedding_file)
+        protein_embeds = [self.protein_embeds[x] \
+                          if x in self.protein_embeds else torch.zeros(5120) for x in genes]
+        protein_embeds = torch.stack(protein_embeds).to(self.device)
+        return self.gene_embedding_layer(protein_embeds)
+
+    @staticmethod
+    def resize_batch(cell_embeds, task_embeds):
+        A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)
+        B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)
+        mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
+        return mlp_input
+
+    def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
+        dataloader = create_dataloader(self.cfg,
+                                       adata=adata,
+                                       adata_name=dataset_name)
+        gene_embeds = self.get_gene_embedding(adata.var.index)
+        logprobs_batchs = []
+        for batch in tqdm(dataloader,
+                          position=0,
+                          leave=True,
+                          ncols=100,
+                          desc=f"Embeddings for {dataset_name}",):
+            torch.cuda.empty_cache()
+            _, _, emb = self._compute_embedding_for_batch(batch)
+
+            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds)
+            logprobs_batch = self.binary_decoder(merged_embs)
+            logprobs_batch = logprobs_batch.detach().cpu().numpy()
+            logprobs_batchs.append(logprobs_batch.squeeze())
+
+        logprobs_batchs = np.vstack(logprobs_batchs)
+        probs_df = pd.DataFrame(logprobs_batchs)
+        probs_df[pert_col] = adata.obs[pert_col].values
+
+        # Read config properties
+        k = self.cfg.validations.diff_exp.top_k_rank
+        pert_col = self.cfg.validations.diff_exp.obs_pert_col
+        non_targating_label = self.cfg.validations.diff_exp.obs_filter_label
+
+        probs_df = probs_df.groupby(pert_col).mean()
+        ctrl = probs_df.loc[non_targating_label].values
+        pert_effects = np.abs(probs_df - ctrl)
+        top_k_indices = np.argsort(pert_effects.values, axis=1)[:, -k:][:, ::-1]
+        top_k_genes = np.array(adata.var.index)[top_k_indices]
+
+        de_genes = pd.DataFrame(top_k_genes)
+        de_genes.index = pert_effects.index.values
+
+        return de_genes
 
     def forward(self, src: Tensor, mask: Tensor):
         """
@@ -148,38 +233,10 @@ class LitUCEModel(L.LightningModule):
         embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
         return gene_output, embedding
 
-
-    def predict(self, cell_embedding, gene_embeddings):
-        gene_embeddings = self.gene_embedding_layer(gene_embeddings)
-        dec = self.binary_decoder \
-            (torch.hstack((cell_embedding, gene_embeddings)))
-        return dec
-
     def shared_step(self, batch, batch_idx):
         criterion = BCEWithLogitsLoss()
-        batch_sentences = batch[0]
-        mask = batch[1]
-        cell_outputs_X_pe = batch[2]
-        cell_outputs_Y = batch[3]
-        # dataset_nums = batch[5]
-
-        batch_sentences = self.pe_embedding(
-            batch_sentences.long())
-        cell_outputs_X_pe = self.pe_embedding(
-            cell_outputs_X_pe.long())
-        # dataset_num_emb = self.dataset_num_embedding(dataset_nums) # batch x emb shap
-
-        batch_sentences = nn.functional.normalize(batch_sentences, dim=2) # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
-
-        _, embedding = self.forward(batch_sentences, mask=mask)
-
-        X = cell_outputs_X_pe
-        Y = cell_outputs_Y
-        X = self.gene_embedding_layer(X)
-        embs = embedding.unsqueeze(1).repeat(1, X.shape[1], 1)
-        # add dataset num to decoder
-        # dataset_num_emb = dataset_num_emb.unsqueeze(1).repeat(1, X.shape[1], 1) # batch x (P+N) x emb
-
+        X, Y, embs = self._compute_embedding_for_batch(batch)
+        embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
         loss = criterion(input=decs.squeeze(), target=Y)
@@ -191,8 +248,6 @@ class LitUCEModel(L.LightningModule):
             else:
                 scheduler.step()
         sch._last_lr = [group['lr'] for group in sch._schedulers[-1].optimizer.param_groups]
-
-        # sch.step(metrics=loss)
         return loss
 
     @torch.compile(disable=True)
@@ -206,6 +261,40 @@ class LitUCEModel(L.LightningModule):
         loss = self.shared_step(batch, batch_idx)
         self.log("validation/val_loss", loss)
         return loss
+
+    def on_validation_epoch_end(self):
+        if self.global_rank != 0:
+            return
+
+        current_step = self.global_step
+        if self.cfg.validations.diff_exp.enable:
+            interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
+
+            # WAR for the global step being off by 1 when the training is restarted
+            current_step = current_step - (current_step % 10)
+            if current_step < interval or current_step % interval != 0:
+                # Not to run after every eval epoch and before starting the training
+                return
+
+            if self.true_top_genes is None:
+                de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
+                sc.tl.rank_genes_groups(de_val_adata,
+                                        groupby=self.cfg.validations.diff_exp.obs_pert_col,
+                                        reference=self.cfg.validations.diff_exp.obs_filter_label,
+                                        rankby_abs=True,
+                                        n_genes=self.cfg.validations.diff_exp.top_k_rank,
+                                        method=self.cfg.validations.diff_exp.method)
+                self.true_top_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
+                self.true_top_genes = self.true_top_genes.T
+                del de_val_adata
+
+            tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
+            pred_exp = self._predict_exp_for_adata(tmp_adata,
+                                                   self.cfg.validations.diff_exp.dataset_name,
+                                                   self.cfg.validations.diff_exp.obs_pert_col)
+
+            de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
+            self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
     def configure_optimizers(self):
         # Marcel Code

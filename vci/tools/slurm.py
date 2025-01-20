@@ -1,5 +1,4 @@
 import os
-import time
 import yaml
 import argparse
 import logging
@@ -48,9 +47,10 @@ srun \\
     python -m vci.train --config {{ traing_config_file }}
 """
 
+
 def parse_vars(extra_vars):
     """
-     Parses comma seperated key value pair strings into dict.
+    Parses comma seperated key value pair strings into dict.
     """
     vars_list = []
     if extra_vars:
@@ -151,7 +151,7 @@ if __name__ == '__main__':
         if not args.force:
             assert not os.path.exists(trn_conf_dir.parent), f"Conf dir {trn_conf_dir.parent.absolute()} already exists."
 
-        overrides=[
+        overrides = [
             f"experiment.name={args.exp_name}",
             f"experiment.num_nodes={args.num_nodes}",
             f"experiment.num_gpus_per_node={args.gpus_per_nodes}",

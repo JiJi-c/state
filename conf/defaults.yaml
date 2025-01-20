@@ -1,14 +1,18 @@
 experiment:
-  name: "run_1"
+  name: "val_de"
   local: "local"
   compiled: false
+  profile:
+    enable_profiler: false
+    profile_steps: [10, 100]
+    max_steps: 110 # This is used only when profile is enabled
   num_epochs: 16
   num_nodes: 1
-  num_gpus_per_node: 2
+  num_gpus_per_node: 1
   master: localhost
   port: 12355
   val_check_interval: 1000 # Number of steps between tests
-  limit_val_batches: 0.01 # Use 1% of validation dataset
+  limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
@@ -20,19 +24,30 @@ wandb:
 
 embeddings:
   esm2:
-    checkpoint: "/scratch/ctc/ML/uce/all_species_pe_tokens.torch"
+    checkpoint: /scratch/ctc/ML/uce/all_species_pe_tokens.torch
     embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     # TODO: Eliminate the need for these attributes. This informtation can be
     # read from the above file.
     cnt: 145469
     size: 5120
 
+validations:
+  diff_exp:
+    enable: true
+    eval_interval_multiple: 5
+    obs_pert_col: gene
+    obs_filter_label: non-targeting
+    top_k_rank: 200
+    method: null
+    dataset: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
+    dataset_name: rpe1_top5000_variable
+
 dataset:
   name: "vci"
-  train: "/scratch/ctc/ML/vci/h5ad_recount_train.csv"
-  test: "/scratch/ctc/ML/vci/h5ad_recount_test.csv"
-  data_dir: "/large_storage/ctc/ML/data/cell/recount/czi_processed"
-  protein_emb_file_format: "/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch"
+  train: /scratch/ctc/ML/uce/h5ad_dataset.csv
+  val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
+  data_dir: /large_storage/ctc/datasets/cellxgene/processed/
+  protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3

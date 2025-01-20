@@ -12,8 +12,8 @@ from lightning.pytorch.strategies import DDPStrategy
 
 from vci.model import LitUCEModel
 from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
-from vci.train.callbacks import LogLR
-from vci.utils import get_latest_checkpoint, parse_chk_info
+from vci.train.callbacks import LogLR, ProfilerCallback
+from vci.utils import get_latest_checkpoint
 
 
 def get_ESM2_embeddings(cfg):
@@ -21,22 +21,21 @@ def get_ESM2_embeddings(cfg):
     all_pe = torch.load(cfg.embeddings.esm2.checkpoint)
     if all_pe.shape[0] == 143574:
         torch.manual_seed(23)
-        #MASK_TENSOR = torch.normal(mean=0, std=1, size=(1, args.token_dim))
         CHROM_TENSORS = torch.normal(mean=0, std=1, size=(1895, cfg.tokenizer.token_dim))
         # 1894 is the total number of chromosome choices, it is hardcoded for now
-        all_pe = torch.vstack((all_pe, CHROM_TENSORS)) # Add the chrom tensors to the end
+        all_pe = torch.vstack((all_pe, CHROM_TENSORS))  # Add the chrom tensors to the end
         all_pe.requires_grad = False
 
-    #print("Loaded PE", all_pe.shape)
     # randomize it!
-    all_pe = torch.randn_like(all_pe) # random init :)
+    all_pe = torch.randn_like(all_pe)
     return all_pe
 
 
 def main(cfg):
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
-    warmup_steps = EPOCH_LENGTH * 6 # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
+    # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
+    warmup_steps = EPOCH_LENGTH * 6
 
     dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
 
@@ -51,11 +50,11 @@ def main(cfg):
 
     val_dataset = H5adDatasetSentences(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
-                        batch_size=cfg.model.batch_size,
-                        shuffle=False,
-                        collate_fn=dataset_sentence_collator,
-                        num_workers=3,
-                        persistent_workers=True)
+                                batch_size=cfg.model.batch_size,
+                                shuffle=False,
+                                collate_fn=dataset_sentence_collator,
+                                num_workers=3,
+                                persistent_workers=True)
 
     model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
                         d_model=cfg.model.emsize,
@@ -71,7 +70,7 @@ def main(cfg):
                         emb_size=cfg.embeddings.esm2.size,
                         cfg=cfg).cuda()
     all_pe = get_ESM2_embeddings(cfg)
-    all_pe.requires_grad= False
+    all_pe.requires_grad = False
     model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
 
     model = model.train()
@@ -91,11 +90,19 @@ def main(cfg):
     wandb_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
     wandb_logger.watch(model, log_freq=1000)
 
+    callbacks = [checkpoint_callback,
+                 LogLR(100),
+                 RichProgressBar()]
+
+    max_steps = -1
+    if cfg.experiment.profile.enable_profiler:
+        callbacks.append(ProfilerCallback(cfg=cfg))
+        max_steps = cfg.experiment.profile.max_steps
+
     val_interval = int(cfg.experiment.val_check_interval * cfg.experiment.num_gpus_per_node * cfg.experiment.num_nodes)
     trainer = L.Trainer(max_epochs=cfg.experiment.num_epochs,
-                        callbacks=[checkpoint_callback,
-                                   LogLR(100),
-                                   RichProgressBar()],
+                        max_steps=max_steps,
+                        callbacks=callbacks,
                         devices=cfg.experiment.num_gpus_per_node,
                         num_nodes=cfg.experiment.num_nodes,
                         # Accumulation
@@ -108,7 +115,7 @@ def main(cfg):
                         logger=wandb_logger,
                         fast_dev_run=False,
                         limit_val_batches=cfg.experiment.limit_val_batches,
-                       )
+                        )
 
     if chk:
         print(f'******** Loading chkpoint {run_name} {chk}...')
