@@ -2,7 +2,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import math
-import anndata
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -24,6 +23,8 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert
+# from vci.loss import wasserstein_loss
+from vci.loss import WassersteinLoss
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -234,7 +235,8 @@ class LitUCEModel(L.LightningModule):
         return gene_output, embedding
 
     def shared_step(self, batch, batch_idx):
-        criterion = BCEWithLogitsLoss()
+        # criterion = BCEWithLogitsLoss()
+        criterion = WassersteinLoss(self.d_model)
         X, Y, embs = self._compute_embedding_for_batch(batch)
         embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)

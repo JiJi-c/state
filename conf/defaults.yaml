@@ -34,7 +34,7 @@ embeddings:
 validations:
   diff_exp:
     enable: true
-    eval_interval_multiple: 5
+    eval_interval_multiple: 1
     obs_pert_col: gene
     obs_filter_label: non-targeting
     top_k_rank: 200
