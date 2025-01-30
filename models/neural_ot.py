@@ -188,12 +188,13 @@ class NeuralOTPerturbationModel(PerturbationModel):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 
-# Experiment with a learnable alignment loss function that lets 
+# Experiment with a learnable alignment loss function that lets
 # the model pick the ground truth for a given cell:
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class LearnableAlignmentLoss(nn.Module):
     def __init__(self, hidden_dim=1280, num_heads=4):

@@ -3,7 +3,7 @@ checkpoint: null
 device: cuda
 
 kwargs:
-  hidden_dim: 512
+  hidden_dim: 256
   loss: energy
   n_encoder_layers: 2
   n_decoder_layers: 2
@@ -12,11 +12,11 @@ kwargs:
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
       n_positions: 512 # just needs to be bigger than number of conditioning variables
-      n_embd: 512
+      n_embd: 256
       d_inner: 1024
       n_layer: 4
       n_head: 8
-      resid_pdrop: 0.1
-      embd_pdrop: 0.1
-      attn_pdrop: 0.1
+      resid_pdrop: 0.0
+      embd_pdrop: 0.0
+      attn_pdrop: 0.0
       use_cache: false

@@ -308,6 +308,8 @@ def main():
     else:
         model.decoder = None
 
+    shared_perts = data_module.get_shared_perturbations()
+
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
     metrics = compute_metrics(
@@ -325,6 +327,7 @@ def main():
         transform=data_module.transform,  # if using a PCA transform
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         decoder=model.decoder,
+        shared_perts=shared_perts,
     )
 
     # 7. Summarize results

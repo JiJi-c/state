@@ -324,6 +324,48 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "gene_names": gene_names,
         }
 
+    def get_shared_perturbations(self) -> Set[str]:
+        """
+        Compute shared perturbations between train and test sets by inspecting
+        only the actual subset indices in self.train_datasets and self.test_datasets.
+
+        This ensures we don't accidentally include all perturbations from the entire h5 file.
+        """
+
+        def _extract_perts_from_subset(subset) -> Set[str]:
+            """
+            Helper that returns the set of perturbation names for the
+            exact subset indices in 'subset'.
+            """
+            ds = subset.dataset  # The underlying PerturbationDataset
+            idxs = subset.indices  # The subset of row indices relevant to this Subset
+
+            # ds.pert_col typically is 'gene' or similar
+            pert_codes = ds.h5_file[f"obs/{ds.pert_col}/codes"][sorted(idxs)]
+            # Convert each code to its corresponding string label
+            pert_names = ds.pert_categories[pert_codes]
+
+            return set(pert_names)
+
+        # 1) Gather all perturbations found across the *actual training subsets*
+        train_perts = set()
+        for subset in self.train_datasets:
+            train_perts.update(_extract_perts_from_subset(subset))
+
+        # 2) Gather all perturbations found across the *actual testing subsets*
+        test_perts = set()
+        for subset in self.test_datasets:
+            test_perts.update(_extract_perts_from_subset(subset))
+
+        # 3) Intersection = shared across both train and test
+        shared_perts = train_perts & test_perts
+
+        logger.info(f"Found {len(train_perts)} distinct perts in the train subsets.")
+        logger.info(f"Found {len(test_perts)} distinct perts in the test subsets.")
+        logger.info(f"Found {len(shared_perts)} shared perturbations (train ∩ test).")
+
+        return shared_perts
+
     def train_dataloader(self):
         if len(self.train_datasets) == 0:
             return None

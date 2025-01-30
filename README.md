@@ -172,3 +172,4 @@ Here, `/path/to/experiment` should be `/path/to/output/name` where `/path/to/out
 2. Memory issues:
    - Use data.kwargs.preload_data=True for faster training
    - Adjust batch_size based on available GPU memory
+

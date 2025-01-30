@@ -51,6 +51,7 @@ def compute_metrics(
     transform=None,  # transformation to apply to the data to go from gene expression to non-UCE embedding space
     output_space="gene",
     decoder=None,
+    shared_perts=None,
 ):
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
@@ -97,7 +98,8 @@ def compute_metrics(
                 celltype_col=celltype_col,
             )
 
-            for pert in tqdm(pred_celltype_pert_dict[celltype], desc="perts"):
+            all_perts = shared_perts if shared_perts else pred_celltype_pert_dict[celltype]
+            for pert in tqdm(all_perts, desc="perts"):
                 if pert == control_pert:
                     continue
 
