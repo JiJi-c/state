@@ -23,8 +23,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert
-# from vci.loss import wasserstein_loss
-from vci.loss import WassersteinLoss
+from .loss import WassersteinLoss
 
 
 def full_block(in_features, out_features, p_drop=0.1):
@@ -280,6 +279,7 @@ class LitUCEModel(L.LightningModule):
 
             if self.true_top_genes is None:
                 de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
+                # de_val_adata = sc.pp.log1p(de_val_adata)
                 sc.tl.rank_genes_groups(de_val_adata,
                                         groupby=self.cfg.validations.diff_exp.obs_pert_col,
                                         reference=self.cfg.validations.diff_exp.obs_filter_label,

@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
-from vci.model import LitUCEModel
+from vci.nn.model import LitUCEModel
 from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 from vci.train.callbacks import LogLR, ProfilerCallback
 from vci.utils import get_latest_checkpoint

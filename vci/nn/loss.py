@@ -45,7 +45,6 @@ class WassersteinLoss(nn.Module):
         # Convert logits to probabilities
         pred_probs = F.softmax(input, dim=-1)
         target = F.softmax(target, dim=-1)
-        # target = torch.log(target)
 
         # Compute cumulative distribution functions (CDFs)
         pred_cdf = torch.cumsum(pred_probs, dim=-1)
