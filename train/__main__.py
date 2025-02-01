@@ -1,6 +1,7 @@
 import os
 import shutil
 import pickle
+import re
 from os.path import join, exists
 from typing import List
 
@@ -78,6 +79,29 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
+def get_latest_step_checkpoint(directory):
+    # Get all checkpoint files
+    files = os.listdir(directory)
+    
+    # Extract step numbers using regex, excluding files with 'val_loss'
+    step_numbers = []
+    for f in files:
+        if f.startswith('step=') and 'val_loss' not in f:
+            # Extract the number between 'step=' and '.ckpt'
+            match = re.search(r'step=(\d+)(?:-v\d+)?\.ckpt', f)
+            if match:
+                step_numbers.append(int(match.group(1)))
+    
+    if not step_numbers:
+        raise ValueError("No checkpoint files found")
+        
+    # Get the maximum step number
+    max_step = max(step_numbers)
+    
+    # Construct the checkpoint path
+    checkpoint_path = join(directory, f"step={max_step}.ckpt")
+    
+    return checkpoint_path
 
 def get_loggers(
     output_dir: str,
@@ -252,6 +276,7 @@ def train(cfg: DictConfig) -> None:
 
     # Load checkpoint if exists
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "last.ckpt")
+    # checkpoint_path = get_latest_step_checkpoint(ckpt_callbacks[0].dirpath)
     if not exists(checkpoint_path):
         checkpoint_path = None
         # logging.info('!! No checkpoint found, killing myself !!')

@@ -735,16 +735,16 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     if len(test_pert) > 0:
                         test_subset = ds_obj.to_subset_dataset("test", test_pert, test_ctrl)
                         self.test_datasets.append(test_subset)
-
                 elif spec.task_type == TaskType.FEWSHOT:
-                    # If we used few-shot for training, use the same split stored in self.fewshot_splits
+                    # If a few-shot partition for this dataset/cell_type does not exist, compute it on the fly.
                     if (dataset_name, spec.cell_type) not in self.fewshot_splits:
-                        raise ValueError(f"No few-shot partition found for {dataset_name}/{spec.cell_type}")
-
-                    splits = self.fewshot_splits[(dataset_name, spec.cell_type)]
+                        logger.info(f"No few-shot partition found for {dataset_name}/{spec.cell_type} in training. Computing on the fly.")
+                        splits = ds_obj.prepare_fewshot_splits(self.few_shot_percent, self.val_split, self.rng)
+                        self.fewshot_splits[(dataset_name, spec.cell_type)] = splits
+                    else:
+                        splits = self.fewshot_splits[(dataset_name, spec.cell_type)]
                     test_pert = splits["test"]["perturbed"]
                     test_ctrl = splits["test"]["control"]
-
                     if len(test_pert) > 0:
                         test_subset = ds_obj.to_subset_dataset("test", test_pert, test_ctrl)
                         self.test_datasets.append(test_subset)
@@ -804,6 +804,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             # Partition a small portion for train, val, rest is test
             splits = ds_obj.prepare_fewshot_splits(self.few_shot_percent, self.val_split, self.rng)
             self.fewshot_splits[(dataset_name, ct)] = splits
+            logger.info("Few-shot partitions computed for: " + str(list(self.fewshot_splits.keys())))
 
             # Add the few-shot train/val to our train_datasets & val_datasets
             # we do not create a test subset here; that is built in _setup_test_datasets

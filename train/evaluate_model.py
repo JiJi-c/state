@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import pickle
+import re
 import yaml
 import logging
 import anndata
@@ -84,6 +85,31 @@ def load_config(cfg_path: str) -> dict:
         cfg = yaml.safe_load(f)
     return cfg
 
+def get_latest_step_checkpoint(directory):
+    # Get all checkpoint files
+    files = os.listdir(directory)
+    
+    # Extract step numbers using regex, excluding files with 'val_loss'
+    step_numbers = []
+    for f in files:
+        if f.startswith('step=') and 'val_loss' not in f:
+            # Extract the number between 'step=' and '.ckpt'
+            match = re.search(r'step=(\d+)(?:-v\d+)?\.ckpt', f)
+            if match:
+                step_numbers.append(int(match.group(1)))
+    
+    if not step_numbers:
+        raise ValueError("No checkpoint files found")
+        
+    # Get the maximum step number
+    max_step = max(step_numbers)
+    
+    # Construct the checkpoint path
+    checkpoint_path = os.path.join(directory, f"step={max_step}.ckpt")
+    
+    return checkpoint_path
+
+
 
 def main():
     args = parse_args()
@@ -133,6 +159,7 @@ def main():
     # 4. Load the trained model
     checkpoint_dir = os.path.join(run_output_dir, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, args.checkpoint)
+    # checkpoint_path = get_latest_step_checkpoint(checkpoint_dir)
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(
             f"Could not find checkpoint at {checkpoint_path}.\nSpecify a correct checkpoint filename with --checkpoint."
@@ -321,7 +348,7 @@ def main():
         pert_col="pert_name",
         celltype_col="celltype_name",
         model_loc=None,  # can pass a path if needed
-        DE_metric_flag=True,
+        DE_metric_flag=False,
         class_score_flag=True,
         embed_key=data_module.embed_key,
         transform=data_module.transform,  # if using a PCA transform
@@ -392,7 +419,7 @@ def main():
                     metric_key = f"test/{row['metric_name']}_finetune"
                     eval_run.summary[metric_key] = float(row["metric_val"])
                 else:
-                    metric_key = f"test/{row['metric_name']}"
+                    metric_key = f"test/{row['metric_name']}_1.1m"
                     eval_run.summary[metric_key] = float(row["metric_val"])
             eval_run.summary.update()
             logger.info("Metrics updated in wandb run.")

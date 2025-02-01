@@ -4,14 +4,13 @@ import logging
 from collections import defaultdict
 from typing import Dict, Tuple
 
-from models.base import PerturbationModel
+from models.base import PerturbationModel  # or wherever your base class is
 
 logger = logging.getLogger(__name__)
 
-
 class GlobalSimpleSumPerturbationModel(PerturbationModel):
     """
-    A map-independent baseline that computes a cell-type-specific
+    A map-independent baseline that computes a cell-type-specific 
     control mean and a cell-type-specific offset for each (cell type, perturbation).
 
     Implementation details:
@@ -40,7 +39,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         output_space: str = "gene",
         decoder=None,
         gene_names=None,
-        **kwargs,
+        **kwargs
     ):
         """
         Args:
@@ -70,7 +69,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             output_space=output_space,
             decoder=decoder,
             gene_names=gene_names,
-            **kwargs,
+            **kwargs
         )
 
         # We'll store a mean control vector per cell type:
@@ -80,17 +79,17 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
 
         # A dummy parameter so that Lightning sees something to "optimize"
         self.dummy_param = nn.Parameter(torch.zeros(1, requires_grad=True))
-
+    
     def on_fit_start(self):
         """Called by Lightning before training."""
         super().on_fit_start()
-
+        
         # 1. First compute control means per cell type
         celltype_ctrl_means = {}  # Dict[str, torch.Tensor]
-
-        # 2. And perturbation means per cell type
+        
+        # 2. And perturbation means per cell type 
         celltype_pert_means = defaultdict(dict)  # Dict[str, Dict[str, torch.Tensor]]
-
+        
         train_loader = self.trainer.datamodule.train_dataloader()
         if train_loader is None:
             logger.warning("No train dataloader found. Cannot compute offsets.")
@@ -98,47 +97,47 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
 
         # First pass: gather sums per cell type
         celltype_sums = defaultdict(lambda: defaultdict(lambda: {"sum": torch.zeros(self.output_dim), "count": 0}))
-
+        
         with torch.no_grad():
             for batch in train_loader:
                 if self.output_space == "gene":
                     X_vals = batch["X_gene"]
                 else:
                     X_vals = batch["X"]
-
+                
                 X_cpu = X_vals.float().cpu()
                 pert_names = batch["pert_name"]
                 cell_types = batch["cell_type"]
-
+                
                 for i in range(len(X_cpu)):
                     p_name = str(pert_names[i])
                     ct_name = str(cell_types[i])
                     x_val = X_cpu[i]
-
+                    
                     celltype_sums[ct_name][p_name]["sum"] += x_val
                     celltype_sums[ct_name][p_name]["count"] += 1
 
             # Now compute means per cell type
-            all_ctrl_means = []  # For computing global basal
+            all_ctrl_means = []  # For computing global basal 
             for ct_name, pert_dict in celltype_sums.items():
                 # Get control mean for this cell type
                 ctrl_stats = pert_dict.get("non-targeting")
                 if ctrl_stats is None or ctrl_stats["count"] == 0:
                     logger.warning(f"No control cells found for cell type {ct_name}")
                     continue
-
+                    
                 ct_ctrl_mean = ctrl_stats["sum"] / ctrl_stats["count"]
                 celltype_ctrl_means[ct_name] = ct_ctrl_mean
                 all_ctrl_means.append(ct_ctrl_mean)
-
+                
                 # Compute perturbation means and deltas for this cell type
                 for p_name, stats in pert_dict.items():
                     if p_name == "non-targeting":
                         continue
-
+                        
                     if stats["count"] == 0:
                         continue
-
+                        
                     ct_pert_mean = stats["sum"] / stats["count"]
                     ct_delta = ct_pert_mean - ct_ctrl_mean
                     celltype_pert_means[ct_name][p_name] = ct_delta
@@ -151,16 +150,16 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
                 for ct_name, pert_dict in celltype_pert_means.items():
                     if p_name in pert_dict:
                         pert_deltas.append(pert_dict[p_name])
-
+                        
                 if not pert_deltas:
                     continue
-
+                    
                 # Average the deltas
                 self.pert_mean_offsets[p_name] = torch.stack(pert_deltas).mean(0)
 
             # Add zero offset for control
             self.pert_mean_offsets["non-targeting"] = torch.zeros(self.output_dim)
-
+            
             # Compute global basal as mean of cell-type means
             if not all_ctrl_means:
                 logger.warning("No control cells found in any cell type. Using zero vector as basal.")
@@ -188,7 +187,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
                 offset_vec = torch.zeros(self.output_dim, device=device)
 
             # we add to the global_basal
-            pred_out[i] = self.global_basal.to(device) + offset_vec.to(device)
+            pred_out[i] = batch["basal"][i] + offset_vec.to(device)
 
         return pred_out
 
@@ -216,7 +215,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
     def on_save_checkpoint(self, checkpoint):
         """
         Save the global_basal vector and perturbation offsets to the checkpoint.
-
+        
         Args:
             checkpoint (dict): Checkpoint dictionary to be saved.
         """
@@ -233,7 +232,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
     def on_load_checkpoint(self, checkpoint):
         """
         Load the global_basal vector and perturbation offsets from the checkpoint.
-
+        
         Args:
             checkpoint (dict): Checkpoint dictionary from which to load.
         """
@@ -253,13 +252,12 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             for p_name, offset_np in checkpoint["pert_mean_offsets"].items():
                 loaded_offsets[p_name] = torch.tensor(offset_np, dtype=torch.float32)
             self.pert_mean_offsets = loaded_offsets
-            logger.info(
-                f"GlobalSimpleSum: Loaded offsets for {len(self.pert_mean_offsets)} perturbations from checkpoint."
-            )
+            logger.info(f"GlobalSimpleSum: Loaded offsets for {len(self.pert_mean_offsets)} perturbations from checkpoint.")
         else:
             logger.warning("GlobalSimpleSum: No pert_mean_offsets found in checkpoint. All offsets set to zero.")
             self.pert_mean_offsets = {}
 
+    
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """Not really used here, but required by abstract base. We do no param-based encoding."""
         return pert
