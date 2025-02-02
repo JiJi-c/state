@@ -741,6 +741,18 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         logger.info(f"No few-shot partition found for {dataset_name}/{spec.cell_type} in training. Computing on the fly.")
                         splits = ds_obj.prepare_fewshot_splits(self.few_shot_percent, self.val_split, self.rng)
                         self.fewshot_splits[(dataset_name, spec.cell_type)] = splits
+
+                        train_pert = splits["train"]["perturbed"]
+                        train_ctrl = splits["train"]["control"]
+                        val_pert = splits["val"]["perturbed"]
+                        val_ctrl = splits["val"]["control"]
+
+                        if len(train_pert) > 0:
+                            train_subset = ds_obj.to_subset_dataset("train", train_pert, train_ctrl)
+                            self.train_datasets.append(train_subset)
+                        if len(val_pert) > 0:
+                            val_subset = ds_obj.to_subset_dataset("val", val_pert, val_ctrl)
+                            self.val_datasets.append(val_subset)
                     else:
                         splits = self.fewshot_splits[(dataset_name, spec.cell_type)]
                     test_pert = splits["test"]["perturbed"]

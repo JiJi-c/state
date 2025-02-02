@@ -187,7 +187,7 @@ class PerturbationModel(ABC, LightningModule):
                 pert_col="pert_name",
                 celltype_col="cell_type",
                 DE_metric_flag=False,
-                class_score_flag=False,
+                class_score_flag=True,
                 embed_key=self.embed_key,
                 output_space=self.output_space,
             )
