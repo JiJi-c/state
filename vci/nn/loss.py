@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class WassersteinLoss(nn.Module):
     """
     Implements Wasserstein distance loss for distributions represented by logits.
@@ -60,3 +61,16 @@ class WassersteinLoss(nn.Module):
         elif self.reduction == 'sum':
             return wasserstein_dist.sum()
         return wasserstein_dist
+
+
+class KLDivergenceLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input, target):
+        # Convert logits to probabilities
+        p = F.softmax(input, dim=-1)
+        q = F.softmax(target, dim=-1)
+
+        # return F.kl_div(q.log(), p, reduction='batchmean')
+        return torch.sum(p * torch.log(p / q))

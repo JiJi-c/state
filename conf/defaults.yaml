@@ -1,5 +1,5 @@
 experiment:
-  name: "val_de"
+  name: "vci_pretrain_${loss.name}"
   local: "local"
   compiled: false
   profile:
@@ -34,7 +34,7 @@ embeddings:
 validations:
   diff_exp:
     enable: true
-    eval_interval_multiple: 1
+    eval_interval_multiple: 2
     obs_pert_col: gene
     obs_filter_label: non-targeting
     top_k_rank: 200
@@ -76,3 +76,6 @@ optimizer:
   end: 1.0
   max_grad_norm: 1.0
   gradient_accumulation_steps: 1
+
+loss:
+  name: "kl_divergence" # Available options: cross_entropy, wasserstein, kl_divergence
