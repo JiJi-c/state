@@ -856,7 +856,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # TODO-Abhi: currently using a debug prefix to use unmerged replogle
         # datasets for testing, change this.
-        working_folder = self.data_dir / f"filter_{dataset_name}"
+        working_folder = self.data_dir / f"{dataset_name}"
         if not working_folder.exists():
             raise FileNotFoundError(f"No directory named {working_folder}")
 

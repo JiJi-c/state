@@ -272,7 +272,7 @@ def compute_metrics(
                 ## Compute classification score
                 class_score = compute_perturbation_ranking_score(
                     adata_pred_ct,
-                    adata_real if adata_pred_ct.X.shape == adata_real_ct.X.shape else adata_real_exp_ct,
+                    adata_real_ct if adata_pred_ct.X.shape == adata_real_ct.X.shape else adata_real_exp_ct,
                     pert_col=pert_col,
                     ctrl_pert=control_pert,
                 )

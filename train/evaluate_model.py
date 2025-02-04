@@ -415,12 +415,15 @@ def main():
                 metric_key = f"test/{row['metric_name']}_{row['celltype']}"
                 eval_run.summary[metric_key] = float(row["metric_val"])
 
-                if args.test_time_finetune > 0:
-                    metric_key = f"test/{row['metric_name']}_finetune"
-                    eval_run.summary[metric_key] = float(row["metric_val"])
-                else:
-                    metric_key = f"test/{row['metric_name']}_1.1m"
-                    eval_run.summary[metric_key] = float(row["metric_val"])
+                metric_key = f"test/{row['metric_name']}"
+                eval_run.summary[metric_key] = float(row["metric_val"])
+
+                # if args.test_time_finetune > 0:
+                #     metric_key = f"test/{row['metric_name']}_finetune"
+                #     eval_run.summary[metric_key] = float(row["metric_val"])
+                # else:
+                #     metric_key = f"test/{row['metric_name']}"
+                #     eval_run.summary[metric_key] = float(row["metric_val"])
             eval_run.summary.update()
             logger.info("Metrics updated in wandb run.")
         except wandb.CommError:
