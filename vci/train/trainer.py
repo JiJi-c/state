@@ -66,6 +66,8 @@ def main(cfg):
                         warmup_steps=warmup_steps,
                         compiled=False,
                         max_lr=cfg.optimizer.max_lr,
+                        emb_cnt=cfg.embeddings.esm2.cnt,
+                        emb_size=cfg.embeddings.esm2.size,
                         cfg=cfg).cuda()
     all_pe = get_ESM2_embeddings(cfg)
     all_pe.requires_grad = False

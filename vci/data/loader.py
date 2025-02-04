@@ -205,8 +205,7 @@ class VCIDatasetSentenceCollator(object):
             mask[:, :max_len],
             Xs,
             Ys,
-            idxs,
-            counts
+            idxs
         )
 
     def sample_cell_sentences_batched(self, batch):
