@@ -10,7 +10,7 @@ experiment:
   num_nodes: 1
   num_gpus_per_node: 1
   master: localhost
-  port: 12355
+  port: 12356
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
@@ -34,7 +34,7 @@ embeddings:
 validations:
   diff_exp:
     enable: true
-    eval_interval_multiple: 2
+    eval_interval_multiple: 5
     obs_pert_col: gene
     obs_filter_label: non-targeting
     top_k_rank: 200
@@ -78,4 +78,4 @@ optimizer:
   gradient_accumulation_steps: 1
 
 loss:
-  name: "kl_divergence" # Available options: cross_entropy, wasserstein, kl_divergence
+  name: "wasserstein" # Available options: cross_entropy, wasserstein, kl_divergence

@@ -86,8 +86,7 @@ class LitUCEModel(L.LightningModule):
                  nlayers: int, output_dim:int, dropout: float = 0.0,
                  warmup_steps: int = 0,
                  compiled: bool = False,
-                 max_lr=4e-4,
-                 emb_cnt=145469, emb_size=5120, cfg=None):
+                 max_lr=4e-4, cfg=None):
         super().__init__()
         self.save_hyperparameters()
         self.cfg = cfg
@@ -150,7 +149,7 @@ class LitUCEModel(L.LightningModule):
         batch_sentences = batch[0].to(self.device)
         mask = batch[1].to(self.device)
         X = batch[2].to(self.device)
-        Y = batch[3]
+        counts = batch[5]
 
         batch_sentences = self.pe_embedding(batch_sentences.long())
         X = self.pe_embedding(X.long())
@@ -160,7 +159,7 @@ class LitUCEModel(L.LightningModule):
         _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
-        return X, Y, embedding
+        return X, counts, embedding
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
@@ -237,16 +236,16 @@ class LitUCEModel(L.LightningModule):
         if self.cfg.loss.name == 'cross_entropy':
             criterion = BCEWithLogitsLoss()
         elif self.cfg.loss.name == 'wasserstein':
-            criterion = WassersteinLoss(self.d_model)
+            criterion = WassersteinLoss(p=1)
         elif self.cfg.loss.name == 'kl_divergence':
             criterion = KLDivergenceLoss()
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
-        X, Y, embs = self._compute_embedding_for_batch(batch)
+        X, counts, embs = self._compute_embedding_for_batch(batch)
         embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
-        loss = criterion(input=decs.squeeze(), target=Y)
+        loss = criterion(input=decs.squeeze(), target=counts)
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:
