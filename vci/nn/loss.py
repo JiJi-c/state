@@ -64,13 +64,22 @@ class WassersteinLoss(nn.Module):
 
 
 class KLDivergenceLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, epsilon=1e-10):
         super().__init__()
+        self.epsilon = epsilon
 
     def forward(self, input, target):
-        # Convert logits to probabilities
+        input = torch.nan_to_num(input, nan=0.0)
+        target = torch.nan_to_num(target, nan=0.0)
+
+        max_len = max(input.size(1), target.size(1))
+        if input.size(1) < max_len:
+            input = F.pad(input, (0, max_len - input.size(1)), 'constant', 0)
+        if target.size(1) < max_len:
+            target = F.pad(target, (0, max_len - target.size(1)), 'constant', 0)
+
         p = F.softmax(input, dim=-1)
         q = F.softmax(target, dim=-1)
 
-        # return F.kl_div(q.log(), p, reduction='batchmean')
+        # return F.kl_div(q, p, reduction='batchmean')
         return torch.sum(p * torch.log(p / q))

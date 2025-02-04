@@ -180,16 +180,18 @@ class VCIDatasetSentenceCollator(object):
 
         dataset_nums = torch.zeros(batch_size)
 
-        # return self.sample_cell_sentences_batched(batch)
-
+        largest_cnt = max([x[0].shape[1] for x in batch])
+        batch_weights = torch.zeros((batch_size, largest_cnt))
         i = 0
         max_len = 0
 
         for counts, idx, dataset, dataset_num in batch:
-            (bs, msk, xx, yy) = self.sample_cell_sentences(counts, dataset)
+            (bs, msk, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset)
 
             yy = yy.squeeze()
             batch_sentences[i, :] = bs
+            batch_weight = batch_weight.squeeze()
+            batch_weights[i, :len(batch_weight)] = batch_weight
 
             max_len = max(max_len, self.cfg.dataset.pad_length)
             mask[i, :] = msk
@@ -205,19 +207,20 @@ class VCIDatasetSentenceCollator(object):
             mask[:, :max_len],
             Xs,
             Ys,
-            idxs
+            idxs,
+            batch_weights
         )
 
-    def sample_cell_sentences_batched(self, batch):
-        cnts = []
-        for counts, idx, dataset, dataset_num in batch:
-            cnts.append(counts)
+    # def sample_cell_sentences_batched(self, batch):
+    #     cnts = []
+    #     for counts, idx, dataset, dataset_num in batch:
+    #         cnts.append(counts)
 
-        batch_weights = torch.log1p(counts)
-        batch_weights = batch_weights / torch.sum(batch_weights)
+    #     batch_weights = torch.log1p(counts)
+    #     batch_weights = batch_weights / torch.sum(batch_weights)
 
-        cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y = None
-        return (cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y)
+    #     cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y = None
+    #     return (cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y)
 
 
     def softmax(self, x):
@@ -225,6 +228,8 @@ class VCIDatasetSentenceCollator(object):
         return e_x / e_x.sum()
 
     def sample_cell_sentences(self, counts, dataset):
+        if torch.isnan(counts).any():
+            log.error(f"NaN values in counts for dataset {dataset}")
         batch_weights = torch.log1p(counts)
         batch_weights = (batch_weights / torch.sum(batch_weights))
 
@@ -261,14 +266,13 @@ class VCIDatasetSentenceCollator(object):
 
             i = 1  # continue on to the rest of the sequence with left bracket being assumed.\
             ordered_choice_idx[i:(self.cfg.dataset.pad_length)] = dataset_idxs[choice_idx]
-            i = i + self.cfg.dataset.pad_length - 1
+            i = i + len(choice_idx) - 1
 
             remainder_len = ( self.cfg.dataset.pad_length - i)
-
             cell_mask = torch.concat((torch.zeros(i, dtype=bool),
                                       torch.ones(remainder_len, dtype=bool)))
-
             mask[c, :] = cell_mask
+            # mask[c, mask_weights] = 1
 
             ordered_choice_idx[i:] =  self.cfg.dataset.pad_token_idx  # mask
 
@@ -297,4 +301,4 @@ class VCIDatasetSentenceCollator(object):
         cell_outputs_X_pe = dataset_idxs[
             cell_outputs_X.long()]  # .unsqueeze(2) # all_pe[dataset_idxs[cell_outputs_X.long()], :]
 
-        return cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y
+        return cell_sentences_pe, mask, cell_outputs_X_pe, cell_outputs_Y, batch_weights

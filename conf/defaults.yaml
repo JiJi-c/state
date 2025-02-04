@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrain_${loss.name}"
+  name: "vci_pretrain_1_${loss.name}"
   local: "local"
   compiled: false
   profile:

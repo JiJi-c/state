@@ -26,13 +26,13 @@ from vci.utils import compute_gene_overlap_cross_pert
 from .loss import WassersteinLoss, KLDivergenceLoss
 
 
-def full_block(in_features, out_features, p_drop=0.1):
-    return nn.Sequential(
-        nn.Linear(in_features, out_features, bias=True),
-        nn.LayerNorm(out_features),
-        nn.GELU(),
-        nn.Dropout(p=p_drop),
-    )
+# def full_block(in_features, out_features, p_drop=0.1):
+#     return nn.Sequential(
+#         nn.Linear(in_features, out_features, bias=True),
+#         nn.LayerNorm(out_features),
+#         nn.GELU(),
+#         nn.Dropout(p=p_drop),
+#     )
 
 
 class SkipBlock(nn.Module):
@@ -151,6 +151,7 @@ class LitUCEModel(L.LightningModule):
         mask = batch[1].to(self.device)
         X = batch[2].to(self.device)
         Y = batch[3]
+        batch_weights = batch[5]
 
         batch_sentences = self.pe_embedding(batch_sentences.long())
         X = self.pe_embedding(X.long())
@@ -160,7 +161,7 @@ class LitUCEModel(L.LightningModule):
         _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
-        return X, Y, embedding
+        return X, batch_weights, embedding
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
@@ -242,11 +243,11 @@ class LitUCEModel(L.LightningModule):
             criterion = KLDivergenceLoss()
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
-        X, Y, embs = self._compute_embedding_for_batch(batch)
+        X, batch_weights, embs = self._compute_embedding_for_batch(batch)
         embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
-        loss = criterion(input=decs.squeeze(), target=Y)
+        loss = criterion(input=decs.squeeze(), target=batch_weights)
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:
