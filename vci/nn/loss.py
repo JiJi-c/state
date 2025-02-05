@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from geomloss import SamplesLoss
 
 class WassersteinLoss(nn.Module):
     """
@@ -62,10 +62,10 @@ class WassersteinLoss(nn.Module):
             return wasserstein_dist.sum()
         return wasserstein_dist
 
-
 class KLDivergenceLoss(nn.Module):
-    def __init__(self, epsilon=1e-10):
+    def __init__(self, apply_normalization=False, epsilon=1e-10):
         super().__init__()
+        self.apply_normalization = apply_normalization
         self.epsilon = epsilon
 
     def forward(self, input, target):
@@ -78,8 +78,20 @@ class KLDivergenceLoss(nn.Module):
         if target.size(1) < max_len:
             target = F.pad(target, (0, max_len - target.size(1)), 'constant', 0)
 
-        p = F.softmax(input, dim=-1)
-        q = F.softmax(target, dim=-1)
-
+        if self.apply_normalization:
+            p = F.softmax(input, dim=-1)
+            q = F.softmax(target, dim=-1)
+        else:
+            p = input
+            q = target
+   
         # return F.kl_div(q, p, reduction='batchmean')
         return torch.sum(p * torch.log(p / q))
+
+class MMDLoss(nn.Module):
+    def __init__(self, kernel="energy", blur=0.05, scaling=0.5):
+        super().__init__()
+        self.mmd_loss = SamplesLoss(loss=kernel, blur=blur, scaling=scaling)
+
+    def forward(self, input, target):
+        return self.mmd_loss(input, target)

@@ -23,7 +23,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert
-from .loss import WassersteinLoss, KLDivergenceLoss
+from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
 
 
 # def full_block(in_features, out_features, p_drop=0.1):
@@ -93,7 +93,7 @@ class LitUCEModel(L.LightningModule):
         self.cfg = cfg
         self.compiled = compiled
         self.model_type = 'Transformer'
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        # self.pos_encoder = PositionalEncoding(d_model, dropout)
         self.d_model = d_model
         self.warmup_steps = warmup_steps
         self.dropout = dropout
@@ -161,7 +161,7 @@ class LitUCEModel(L.LightningModule):
         _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
-        return X, batch_weights, embedding
+        return X, Y, batch_weights, embedding
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
@@ -190,7 +190,7 @@ class LitUCEModel(L.LightningModule):
                           ncols=100,
                           desc=f"Embeddings for {dataset_name}",):
             torch.cuda.empty_cache()
-            _, _, emb = self._compute_embedding_for_batch(batch)
+            _, _, _, emb = self._compute_embedding_for_batch(batch)
 
             merged_embs = LitUCEModel.resize_batch(emb, gene_embeds)
             logprobs_batch = self.binary_decoder(merged_embs)
@@ -225,7 +225,7 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
+        # src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # embedding = torch.mul(gene_output, mask.t().unsqueeze(2)).sum(0) # average over non zero genes
@@ -235,19 +235,27 @@ class LitUCEModel(L.LightningModule):
         return gene_output, embedding
 
     def shared_step(self, batch, batch_idx):
-        if self.cfg.loss.name == 'cross_entropy':
-            criterion = BCEWithLogitsLoss()
-        elif self.cfg.loss.name == 'wasserstein':
-            criterion = WassersteinLoss(self.d_model)
-        elif self.cfg.loss.name == 'kl_divergence':
-            criterion = KLDivergenceLoss()
-        else:
-            raise ValueError(f"Loss {self.cfg.loss.name} not supported")
-        X, batch_weights, embs = self._compute_embedding_for_batch(batch)
+        X, Y, batch_weights, embs = self._compute_embedding_for_batch(batch)
         embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
         combine = torch.cat((X, embs), dim=2)
         decs = self.binary_decoder(combine)
-        loss = criterion(input=decs.squeeze(), target=batch_weights)
+
+        if self.cfg.loss.name == 'cross_entropy':
+            criterion = BCEWithLogitsLoss()
+            target = Y
+        elif self.cfg.loss.name == 'wasserstein':
+            criterion = WassersteinLoss(self.d_model)
+            target = Y
+        elif self.cfg.loss.name == 'kl_divergence':
+            criterion = KLDivergenceLoss(apply_normalization=self.cfg.model.normalization)
+            target = batch_weights
+        elif self.cfg.loss.name == 'mmd':
+            criterion = MMDLoss(kernel="energy") 
+            target = Y  
+        else:
+            raise ValueError(f"Loss {self.cfg.loss.name} not supported")
+    
+        loss = criterion(input=decs.squeeze(), target=target)
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:
