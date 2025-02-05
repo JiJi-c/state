@@ -3,7 +3,7 @@ import yaml
 import argparse
 import logging
 import subprocess
-import random 
+
 from pathlib import Path
 from omegaconf import OmegaConf
 from hydra import compose, initialize
@@ -37,7 +37,7 @@ scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
 sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
 MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
-MASTER_PORT={{ master_port }}
+MASTER_PORT='12357'
 
 NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
@@ -132,7 +132,6 @@ if __name__ == '__main__':
              "Please refer ./conf/defaults.yaml")
 
     args = parser.parse_args()
-    master_port = random.randint(10000, 60000)
 
     bind_param = {
         "exp_name": args.exp_name,
@@ -140,7 +139,6 @@ if __name__ == '__main__':
         "num_gpus_per_node": args.gpus_per_nodes,
         "duration": args.duration,
         "partition": args.partition,
-        "master_port": master_port
     }
 
     if args.config:

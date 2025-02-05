@@ -84,7 +84,7 @@ class KLDivergenceLoss(nn.Module):
         else:
             p = input
             q = target
-   
+
         # return F.kl_div(q, p, reduction='batchmean')
         return torch.sum(p * torch.log(p / q))
 
