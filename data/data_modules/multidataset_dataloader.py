@@ -2,7 +2,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Literal, Set
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from lightning import LightningDataModule
+from data.utils.data_utils import generate_onehot_map  # assuming this helper exists
+from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
 from data.data_modules.perturbation_tracker import PerturbationTracker
 from data.data_modules.samplers import PerturbationBatchSampler
@@ -16,27 +17,14 @@ from data.mapping_strategies import (
     PseudoNearestMappingStrategy,
     PseudoBulkMappingStrategy,
 )
-from data.transforms.pca import PCATransform  # TODO-Abhi: change to BaseTransform
-from data.utils.data_utils import generate_onehot_map
-from enum import Enum
-from functools import partial
+from data.transforms.pca import PCATransform  # if needed
 
 import h5py
-import anndata as ad
 import numpy as np
 import torch
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-class DatasetType(Enum):
-    REPLOGLE = "replogle"
-    MCFALINE = "mcfaline"
-    JIANG = "jiang"
-    SCIPLEX = "sciplex"
-    FENG = "feng"
-
 
 class MetadataConcatDataset(ConcatDataset):
     """
@@ -93,7 +81,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         few_shot_percent: float = 0.3,
         random_seed: int = 42,
         val_split: float = 0.10,
-        embed_key: Literal["X_uce", "X_pca", "X_scGPT"] = "X_uce",
+        embed_key: Optional[Literal["X_uce", "X_pca", "X_scGPT"]] = None,
         output_space: Literal["gene", "latent"] = "gene",
         basal_mapping_strategy: Literal["batch", "random", "nearest"] = "batch",
         n_basal_samples: int = 1,
@@ -145,6 +133,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.split_train_val_controls = split_train_val_controls
         self.preload_data = preload_data
 
+        self.pert_col = 'drug'
+        self.batch_col = 'drug'
+
         self.train_datasets: List[Dataset] = []
         self.train_eval_datasets: List[Dataset] = []
         self.val_datasets: List[Dataset] = []
@@ -178,14 +169,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # Global perturbation map
         self.all_perts: Set[str] = set()
         self.pert_onehot_map: Optional[Dict[str, torch.Tensor]] = None
-
         self.batch_onehot_map: Optional[Dict[str, torch.Tensor]] = None
-
         self.celltype_onehot_map: Optional[Dict[str, torch.Tensor]] = None
-        self.num_celltypes: Optional[int] = None
-
-        self.num_genes: Optional[int] = None
-        self.num_perts: Optional[int] = None
 
         # Dataset subsampling.
         # TODO: move this to a separate module called filtering to also include filters
@@ -200,73 +185,187 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self._pseudo_nearest_global_basal = None
         self._pseudo_nearest_pert_offsets = None
 
-    def prepare_data(self):
-        pass
+        self._setup_global_maps()
+
+    def _find_dataset_files(self, dataset_name: str) -> List[Path]:
+        """
+        Instead of returning a mapping from cell type to file,
+        return a list of all plate (h5) files in the directory for the dataset.
+        """
+        pattern = "*.h5"
+        working_folder = self.data_dir / dataset_name
+        if not working_folder.exists():
+            raise FileNotFoundError(f"No directory named {working_folder}")
+        files = sorted(working_folder.glob(pattern))
+        return files
+
+    def _setup_global_maps(self):
+        """
+        Set up global one-hot maps for perturbations and batches.
+        For perturbations, we scan through all files in all train_specs and test_specs.
+        """
+        all_perts = set()
+        all_batches = set()
+        dataset_names = {spec.dataset for spec in (self.train_specs + self.test_specs)}
+        for ds_name in dataset_names:
+            files = self._find_dataset_files(ds_name)
+            for fpath in files:
+                with h5py.File(files[fpath], "r") as f:
+                    pert_arr = f["obs/{}/categories".format(self.pert_col)][:]
+                    perts = set(safe_decode_array(pert_arr))
+                    all_perts.update(perts)
+
+                    try:
+                        batch_arr = f["obs/{}/categories".format(self.batch_col)][:]
+                    except KeyError:
+                        batch_arr = f["obs/{}".format(self.batch_col)][:]
+                    batches = set(safe_decode_array(batch_arr))
+                    all_batches.update(batches)
+
+        # Create one-hot maps
+        self.pert_onehot_map = generate_onehot_map(all_perts)
+        self.batch_onehot_map = generate_onehot_map(all_batches)
+
+    def _group_specs_by_dataset(self, specs: List[TaskSpec]) -> Dict[str, List[TaskSpec]]:
+        """
+        Group TaskSpec objects by dataset name.
+        """
+        dmap = {}
+        for spec in specs:
+            dmap.setdefault(spec.dataset, []).append(spec)
+        return dmap
+
+    def _setup_training_datasets(self):
+        """
+        For each TaskSpec in the training specs, for each plate file in that dataset,
+        construct a PerturbationDataset. If the TaskSpec specifies a cell type (e.g. "jurkat"),
+        pass that as filter_cell_type.
+        Then, call prepare_training_splits on each dataset to form train/val subsets.
+        """
+        train_map = self._group_specs_by_dataset(self.train_specs)
+        for ds_name, specs in train_map.items():
+            files = self._find_dataset_files(ds_name)
+            # If a TaskSpec specifies a cell type, use that; otherwise, use None (all cells)
+            for spec in specs:
+                filter_ct = spec.cell_type  # may be None
+                for fpath in files:
+                    ds = PerturbationDataset(
+                        name=ds_name,
+                        h5_path=files[fpath],
+                        mapping_strategy=self.mapping_strategy_cls(random_state=self.random_seed, n_basal_samples=self.n_basal_samples),
+                        embed_key=self.embed_key,
+                        pert_onehot_map=self.pert_onehot_map,
+                        batch_onehot_map=self.batch_onehot_map,
+                        pert_col=self.pert_col,
+                        cell_type_key="cell_name",
+                        batch_col="drug",
+                        control_pert="DMSO_TF",
+                        filter_cell_type=filter_ct,
+                        random_state=self.random_seed,
+                    )
+                    if len(ds) == 0:
+                        continue  # skip files that do not contain the desired cell type
+                    splits = ds.prepare_training_splits(self.val_split, self.rng)
+                    # Create a training subset from the perturbed indices
+                    if len(splits["train"]["perturbed"]) > 0:
+                        train_subset = ds.to_subset_dataset("train", splits["train"]["perturbed"], splits["train"]["control"])
+                        self.train_datasets.append(train_subset)
+                        # Also create a train_eval subset if desired
+                        retained_train = np.array(list(ds.split_perturbed_indices.get("train", [])))
+                        if len(retained_train) > 0:
+                            n_eval = int(0.1 * len(retained_train))
+                            if n_eval > 0:
+                                rng = np.random.default_rng(self.random_seed)
+                                eval_inds = rng.choice(retained_train, size=n_eval, replace=False)
+                                train_eval_subset = ds.to_subset_dataset("train_eval", eval_inds, splits["train"]["control"])
+                                self.train_eval_datasets.append(train_eval_subset)
+                    if len(splits["val"]["perturbed"]) > 0:
+                        val_subset = ds.to_subset_dataset("val", splits["val"]["perturbed"], splits["val"]["control"])
+                        self.val_datasets.append(val_subset)
+
+    def _setup_test_datasets(self):
+        """
+        Similar to training but for test specs.
+        For each TaskSpec in test_specs, create a PerturbationDataset (using filter_cell_type if specified)
+        and then form a subset containing all perturbed cells (and their controls).
+        """
+        test_map = self._group_specs_by_dataset(self.test_specs)
+        for ds_name, specs in test_map.items():
+            files = self._find_dataset_files(ds_name)
+            for spec in specs:
+                filter_ct = spec.cell_type  # may be None for training-type test tasks
+                for fpath in files:
+                    ds = PerturbationDataset(
+                        name=ds_name,
+                        h5_path=files[fpath],
+                        mapping_strategy=self.mapping_strategy_cls(random_state=self.random_seed, n_basal_samples=self.n_basal_samples),
+                        embed_key=self.embed_key,
+                        pert_onehot_map=self.pert_onehot_map,
+                        batch_onehot_map=self.batch_onehot_map,
+                        pert_col=self.pert_col,
+                        cell_type_key="cell_name",
+                        batch_col="drug",
+                        control_pert="DMSO_TF",
+                        filter_cell_type=filter_ct,
+                        random_state=self.random_seed,
+                    )
+                    if len(ds) == 0:
+                        continue
+                    # For test, simply take all perturbed (non-control) cells.
+                    all_indices = ds.filtered_indices  # already filtered by cell type if applicable
+                    pert_codes = ds.h5_file[f"obs/{ds.pert_col}/codes"][all_indices]
+                    pert_names = np.array(ds.pert_categories)[pert_codes]
+                    pert_inds = all_indices[pert_names != ds.control_pert]
+                    ctrl_inds = all_indices[pert_names == ds.control_pert]
+                    if len(pert_inds) > 0:
+                        test_subset = ds.to_subset_dataset("test", pert_inds, ctrl_inds)
+                        self.test_datasets.append(test_subset)
 
     def setup(self, stage: Optional[str] = None):
         """
-        Builds train / val / test subsets for each dataset and cell type, and stores
-        them in the appropriate lists.
+        Set up training and test datasets.
         """
-        if stage not in ("fit", "test", None):
-            return
-
-        logger.info("Starting dataset setup...")
-
-        # Create global perturbation map if needed
-        if not self.pert_onehot_map:
-            # this should be across test data too
-            self._setup_global_pert_map()
-            logger.info(f"Created global perturbation map with {self.num_perts} perturbations")
-
-        if not self.batch_onehot_map:
-            # this should be across test data too
-            self._setup_global_batch_map()
-            logger.info(f"Created global batch map with {self.num_batches} batches")
-
-        if not self.celltype_onehot_map:
-            # this should be across test data too
-            self._setup_global_celltype_map()
-            logger.info(f"Created global cell type map with {self.num_celltypes} cell types")
-
-        # Avoid re-creating training datasets if already done
-        if (stage == "fit" or stage is None) and len(self.train_datasets) == 0:
+        if stage in ("fit", None):
             logger.info("Setting up training datasets...")
             self._setup_training_datasets()
-
-            if len(self.train_datasets) > 0:
-                if self.transform:
-                    all_train_data = []
-
-                    for n, train_subset in enumerate(self.train_datasets):
-                        indices = train_subset.indices
-                        underlying_ds: PerturbationDataset = train_subset.dataset
-                        logger.info(f"Adding data for train ds {n}")
-                        for idx in indices:
-                            all_train_data.append(underlying_ds.fetch_expression(idx))
-
-                    all_train_data = torch.vstack(all_train_data)
-                    logger.info(f"Fitting {self.transform.name()} on training data...")
-
-                    self.num_genes = underlying_ds.n_genes
-                    logger.info(f"Set num_genes={self.num_genes}")
-
-                    # Create temporary anndata for fitting
-                    self.transform.fit(all_train_data)
-                    logger.info("Fitting complete")
-                    del all_train_data
-            else:
-                logger.warning("No training datasets created")
-
-        # Avoid re-creating testing datasets if already done
-        if (stage == "test" or stage is None) and len(self.test_datasets) == 0:
+        if stage in ("test", None):
             logger.info("Setting up test datasets...")
             self._setup_test_datasets()
 
-            if len(self.test_datasets) == 0:
-                logger.warning("No test datasets created")
+    def train_dataloader(self):
+        if len(self.train_datasets) == 0:
+            return None
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        ds = ConcatDataset(self.train_datasets)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
 
-        logger.info("Dataset setup complete")
+    def train_eval_dataloader(self):
+        if len(self.train_eval_datasets) == 0:
+            return None
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        ds = ConcatDataset(self.train_eval_datasets)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+
+    def val_dataloader(self):
+        if len(self.val_datasets) == 0:
+            return None
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        ds = ConcatDataset(self.val_datasets)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+
+    def test_dataloader(self):
+        if len(self.test_datasets) == 0:
+            return None
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        ds = ConcatDataset(self.test_datasets)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+
+    def predict_dataloader(self):
+        return self.test_dataloader()
 
     def set_inference_mapping_strategy(self, strategy_cls, **strategy_kwargs):
         """
@@ -300,12 +399,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         logger.info("Mapping strategy set to %s for test datasets.", strategy_cls.__name__)
 
     def get_var_dims(self):
+        underlying_ds: PerturbationDataset = self.test_datasets[0].dataset
         if self.embed_key:
             if self.transform:  # PCA transform, todo change this.
                 input_dim = self.transform.n_components  # data is processed on the fly here
             else:
                 # TODO- if we peek into the files we can get dimensions before having to call setup on the datamodule
-                underlying_ds: PerturbationDataset = self.test_datasets[0].dataset
                 input_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
         else:
             input_dim = underlying_ds.n_genes
@@ -366,93 +465,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         return shared_perts
 
-    def train_dataloader(self):
-        if len(self.train_datasets) == 0:
-            return None
-
-        collate_with_transform = partial(PerturbationDataset.collate_fn, transform=self.transform)
-
-        ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(
-            dataset=ds,
-            batch_size=self.batch_size,
-            drop_last=False,  # Drop incomplete batches during training
-        )
-
-        return DataLoader(
-            ds,
-            batch_sampler=sampler,
-            num_workers=self.num_workers,
-            collate_fn=collate_with_transform,
-        )
-
-    def train_eval_dataloader(self):
-        if len(self.train_eval_datasets) == 0:
-            return None
-
-        collate_with_transform = partial(PerturbationDataset.collate_fn, transform=self.transform)
-
-        ds = MetadataConcatDataset(self.train_eval_datasets)
-        sampler = PerturbationBatchSampler(
-            dataset=ds,
-            batch_size=self.batch_size,
-            drop_last=False,  # Drop incomplete batches during training
-        )
-
-        return DataLoader(
-            ds,
-            batch_sampler=sampler,
-            num_workers=self.num_workers,
-            collate_fn=collate_with_transform,
-        )
-
-    def val_dataloader(self):
-        if len(self.val_datasets) == 0:
-            return None
-
-        collate_with_transform = partial(PerturbationDataset.collate_fn, transform=self.transform)
-
-        ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(
-            dataset=ds,
-            batch_size=self.batch_size,
-            drop_last=False,  # Drop incomplete batches during training
-        )
-
-        return DataLoader(
-            ds,
-            batch_sampler=sampler,
-            num_workers=self.num_workers,
-            collate_fn=collate_with_transform,
-        )
-
-    def test_dataloader(self):
-        if len(self.test_datasets) == 0:
-            return None
-
-        collate_with_transform = partial(PerturbationDataset.collate_fn, transform=self.transform)
-
-        ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(
-            dataset=ds,
-            batch_size=self.batch_size,
-            drop_last=False,  # Drop incomplete batches during training
-        )
-
-        return DataLoader(
-            ds,
-            batch_sampler=sampler,
-            num_workers=self.num_workers,
-            collate_fn=collate_with_transform,
-        )
-
+    
     def get_control_pert(self):
         # Return the control perturbation name
         return self.train_datasets[0].dataset.control_pert
-
-    def predict_dataloader(self):
-        # Use test data for predictions
-        return self.test_dataloader()
 
     def _compute_pert_mean_offsets_for_inference(self, use_gene_space: bool = False, embed_key: str = "X_uce"):
         """
@@ -550,7 +566,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files_dict = self._find_dataset_files(ds_name)
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
-                    cats = f["obs/cell_type/categories"][:].astype(str)
+                    # cats = f["obs/cell_type/categories"][:].astype(str)
+                    cats = [x.decode('utf-8') for x in f["obs/cell_name/categories"][:]]
                     all_celltypes.update(cats)
 
         if len(all_celltypes) == 0:
@@ -571,7 +588,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files_dict = self._find_dataset_files(ds_name)
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
-                    cats = f["obs/gene/categories"][:].astype(str)
+                    # cats = f["obs/drug/categories"][:].astype(str)
+                    cats = [x.decode('utf-8') for x in f["obs/drug/categories"][:]]
                     all_perts.update(cats)
 
         if len(all_perts) == 0:
@@ -593,7 +611,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
                     try:
-                        cats = f["obs/gem_group/categories"][:].astype(str)
+                        # cats = f["obs/gem_group/categories"][:].astype(str)
+                        cats = [x.decode('utf-8') for x in f["obs/drug/categories"][:]]
                     except KeyError:
                         cats = f["obs/gem_group"][:].astype(str)
                     all_batches.update(cats)
@@ -603,163 +622,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         self.batch_onehot_map = generate_onehot_map(all_batches)
         self.num_batches = len(self.batch_onehot_map)
-
-    def _setup_training_datasets(self):
-        """
-        Creates the training & validation splits for each dataset/cell_type
-        in self.train_specs, also handling few-shot if needed.
-        """
-        # Group train/test specs by dataset
-        train_map = self._group_specs_by_dataset(self.train_specs)
-        test_map = self._group_specs_by_dataset(self.test_specs)
-
-        for dataset_name, specs in train_map.items():
-            # 1) load all h5 files for that dataset
-            files_dict = self._find_dataset_files(dataset_name)
-            # 2) figure out which cts are for testing, so we skip them in training
-            test_cell_types = self._get_test_cell_types(dataset_name, test_map)
-            # 3) figure out which cts to train on
-            training_cell_types = self._get_training_cell_types(specs, files_dict, test_cell_types)
-            print(f"Assigning {training_cell_types} for dataset {dataset_name} to train data")
-            print(f"Assigning {test_cell_types} for dataset {dataset_name} to test data")
-
-            # Subsampling fraction
-            subsample_fraction = self.dataset_subsampling.get(dataset_name, 1.0)
-            logger.info(f"Setting up {dataset_name} with {subsample_fraction:.1%} subsampling")
-
-            # Build for each cell type
-            for ct in training_cell_types:
-                logger.info(f"Adding training cell type: {ct} for dataset {dataset_name}")
-
-                # 1) Create mapping strategy instance
-                base_params = {
-                    "random_state": self.random_seed,
-                    "n_basal_samples": self.n_basal_samples,
-                    "k_neighbors": self.k_neighbors,
-                    "pca_transform": self.transform,
-                    "n_clusters": 50,
-                    "neighborhood_fraction": self.neighborhood_fraction,
-                }
-
-                strategy_obj = self.mapping_strategy_cls(**base_params)
-
-                # 2) Build PerturbationDataset
-                ds_obj = PerturbationDataset(
-                    name=f"{dataset_name}",  # or use DatasetType(dataset_name).value
-                    h5_path=files_dict[ct],
-                    mapping_strategy=strategy_obj,
-                    embed_key=self.embed_key,
-                    store_raw_expression=self.output_space == "gene",
-                    random_state=self.random_seed,
-                    pert_onehot_map=self.pert_onehot_map,
-                    batch_onehot_map=self.batch_onehot_map,
-                    pert_tracker=self.pert_tracker,
-                    should_yield_control_cells=self.should_yield_control_cells,
-                    split_train_val_controls=self.split_train_val_controls,
-                    preload_data=self.preload_data,
-                )
-
-                logger.info("\t Cell type {} has {} cells".format(ct, len(ds_obj)))
-
-                # 3) Split train/val (for perturbed)
-                splits = ds_obj.prepare_training_splits(self.val_split, self.rng)
-                train_pert = splits["train"]["perturbed"]
-                train_ctrl = splits["train"]["control"]
-                val_pert = splits["val"]["perturbed"]
-                val_ctrl = splits["val"]["control"]
-
-                # 4) Create subset for train
-                if len(train_pert) > 0:
-                    train_subset = ds_obj.to_subset_dataset("train", train_pert, train_ctrl, subsample_fraction)
-                    self.train_datasets.append(train_subset)
-
-                    # Also create a "train_eval" subset from 10% of the train pert
-                    # TODO-Abhi: reaching into PerturbationDataset internals here, not ideal, fix
-                    retained_train_pert = np.array(list(train_subset.dataset.split_perturbed_indices["train"]))
-                    if len(retained_train_pert) > 0:
-                        rng = np.random.default_rng(self.random_seed)
-                        train_eval_size = int(self.few_shot_percent * len(retained_train_pert))
-                        if train_eval_size > 0:
-                            train_eval_pert = rng.choice(retained_train_pert, size=train_eval_size, replace=False)
-                            train_eval_subset = ds_obj.to_subset_dataset(
-                                "train_eval", train_eval_pert, train_ctrl, subsample_fraction
-                            )
-                            self.train_eval_datasets.append(train_eval_subset)
-
-                # 5) Create subset for val
-                if len(val_pert) > 0:
-                    val_subset = ds_obj.to_subset_dataset("val", val_pert, val_ctrl, subsample_fraction)
-                    self.val_datasets.append(val_subset)
-
-            # Also handle few-shot tasks to add to training if specified
-            self._setup_fewshot_datasets(dataset_name, files_dict, specs, test_map)
-
-    def _setup_test_datasets(self):
-        """
-        Creates zero-shot or few-shot test splits. The code checks if the
-        dataset/cell_type is in a zero-shot or few-shot task spec, and builds
-        a corresponding subset from all perturbed cells.
-        """
-        test_map = self._group_specs_by_dataset(self.test_specs)
-        for dataset_name, specs in test_map.items():
-            files_dict = self._find_dataset_files(dataset_name)
-            for spec in specs:
-                # 1) Build a mapping strategy
-                strategy_obj = self.mapping_strategy_cls(
-                    random_state=self.random_seed,
-                    n_basal_samples=self.n_basal_samples,
-                    k_neighbors=self.k_neighbors,
-                    neighborhood_fraction=self.neighborhood_fraction,
-                )
-                # 2) Build dataset
-                ds_obj = PerturbationDataset(
-                    name=f"{dataset_name}",
-                    h5_path=files_dict[spec.cell_type],
-                    mapping_strategy=strategy_obj,
-                    embed_key=self.embed_key,
-                    store_raw_expression=True,
-                    random_state=self.random_seed,
-                    pert_onehot_map=self.pert_onehot_map,
-                    batch_onehot_map=self.batch_onehot_map,
-                    pert_tracker=self.pert_tracker,
-                    should_yield_control_cells=self.should_yield_control_cells,
-                    split_train_val_controls=self.split_train_val_controls,
-                    preload_data=self.preload_data,
-                )
-
-                if spec.task_type == TaskType.ZEROSHOT:
-                    # All controls are accessible to both train and val
-                    test_pert = np.where(~ds_obj.control_mask)[0]
-                    test_ctrl = np.where(ds_obj.control_mask)[0]
-
-                    if len(test_pert) > 0:
-                        test_subset = ds_obj.to_subset_dataset("test", test_pert, test_ctrl)
-                        self.test_datasets.append(test_subset)
-                elif spec.task_type == TaskType.FEWSHOT:
-                    # If a few-shot partition for this dataset/cell_type does not exist, compute it on the fly.
-                    if (dataset_name, spec.cell_type) not in self.fewshot_splits:
-                        logger.info(f"No few-shot partition found for {dataset_name}/{spec.cell_type} in training. Computing on the fly.")
-                        splits = ds_obj.prepare_fewshot_splits(self.few_shot_percent, self.val_split, self.rng)
-                        self.fewshot_splits[(dataset_name, spec.cell_type)] = splits
-
-                        train_pert = splits["train"]["perturbed"]
-                        train_ctrl = splits["train"]["control"]
-                        val_pert = splits["val"]["perturbed"]
-                        val_ctrl = splits["val"]["control"]
-
-                        if len(train_pert) > 0:
-                            train_subset = ds_obj.to_subset_dataset("train", train_pert, train_ctrl)
-                            self.train_datasets.append(train_subset)
-                        if len(val_pert) > 0:
-                            val_subset = ds_obj.to_subset_dataset("val", val_pert, val_ctrl)
-                            self.val_datasets.append(val_subset)
-                    else:
-                        splits = self.fewshot_splits[(dataset_name, spec.cell_type)]
-                    test_pert = splits["test"]["perturbed"]
-                    test_ctrl = splits["test"]["control"]
-                    if len(test_pert) > 0:
-                        test_subset = ds_obj.to_subset_dataset("test", test_pert, test_ctrl)
-                        self.test_datasets.append(test_subset)
 
     ############################
     # ADDITIONAL HELPERS
@@ -914,3 +776,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 else:
                     train_cts.add(s.cell_type)
         return train_cts
+
+# A small helper to decode arrays (so we can reuse it in this module if needed)
+def safe_decode_array(arr):
+    try:
+        return [x.decode("utf-8") if isinstance(x, bytes) else str(x) for x in arr]
+    except Exception:
+        return [str(x) for x in arr]

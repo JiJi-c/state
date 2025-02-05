@@ -4,73 +4,64 @@ from collections import defaultdict
 from typing import Dict, List, Tuple, Iterator
 from torch.utils.data import Sampler
 
-
 class PerturbationBatchSampler(Sampler):
     """
-    Samples batches ensuring all elements in a batch share same cell type and perturbation.
-    Control cells are treated as their own perturbation type.
-
-    This sampler works with MetadataConcatDataset which is a wrapper around multiple
-    PerturbationDataset subsets. It maintains global indices while correctly accessing
-    the underlying h5 files using the proper index mapping.
-
-    Args:
-        dataset: MetadataConcatDataset containing multiple dataset subsets
-        batch_size: Number of samples per batch
-        drop_last: Whether to drop the last batch if it's smaller than batch_size
+    Samples batches ensuring that each batch contains cells from the same (cell_type, perturbation) pair.
+    This minimizes within-batch variance and helps cells attend to one another.
+    
+    This sampler works with a MetadataConcatDataset (a concatenation of multiple PerturbationDataset
+    subsets). In the new design, each PerturbationDataset may contain multiple cell types.
+    If the dataset was created with a filter (via filter_cell_type), then that value is used; otherwise,
+    each sample’s cell type is read from the file.
     """
-
     def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False):
+        # If the dataset has a data_source attribute, use it.
         if hasattr(dataset, "data_source"):
-            self.dataset = (
-                dataset.data_source
-            )  # lightning sometimes tries to pass in dataset as a sequential sampler here...
+            self.dataset = dataset.data_source
         else:
             self.dataset = dataset
         self.batch_size = batch_size
         self.drop_last = drop_last
 
-        # Group indices by (cell_type, perturbation), accounting for dataset offsets
+        # Group indices by (cell_type, perturbation)
         self.grouped_indices: Dict[Tuple[str, str], List[int]] = defaultdict(list)
 
         offset = 0
-        for subset in self.dataset.datasets:  # These are the individual dataset subsets
-            base_dataset = subset.dataset  # This is the PerturbationDataset
-            cell_type = base_dataset.cell_type_categories[0]
-
-            # Go through all indices in this subset
+        # Iterate over each subset in the concatenated dataset.
+        for subset in self.dataset.datasets:
+            base_dataset = subset.dataset  # This is a PerturbationDataset
+            # Loop over the indices in this subset
             for i in range(len(subset)):
-                global_idx = offset + i  # Index in the concatenated dataset
-                base_idx = subset.indices[i]  # Actual index in the base h5 file
+                global_idx = offset + i                # Index in the concatenated dataset
+                base_idx = subset.indices[i]             # Actual index in the base HDF5 file
 
-                # Get perturbation name using correct base index
+                # Determine the cell type for this sample:
+                if base_dataset.filter_cell_type is not None:
+                    cell_type = base_dataset.filter_cell_type
+                else:
+                    code = base_dataset.h5_file[f"obs/{base_dataset.cell_type_key}/codes"][base_idx]
+                    cell_type = base_dataset.all_cell_types[int(code)]
+
+                # Get the perturbation name using the base index.
                 pert_code = base_dataset.h5_file[f"obs/{base_dataset.pert_col}/codes"][base_idx]
-                pert_name = base_dataset.pert_categories[pert_code]
+                pert_name = base_dataset.pert_categories[int(pert_code)]
 
-                # Group both control and perturbed cells
+                # Group the global index by (cell_type, pert_name)
                 self.grouped_indices[(cell_type, pert_name)].append(global_idx)
-
             offset += len(subset)
 
-        # Calculate total number of batches
+        # Calculate total number of batches.
         self.num_batches = sum(
-            len(indices) // self.batch_size + (0 if self.drop_last else 1) for indices in self.grouped_indices.values()
+            len(indices) // self.batch_size + (0 if self.drop_last else 1)
+            for indices in self.grouped_indices.values()
         )
 
     def __iter__(self) -> Iterator[List[int]]:
-        """
-        Yields batches of indices where all cells in a batch share the same
-        cell type and perturbation.
-
-        Returns:
-            Iterator yielding lists of indices for each batch
-        """
-        # Shuffle indices within each group
+        # Shuffle indices within each group.
         grouped_indices_lists = {key: indices.copy() for key, indices in self.grouped_indices.items()}
         for indices in grouped_indices_lists.values():
             np.random.shuffle(indices)
-
-        # Yield batches from each group
+        # Yield batches from each group.
         for indices in grouped_indices_lists.values():
             for i in range(0, len(indices), self.batch_size):
                 batch_indices = indices[i : i + self.batch_size]
@@ -79,5 +70,4 @@ class PerturbationBatchSampler(Sampler):
                 yield batch_indices
 
     def __len__(self) -> int:
-        """Returns the total number of batches."""
         return self.num_batches
