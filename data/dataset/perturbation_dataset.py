@@ -241,7 +241,7 @@ class PerturbationDataset(Dataset):
         # Get batch information
         if self.batch_is_categorical:
             batch_code = self.h5_file[f"obs/{self.batch_col}/codes"][underlying_idx]
-            batch = self.batch_categories[int(batch_code)]
+            batch = int(batch_code)
         else:
             batch = str(self.h5_file[f"obs/{self.batch_col}"][underlying_idx])
 

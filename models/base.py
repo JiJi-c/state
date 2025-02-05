@@ -92,7 +92,7 @@ class PerturbationModel(ABC, LightningModule):
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic."""
         pred = self(batch)
-        if self.output_space == "gene":
+        if self.output_space == "gene" and self.embed_key is not None:
             if "X_gene" not in batch:
                 raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
             target = batch["X_gene"]
@@ -106,7 +106,7 @@ class PerturbationModel(ABC, LightningModule):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         pred = self(batch)
-        if self.output_space == "gene":
+        if self.output_space == "gene" and self.embed_key is not None:
             if "X_gene" not in batch:
                 raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
             target = batch["X_gene"]
@@ -165,7 +165,7 @@ class PerturbationModel(ABC, LightningModule):
         adata_pred = ad.AnnData(obs=obs, X=self.val_cache["pred"])
 
         # TODO: update the evaluation script now.
-        if self.output_space == "gene":
+        if self.output_space == "gene" and self.embed_key is not None:
             # we need to remove this. during validation
             adata_real_exp = ad.AnnData(obs=obs, X=self.val_cache["X_gene"])
             adata_real.var.index = self.gene_names

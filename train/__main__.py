@@ -298,6 +298,5 @@ def train(cfg: DictConfig) -> None:
         ckpt_path=checkpoint_path,
     )
 
-
 if __name__ == "__main__":
     train()
