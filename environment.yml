@@ -7,16 +7,16 @@ channels:
 dependencies:
   - python=3.11
   - tensorboard
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=12.1
-  - lightning
   - numpy
   - pandas
   - pip
   - pip:
+    - torch
+    - torchvision
+    - torchaudio
+    - lightning
     - h5py
+    - pyyaml
     - jinja2
     - scanpy
     - hydra-core

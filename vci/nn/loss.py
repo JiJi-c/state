@@ -8,28 +8,15 @@ class WassersteinLoss(nn.Module):
     Implements Wasserstein distance loss for distributions represented by logits.
     This implementation supports both 1D and 2D Wasserstein distance calculations.
     """
-    def __init__(self, num_classes, p=1, reduction='mean'):
+    def __init__(self, p=1, reduction='mean'):
         """
         Args:
-            num_classes (int): Number of classes in the distribution
             p (int): Order of Wasserstein distance (1 or 2)
             reduction (str): 'mean', 'sum', or 'none'
         """
         super().__init__()
-        self.num_classes = num_classes
         self.p = p
         self.reduction = reduction
-
-        # Pre-compute the cost matrix for efficiency
-        self.register_buffer('cost_matrix', self._create_cost_matrix())
-
-    def _create_cost_matrix(self):
-        """Creates the cost matrix for computing Wasserstein distance."""
-        indices = torch.arange(self.num_classes)
-        cost_matrix = torch.abs(indices.view(-1, 1) - indices.view(1, -1))
-        if self.p == 2:
-            cost_matrix = cost_matrix.pow(2)
-        return cost_matrix
 
     def forward(self, input, target):
         """
@@ -43,6 +30,8 @@ class WassersteinLoss(nn.Module):
         Returns:
             torch.Tensor: Computed Wasserstein distance
         """
+
+        target = torch.nan_to_num(target, nan=0.0)
         # Convert logits to probabilities
         pred_probs = F.softmax(input, dim=-1)
         target = F.softmax(target, dim=-1)
@@ -50,6 +39,12 @@ class WassersteinLoss(nn.Module):
         # Compute cumulative distribution functions (CDFs)
         pred_cdf = torch.cumsum(pred_probs, dim=-1)
         target_cdf = torch.cumsum(target, dim=-1)
+
+        max_len = max(pred_cdf.size(1), target_cdf.size(1))
+        if pred_cdf.size(1) < max_len:
+            pred_cdf = F.pad(pred_cdf, (0, max_len - pred_cdf.size(1)), 'constant', 0)
+        if target_cdf.size(1) < max_len:
+            target_cdf = F.pad(target_cdf, (0, max_len - target_cdf.size(1)), 'constant', 0)
 
         # Compute Wasserstein distance
         wasserstein_dist = torch.abs(pred_cdf - target_cdf).pow(self.p)
@@ -69,7 +64,6 @@ class KLDivergenceLoss(nn.Module):
         self.epsilon = epsilon
 
     def forward(self, input, target):
-        input = torch.nan_to_num(input, nan=0.0)
         target = torch.nan_to_num(target, nan=0.0)
 
         max_len = max(input.size(1), target.size(1))
@@ -85,7 +79,6 @@ class KLDivergenceLoss(nn.Module):
             p = input
             q = target
 
-        # return F.kl_div(q, p, reduction='batchmean')
         return torch.sum(p * torch.log(p / q))
 
 class MMDLoss(nn.Module):

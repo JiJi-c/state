@@ -148,17 +148,16 @@ class LitUCEModel(L.LightningModule):
 
     def _compute_embedding_for_batch(self, batch):
         batch_sentences = batch[0].to(self.device)
-        mask = batch[1].to(self.device)
-        X = batch[2].to(self.device)
-        Y = batch[3]
-        batch_weights = batch[5]
+        X = batch[1].to(self.device)
+        Y = batch[2]
+        batch_weights = batch[4]
 
         batch_sentences = self.pe_embedding(batch_sentences.long())
         X = self.pe_embedding(X.long())
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-        _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding = self.forward(batch_sentences, mask=None)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding

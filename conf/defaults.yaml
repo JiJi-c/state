@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrain_1_${loss.name}"
+  name: "vci_pretrain_${loss.name}_{model.nhead}_{model.nlayers}"
   local: "local"
   compiled: false
   profile:
