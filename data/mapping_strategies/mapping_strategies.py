@@ -77,9 +77,10 @@ class BaseMappingStrategy(ABC):
                 return expr, expr  # both X and basal are same control
             else:
                 control_indices = self.get_control_indices(dataset, split, perturbed_idx)
-                ctrl_expr = torch.stack(
-                    [torch.tensor(dataset.fetch_obsm_expression(idx, dataset.embed_key)) for idx in control_indices]
-                ).mean(0)
+                ctrl_expr = dataset.fetch_obsm_expression(control_indices[0], dataset.embed_key) 
+                # ctrl_expr = torch.stack(
+                #     [torch.tensor(dataset.fetch_obsm_expression(idx, dataset.embed_key)) for idx in control_indices]
+                # ).mean(0)
                 pert_expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
                 return pert_expr, ctrl_expr
         else:

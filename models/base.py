@@ -5,6 +5,7 @@ import anndata as ad
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import numpy as np
 import torch.nn as nn
 
 from abc import ABC, abstractmethod
@@ -114,7 +115,8 @@ class PerturbationModel(ABC, LightningModule):
         else:
             loss = self.loss_fn(pred, batch["X"])
 
-        self._update_val_cache(batch, pred)
+        if np.random.rand() < 0.1:
+            self._update_val_cache(batch, pred)
         self.log("val_loss", loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -151,6 +153,10 @@ class PerturbationModel(ABC, LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
     def on_validation_epoch_end(self) -> None:
+        # bypass sanity checkers since we don't add everything to validation cache
+        if len(self.val_cache) == 0:
+            return
+
         for k in self.val_cache:
             if k in ("X", "X_gene", "pred", "pert", "basal"):
                 self.val_cache[k] = np.concatenate(self.val_cache[k])

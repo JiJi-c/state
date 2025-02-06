@@ -218,6 +218,8 @@ def train(cfg: DictConfig) -> None:
             # TODO-Abhi: only save necessary data
             pickle.dump(data_module, f)
 
+    logger.info(f"Data module saved.")
+
     # Create model
     model = get_lightning_module(
         cfg["model"]["name"],
@@ -251,6 +253,8 @@ def train(cfg: DictConfig) -> None:
     ckpt_callbacks = get_checkpoint_callbacks(cfg["output_dir"], cfg["name"], cfg["training"]["val_freq"])
     callbacks = ckpt_callbacks + [GradNormCallback(), PerturbationMagnitudeCallback()]
 
+    logger.info('Loggers and callbacks set up.')
+
     # Decide on trainer params
     trainer_kwargs = dict(
         accelerator="gpu",
@@ -283,6 +287,8 @@ def train(cfg: DictConfig) -> None:
         # return
     else:
         logging.info(f"!! Resuming training from {checkpoint_path} !!")
+
+    logger.info('Starting trainer fit.')
 
     # Train
     trainer.fit(

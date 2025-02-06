@@ -9,6 +9,7 @@ This enables experiments such as cell state transfer (e.g. train on all but a fe
 
 from typing import Dict, List, Optional, Union, Literal
 import functools
+from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Subset
 import h5py
@@ -68,7 +69,7 @@ class PerturbationDataset(Dataset):
         store_raw_expression: bool = False,
         random_state: int = 42,
         pert_tracker = None,
-        should_yield_control_cells: bool = False,
+        should_yield_control_cells: bool = True,
         split_train_val_controls: bool = False,
         preload_data: bool = False,
         **kwargs,
@@ -136,7 +137,10 @@ class PerturbationDataset(Dataset):
         # If filter_cell_type is specified, filter the indices accordingly.
         if self.filter_cell_type is not None:
             # Find indices where the cell type matches
-            self.filtered_indices = np.where(self.all_cell_types == self.filter_cell_type)[0]
+            ct_code = np.where(self.all_cell_types == self.filter_cell_type)[0][0]
+            self.filtered_indices = np.where(
+                self.h5_file[f"obs/{self.cell_type_key}/codes"][:] == ct_code
+            )[0]
             if len(self.filtered_indices) == 0:
                 logger.warning(f"No cells with type {self.filter_cell_type} found in {self.h5_path}")
         else:
@@ -254,7 +258,7 @@ class PerturbationDataset(Dataset):
             "gem_group": batch,
         }
         # Optionally, if raw gene expression is needed:
-        if "store_raw_expression" in self.__dict__ and self.__dict__.get("store_raw_expression", False):
+        if self.store_raw_expression:
             sample["X_gene"] = self.fetch_gene_expression(underlying_idx)
         return sample
 
@@ -372,56 +376,123 @@ class PerturbationDataset(Dataset):
             "val": {"perturbed": val_indices, "control": ctrl_indices},
         }
 
-    def prepare_fewshot_splits(self, few_shot_percent: float = 0.3, val_split: float = 0.15, rng: np.random.Generator = None) -> Dict[str, Dict[str, np.ndarray]]:
+    def prepare_fewshot_splits(self, fewshot_split: float, val_split: float, rng: np.random.Generator = None) -> Dict[str, Dict[str, np.ndarray]]:
         """
-        Similar to prepare_training_splits but splits the perturbed cells into train/val/test for few-shot learning.
-        Operates on the filtered indices.
+        Split indices for few-shot learning on a cell type.
+        
+        Args:
+            fewshot_split: Fraction of perturbed cells to use for training
+            val_split: Further split training data into train/val  
+            rng: Random number generator
+
+        Returns:
+            Dictionary with keys 'train', 'val', 'test', each containing:
+                - 'perturbed': indices for perturbed cells
+                - 'control': indices for control cells
         """
         if rng is None:
             rng = np.random.default_rng(42)
+
         indices = self.filtered_indices
         pert_codes = self.h5_file[f"obs/{self.pert_col}/codes"][indices]
         pert_names = np.array(self.pert_categories)[pert_codes]
-        pert_groups = {}
-        for pert in np.unique(pert_names):
-            if pert == self.control_pert:
-                continue
-            pert_groups[pert] = indices[pert_names == pert]
-        # Split into train_val and test based on few_shot_percent
-        total_cells = sum(len(arr) for arr in pert_groups.values())
-        target_test_cells = (1 - few_shot_percent) * total_cells
 
-        train_val_perts = []
-        test_perts = []
-        current_test = 0
-        pert_list = list(pert_groups.keys())
-        rng.shuffle(pert_list)
-        for pert in pert_list:
-            group_size = len(pert_groups[pert])
-            if abs((current_test + group_size) - target_test_cells) < abs(current_test - target_test_cells):
-                test_perts.append(pert)
-                current_test += group_size
+        # First handle control cells separately - split them according to fewshot_split
+        control_mask = pert_names == self.control_pert
+        control_indices = indices[control_mask]
+        rng.shuffle(control_indices)  # In-place shuffle
+        n_train_controls = int(len(control_indices) * fewshot_split)
+        
+        train_val_controls = control_indices[:n_train_controls]
+        test_controls = control_indices[n_train_controls:]
+
+        # Further split train_val controls
+        n_val_controls = int(len(train_val_controls) * val_split)
+        val_controls = train_val_controls[:n_val_controls]
+        train_controls = train_val_controls[n_val_controls:]
+
+        # Now handle perturbed cells (non-control)
+        # Get counts per perturbation
+        pert_indices = indices[~control_mask]
+        pert_names_no_ctrl = pert_names[~control_mask]
+        
+        pert_counts = defaultdict(int)
+        pert_to_indices = defaultdict(list)
+        for idx, pert in zip(pert_indices, pert_names_no_ctrl):
+            pert_counts[pert] += 1
+            pert_to_indices[pert].append(idx)
+
+        # Split perturbations greedily based on total cells
+        total_cells = sum(pert_counts.values())
+        target_train_cells = total_cells * fewshot_split
+
+        # Sort perturbations by count for greedy allocation
+        sorted_perts = sorted(
+            [(p, c) for p, c in pert_counts.items()],
+            key=lambda x: x[1], 
+            reverse=True
+        )
+
+        train_val_perts = set()
+        test_perts = set()
+        current_train_cells = 0
+
+        for pert, count in sorted_perts:
+            if abs((current_train_cells + count) - target_train_cells) < \
+            abs(current_train_cells - target_train_cells):
+                train_val_perts.add(pert)
+                current_train_cells += count
             else:
-                train_val_perts.append(pert)
-        # Then further split train_val_perts into train and val
-        train_groups = {}
-        val_groups = {}
+                test_perts.add(pert)
+
+        # Gather indices for each split
+        train_val_pert_indices = []
+        test_pert_indices = []
+        
         for pert in train_val_perts:
-            arr = pert_groups[pert]
-            n = len(arr)
-            n_val = int(n * val_split)
-            rng.shuffle(arr)
-            val_groups[pert] = arr[:n_val]
-            train_groups[pert] = arr[n_val:]
-        train_indices = np.concatenate(list(train_groups.values())) if train_groups else np.array([], dtype=int)
-        val_indices = np.concatenate(list(val_groups.values())) if val_groups else np.array([], dtype=int)
-        test_indices = np.concatenate([pert_groups[p] for p in test_perts]) if test_perts else np.array([], dtype=int)
-        ctrl_indices = indices[pert_names == self.control_pert]
+            train_val_pert_indices.extend(pert_to_indices[pert])
+        for pert in test_perts:
+            test_pert_indices.extend(pert_to_indices[pert])
+
+        # Further split train_val perturbed cells
+        rng.shuffle(train_val_pert_indices)  # In-place shuffle
+        n_val = int(len(train_val_pert_indices) * val_split)
+        val_pert_indices = train_val_pert_indices[:n_val]
+        train_pert_indices = train_val_pert_indices[n_val:]
 
         return {
-            "train": {"perturbed": train_indices, "control": ctrl_indices},
-            "val": {"perturbed": val_indices, "control": ctrl_indices},
-            "test": {"perturbed": test_indices, "control": ctrl_indices},
+            'train': {
+                'perturbed': np.array(train_pert_indices),
+                'control': train_controls
+            },
+            'val': {
+                'perturbed': np.array(val_pert_indices),
+                'control': val_controls
+            },
+            'test': {
+                'perturbed': np.array(test_pert_indices),
+                'control': test_controls
+            }
+        }
+
+    def prepare_zeroshot_splits(self) -> Dict[str, Dict[str, np.ndarray]]:
+        """
+        For zero-shot tasks, all cells (including controls) go to test.
+        """
+        indices = self.filtered_indices
+        pert_codes = self.h5_file[f"obs/{self.pert_col}/codes"][indices]
+        pert_names = np.array(self.pert_categories)[pert_codes]
+        
+        # Split into control and perturbed
+        control_mask = pert_names == self.control_pert
+        control_indices = indices[control_mask]
+        pert_indices = indices[~control_mask]
+
+        return {
+            'test': {
+                'perturbed': pert_indices,
+                'control': control_indices
+            }
         }
 
     def fetch_gene_expression(self, idx: int) -> torch.Tensor:
@@ -451,7 +522,7 @@ class PerturbationDataset(Dataset):
         if hasattr(self, "preloaded_data") and key in self.preloaded_data:
             return torch.tensor(self.preloaded_data[key][idx], dtype=torch.float32)
         row_data = self.h5_file[f"/obsm/{key}"][idx]
-        return torch.tensor(row_data)
+        return torch.tensor(row_data, dtype=torch.float32)
 
     def get_gene_names(self) -> List[str]:
         """
@@ -496,8 +567,8 @@ class PerturbationDataset(Dataset):
 
         # Apply transform if provided
         if transform is not None:
-            batch_dict["X"] = transform.encode(batch_dict["X"])
-            batch_dict["basal"] = transform.encode(batch_dict["basal"])
+            batch_dict["X"] = torch.log1p(batch_dict["X"]) # log-transform the expression, THIS NEEDS TO BE REMOVED FOR EMBEDDINGS
+            batch_dict["basal"] = torch.log1p(batch_dict["basal"])
 
         return batch_dict
 
@@ -547,6 +618,26 @@ class PerturbationDataset(Dataset):
             indptr = self.h5_file["X/indptr"][:]
             n_rows = len(indptr) - 1
         return n_rows
+
+    def get_perturbation_counts(self) -> Dict[str, int]:
+        """Get total cell counts per perturbation for this dataset."""
+        counts = defaultdict(int)
+        pert_codes = self.h5_file[f"obs/{self.pert_col}/codes"][self.filtered_indices]
+        pert_names = self.pert_categories[pert_codes]
+        for pert in pert_names:
+            counts[str(pert)] += 1
+        return counts
+
+    def get_indices_for_celltype(self, cell_type: str) -> np.ndarray:
+        """Get indices for a specific cell type."""
+        ct_code = np.where(self.all_cell_types == cell_type)[0][0]
+        ct_mask = self.h5_file[f"obs/{self.cell_type_key}/codes"][:] == ct_code
+        return np.where(ct_mask)[0]
+
+    def get_pert_name(self, idx: int) -> str:
+        """Get perturbation name for a given index."""
+        pert_code = self.h5_file[f"obs/{self.pert_col}/codes"][idx]
+        return self.pert_categories[int(pert_code)]
 
     def __len__(self) -> int:
         return self.n_cells
