@@ -155,7 +155,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int) -> List[
         dirpath=checkpoint_dir,
         filename="{step}",
         save_last=False,  # Don't create/update symlink
-        every_n_train_steps=10000,
+        every_n_train_steps=val_freq,
         save_top_k=-1,  # Keep all periodic checkpoints
     )
     callbacks.append(periodic_ckpt)

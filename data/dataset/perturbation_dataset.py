@@ -2,9 +2,7 @@
 PerturbationDataset is used to load perturbation data from h5 files.
 Originally, each file was assumed to contain a single cell type.
 Now, we remove that assumption so that each file (a plate) may contain
-multiple cell types. When constructing a dataset, an optional parameter
-`filter_cell_type` can be provided to only keep cells matching that type.
-This enables experiments such as cell state transfer (e.g. train on all but a few cell types and test on held‐out ones).
+multiple cell types. 
 """
 
 from typing import Dict, List, Optional, Union, Literal
@@ -12,6 +10,7 @@ import functools
 from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Subset
+from data.utils.data_utils import safe_decode_array, H5MetadataCache
 import h5py
 import numpy as np
 from pathlib import Path
@@ -21,18 +20,6 @@ import logging
 from data.mapping_strategies import BaseMappingStrategy
 
 logger = logging.getLogger(__name__)
-
-def safe_decode_array(arr):
-    """
-    Helper that accepts a numpy array and if its elements are bytes,
-    decodes them to utf-8 strings. Otherwise returns the array as a list.
-    """
-    try:
-        # Try to decode (this works if elements are bytes)
-        return np.array([x.decode('utf-8') if isinstance(x, bytes) else str(x) for x in arr])
-    except Exception:
-        # Fallback: simply convert each element to string
-        return np.array([str(x) for x in arr])
 
 class PerturbationDataset(Dataset):
     """
@@ -57,20 +44,16 @@ class PerturbationDataset(Dataset):
         mapping_strategy: BaseMappingStrategy,
         pert_onehot_map: Optional[Dict[str, int]] = None,
         batch_onehot_map: Optional[Dict[str, int]] = None,
-        # pert_col: str = "gene",
-        pert_col: str = "drug",
-        # cell_type_key: str = "cell_type",
-        cell_type_key: str = "cell_name",
-        # batch_col: str = "gem_group",
-        batch_col: str = "drug",
+        metadata_cache: Optional[H5MetadataCache] = None,
+        pert_col: str = "gene",
+        cell_type_key: str = "cell_type",
+        batch_col: str = "gem_group",
         control_pert: str = "non-targeting",
         embed_key: Literal["X_uce", "X_pca"] = "X_uce",
-        filter_cell_type: Optional[str] = None,
         store_raw_expression: bool = False,
         random_state: int = 42,
         pert_tracker = None,
         should_yield_control_cells: bool = True,
-        split_train_val_controls: bool = False,
         preload_data: bool = False,
         **kwargs,
     ):
@@ -101,56 +84,41 @@ class PerturbationDataset(Dataset):
         self.batch_col = batch_col
         self.control_pert = control_pert
         self.embed_key = embed_key
-        self.filter_cell_type = filter_cell_type
         self.store_raw_expression = store_raw_expression
         self.rng = np.random.RandomState(random_state)
         self.pert_tracker = pert_tracker
         self.should_yield_control_cells = should_yield_control_cells
         self.should_yield_controls = should_yield_control_cells
-        self.split_train_val_controls = split_train_val_controls
+
+        if not metadata_cache:
+            metadata_cache = H5MetadataCache(
+                str(self.h5_path),
+                self.pert_col,
+                self.cell_type_key,
+                self.control_pert,
+                self.batch_col,
+            )
+        self.metadata_cache = metadata_cache
 
         # Load file
         self.h5_file = h5py.File(self.h5_path, "r")
 
-        # Read perturbation categories and decode safely
-        raw_pert_categories = self.h5_file[f"obs/{self.pert_col}/categories"][:]
-        self.pert_categories = safe_decode_array(raw_pert_categories)
-
-        # Read cell type categories and decode safely
-        raw_cell_types = self.h5_file[f"obs/{self.cell_type_key}/categories"][:]
-        self.all_cell_types = safe_decode_array(raw_cell_types)
-
-        # Read batch information
-        try:
-            # If batch is stored directly as numbers
-            raw_batches = self.h5_file[f"obs/{self.batch_col}"][:]
-            self.batch_is_categorical = False
-            self.batch_categories = raw_batches.astype(str)
-        except Exception:
-            # Otherwise, if stored as a categorical group
-            raw_batches = self.h5_file[f"obs/{self.batch_col}/categories"][:]
-            self.batch_is_categorical = True
-            self.batch_categories = safe_decode_array(raw_batches)
+        # Use metadata cache for categories (perturbation, cell type, control cells)
+        self.pert_categories = self.metadata_cache.pert_categories
+        self.all_cell_types = self.metadata_cache.cell_type_categories
+        self.control_mask = self.metadata_cache.control_mask
 
         # Determine the full set of indices in the file
+        self.all_indices = np.arange(self.metadata_cache.n_cells)
+
+                # Determine the full set of indices in the file
         self.all_indices = np.arange(self._get_num_cells())
-        # If filter_cell_type is specified, filter the indices accordingly.
-        if self.filter_cell_type is not None:
-            # Find indices where the cell type matches
-            ct_code = np.where(self.all_cell_types == self.filter_cell_type)[0][0]
-            self.filtered_indices = np.where(
-                self.h5_file[f"obs/{self.cell_type_key}/codes"][:] == ct_code
-            )[0]
-            if len(self.filtered_indices) == 0:
-                logger.warning(f"No cells with type {self.filter_cell_type} found in {self.h5_path}")
-        else:
-            self.filtered_indices = self.all_indices
 
         # Store number of genes from the expression matrix (will use in _get_num_genes)
         self.n_genes = self._get_num_genes()
 
         # Also track the number of cells (after filtering)
-        self.n_cells = len(self.filtered_indices)
+        self.n_cells = len(self.all_indices)
 
         # TODO-Abhi: we should move this logic to MultiDatasetPerturbationDataModule
         if self.pert_tracker is not None:
@@ -216,7 +184,7 @@ class PerturbationDataset(Dataset):
         The index `idx` here is into the filtered set of cells.
         """
         # Map idx to the underlying file index
-        underlying_idx = int(self.filtered_indices[idx])
+        underlying_idx = int(self.all_indices[idx])
         split = self._find_split_for_idx(underlying_idx)
 
         # Get expression from the h5 file.
@@ -231,24 +199,18 @@ class PerturbationDataset(Dataset):
 
         pert_expr, ctrl_expr = self.mapping_strategy.get_mapped_expressions(self, split, underlying_idx)
         
-        # Get the perturbation information
-        pert_code = self.h5_file[f"obs/{self.pert_col}/codes"][underlying_idx]
-        pert_name = self.pert_categories[int(pert_code)]
+        # Get perturbation information using metadata cache
+        pert_name = self.metadata_cache.pert_names[underlying_idx]
         if self.pert_onehot_map is not None:
             pert_onehot = self.pert_onehot_map[pert_name]
         else:
             pert_onehot = None
 
-        # Get the cell type for this cell
-        code = self.h5_file[f"obs/{self.cell_type_key}/codes"][underlying_idx]
-        cell_type = self.all_cell_types[int(code)]
+        # Get cell type using metadata cache
+        cell_type = self.metadata_cache.cell_type_names[underlying_idx]
 
         # Get batch information
-        if self.batch_is_categorical:
-            batch_code = self.h5_file[f"obs/{self.batch_col}/codes"][underlying_idx]
-            batch = int(batch_code)
-        else:
-            batch = str(self.h5_file[f"obs/{self.batch_col}"][underlying_idx])
+        batch = self.metadata_cache.batch_codes[underlying_idx]
 
         sample = {
             "X": pert_expr,  # the perturbed cell’s data
@@ -268,13 +230,7 @@ class PerturbationDataset(Dataset):
         Get the batch information for a given cell index. Returns a scalar tensor.
         """
         assert self.batch_onehot_map is not None, "No batch onehot map, run setup."
-
-        if self.batch_is_categorical:
-            gem_code = self.h5_file[f"obs/{self.batch_col}/codes"][idx]
-            batch_name = self.batch_categories[gem_code]
-        else:
-            batch_name = str(self.h5_file[f"obs/{self.batch_col}"][idx])
-
+        batch_name = self.metadata_cache.batch_names[idx]
         batch = torch.argmax(self.batch_onehot_map[batch_name])
         return batch.item()
 
@@ -285,12 +241,19 @@ class PerturbationDataset(Dataset):
         return self.h5_file[f"obsm/{key}"].shape[1]
 
     def get_cell_type(self, idx):
-        code = self.h5_file[f"obs/{self.cell_type_key}/codes"][idx]
-        return self.all_cell_types[int(code)]
+        return self.metadata_cache.cell_type_names[idx]
     
     def get_all_cell_types(self, indices):
         codes = self.h5_file[f"obs/{self.cell_type_key}/codes"][indices]
         return self.all_cell_types[codes]
+
+    def get_perturbation_counts(self) -> Dict[str, int]:
+        """Get total cell counts per perturbation for this dataset using metadata cache."""
+        return self.metadata_cache.get_pert_cell_counts()
+
+    def get_indices_for_celltype(self, cell_type: str) -> np.ndarray:
+        """Get indices for a specific cell type using metadata cache."""
+        return np.where(self.metadata_cache.cell_type_names == cell_type)[0]
 
     # TODO-Abhi: can we move perturbed idx logic and control idx logic internally so these don't have to be passed in?
     def to_subset_dataset(
@@ -453,25 +416,9 @@ class PerturbationDataset(Dataset):
             n_rows = len(indptr) - 1
         return n_rows
 
-    def get_perturbation_counts(self) -> Dict[str, int]:
-        """Get total cell counts per perturbation for this dataset."""
-        counts = defaultdict(int)
-        pert_codes = self.h5_file[f"obs/{self.pert_col}/codes"][self.filtered_indices]
-        pert_names = self.pert_categories[pert_codes]
-        for pert in pert_names:
-            counts[str(pert)] += 1
-        return counts
-
-    def get_indices_for_celltype(self, cell_type: str) -> np.ndarray:
-        """Get indices for a specific cell type."""
-        ct_code = np.where(self.all_cell_types == cell_type)[0][0]
-        ct_mask = self.h5_file[f"obs/{self.cell_type_key}/codes"][:] == ct_code
-        return np.where(ct_mask)[0]
-
     def get_pert_name(self, idx: int) -> str:
         """Get perturbation name for a given index."""
-        pert_code = self.h5_file[f"obs/{self.pert_col}/codes"][idx]
-        return self.pert_categories[int(pert_code)]
+        return self.metadata_cache.pert_names[idx]
 
     def __len__(self) -> int:
         return self.n_cells
@@ -496,6 +443,12 @@ class PerturbationDataset(Dataset):
         self.__dict__.update(state)
         # This ensures that after we unpickle, we have a valid h5_file handle again
         self.h5_file = h5py.File(self.h5_path, "r")
+        self.metadata_cache = H5MetadataCache(
+            str(self.h5_path),
+            self.pert_col,
+            self.cell_type_key,
+            self.control_pert
+        )
 
     def _preload_all_data(self):
         """Preload all data into memory."""

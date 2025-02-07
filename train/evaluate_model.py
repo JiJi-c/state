@@ -24,7 +24,6 @@ from data.mapping_strategies import (
     BatchMappingStrategy,
     RandomMappingStrategy,
     NearestNeighborMappingStrategy,
-    PseudoNearestMappingStrategy,
     PseudoBulkMappingStrategy,
 )
 from data.data_modules import MultiDatasetPerturbationDataModule
@@ -142,7 +141,6 @@ def main():
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
             "nearest": NearestNeighborMappingStrategy,
-            "pseudo_nearest": PseudoNearestMappingStrategy,
             "pseudobulk": PseudoBulkMappingStrategy,
         }[args.map_type]
 

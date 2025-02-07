@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from collections import defaultdict
+from data.dataset.perturbation_dataset import PerturbationDataset
 from data.utils.data_utils import H5MetadataCache
 from typing import Dict, List, Tuple, Iterator
 from torch.utils.data import Sampler
@@ -25,14 +26,15 @@ class PerturbationBatchSampler(Sampler):
         # Create caches for all unique H5 files
         self.metadata_caches = {}
         for subset in self.dataset.datasets:
-            base_dataset = subset.dataset
-            if base_dataset.h5_path not in self.metadata_caches:
-                self.metadata_caches[base_dataset.h5_path] = H5MetadataCache(
-                    str(base_dataset.h5_path),
-                    base_dataset.pert_col,
-                    base_dataset.cell_type_key,
-                    base_dataset.control_pert
-                )
+            base_dataset: PerturbationDataset = subset.dataset
+            self.metadata_caches[base_dataset.h5_path]  = base_dataset.metadata_cache
+            # if base_dataset.h5_path not in self.metadata_caches:
+            #     self.metadata_caches[base_dataset.h5_path] = H5MetadataCache(
+            #         str(base_dataset.h5_path),
+            #         base_dataset.pert_col,
+            #         base_dataset.cell_type_key,
+            #         base_dataset.control_pert
+            #     )
         
         # Create batches
         self.batches = self._create_batches()
@@ -47,13 +49,7 @@ class PerturbationBatchSampler(Sampler):
         base_dataset = subset.dataset
         indices = np.array(subset.indices)
         cache = self.metadata_caches[base_dataset.h5_path]
-        
-        # Get cell types and perturbations
-        if base_dataset.filter_cell_type is not None:
-            cell_types = np.full(len(indices), base_dataset.filter_cell_type)
-            _, pert_names = cache.get_cell_info(indices)
-        else:
-            cell_types, pert_names = cache.get_cell_info(indices)
+        cell_types, pert_names = cache.get_cell_info(indices)
         
         # Create global indices
         global_indices = np.arange(global_offset, global_offset + len(indices))

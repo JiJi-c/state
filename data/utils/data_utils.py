@@ -29,7 +29,9 @@ class H5MetadataCache:
     def __init__(self, h5_path: str, 
                  pert_col: str = 'drug',
                  cell_type_key: str = 'cell_name',
-                 control_pert: str = 'DMSO_TF'):
+                 control_pert: str = 'DMSO_TF',
+                 batch_col: str = 'drug', # replace with plate number
+                ):
         """
         Args:
             h5_path: Path to H5 file
@@ -42,19 +44,34 @@ class H5MetadataCache:
             # Load categories first
             self.pert_categories = safe_decode_array(f[f"obs/{pert_col}/categories"][:])
             self.cell_type_categories = safe_decode_array(f[f"obs/{cell_type_key}/categories"][:])
+
+            # Read batch information
+            try:
+                # If batch is stored directly as numbers
+                raw_batches = f[f"obs/{batch_col}"][:]
+                self.batch_is_categorical = False
+                self.batch_categories = raw_batches.astype(str)
+            except Exception:
+                # Otherwise, if stored as a categorical group
+                raw_batches = f[f"obs/{batch_col}/categories"][:]
+                self.batch_is_categorical = True
+                self.batch_categories = safe_decode_array(raw_batches)
             
             # Then load codes
             self.pert_codes = f[f"obs/{pert_col}/codes"][:].astype(np.int32)
             self.cell_type_codes = f[f"obs/{cell_type_key}/codes"][:].astype(np.int32)
+            self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
             
             # Pre-compute names
             self.pert_names = self.pert_categories[self.pert_codes]
             self.cell_type_names = self.cell_type_categories[self.cell_type_codes]
+            self.batch_names = self.batch_categories[self.batch_codes]
             
             # Create mask for control perturbations
             self.control_mask = self.pert_names == control_pert
             
             self.n_cells = len(self.pert_codes)
+
             
     def get_cell_info(self, indices: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Get cell types and perturbations for given indices."""

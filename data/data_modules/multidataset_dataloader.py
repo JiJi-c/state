@@ -14,7 +14,6 @@ from data.mapping_strategies import (
     BatchMappingStrategy,
     RandomMappingStrategy,
     NearestNeighborMappingStrategy,
-    PseudoNearestMappingStrategy,
     PseudoBulkMappingStrategy,
 )
 from data.transforms.pca import PCATransform  # if needed
@@ -81,17 +80,20 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         batch_size: int = 128,
         num_workers: int = 8,
         few_shot_percent: float = 0.3,
-        random_seed: int = 42,
+        random_seed: int = 42, # this should be removed by seed everything
         val_split: float = 0.10,
+        pert_col: str = "gene",
+        batch_col: str = "gem_group",
+        cell_type_key: str = "cell_type",
+        control_pert: str = "non-targeting",
         embed_key: Optional[Literal["X_uce", "X_pca", "X_scGPT"]] = None,
         output_space: Literal["gene", "latent"] = "gene",
         basal_mapping_strategy: Literal["batch", "random", "nearest"] = "batch",
         n_basal_samples: int = 1,
-        k_neighbors: int = 10,
-        eval_pert: Optional[str] = None,
-        should_yield_control_cells: bool = True,
-        split_train_val_controls: bool = False,
-        preload_data: bool = False,
+        k_neighbors: int = 10, # this should be removed as it's only part of mapping strategy logic now
+        eval_pert: Optional[str] = None, # what is this... needs to go
+        should_yield_control_cells: bool = True, # this should just always be true, remove it
+        preload_data: bool = False, # this can maybe stay... 
         **kwargs,
     ):
         """
@@ -132,13 +134,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.n_basal_samples = n_basal_samples
         self.k_neighbors = k_neighbors
         self.should_yield_control_cells = should_yield_control_cells
-        self.split_train_val_controls = split_train_val_controls
         self.preload_data = preload_data
 
-        self.pert_col = 'drug'
-        self.control_pert = 'DMSO_TF'
-        self.batch_col = 'drug'
-        self.cell_type_key = 'cell_name'
+        self.pert_col = pert_col
+        self.control_pert = control_pert
+        self.batch_col = batch_col
+        self.cell_type_key = cell_type_key
 
         self.train_datasets: List[Dataset] = []
         self.train_eval_datasets: List[Dataset] = []
@@ -152,7 +153,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
             "nearest": NearestNeighborMappingStrategy,
-            "pseudo_nearest": PseudoNearestMappingStrategy,
             "pseudobulk": PseudoBulkMappingStrategy,
         }[basal_mapping_strategy]
 
@@ -161,14 +161,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         )  # move this to a mapping strategy specific config
 
         # Use the chosen data transform if applicable
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # self.transform = PCATransform(n_components=200, device=device) if embed_key == "X_pca" else None
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = True if embed_key == "X_hvg" and self.pert_col == 'drug' else False
-
-        if not self.split_train_val_controls:
-            logger.info("NOTE: Control cells will be shared between train and val splits.")
 
         # Few-shot store: (dataset_name, cell_type) -> dict of splits
         self.fewshot_splits: Dict[(str, str), Dict[str, np.ndarray]] = {}
@@ -188,9 +185,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # track shared perts for evaluation
         self.eval_pert = eval_pert
         self.pert_tracker = PerturbationTracker() if eval_pert else None
-
-        self._pseudo_nearest_global_basal = None
-        self._pseudo_nearest_pert_offsets = None
 
         self._setup_global_maps()
 
@@ -257,7 +251,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     str(fpath),
                     self.pert_col,
                     self.cell_type_key,
-                    self.control_pert
+                    self.control_pert,
+                    self.batch_col,
                 )
         
         # Process each fewshot spec
@@ -336,7 +331,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     str(fpath),
                     self.pert_col,
                     self.cell_type_key,
-                    self.control_pert
+                    self.control_pert,
+                    self.batch_col,
                 )
 
                 # Create base dataset
@@ -554,25 +550,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
     def set_inference_mapping_strategy(self, strategy_cls, **strategy_kwargs):
         """
-        If user picks 'PseudoNearestMappingStrategy', we ensure we have the
-        global offsets. If not, we compute them. Then we create an instance
-        of that strategy and call each test dataset's reset_mapping_strategy.
+        Then we create an instance of that strategy and call each test dataset's
+        reset_mapping_strategy.
         """
-
-        if strategy_cls.__name__ == "PseudoNearestMappingStrategy":
-            # compute offsets
-            use_gene_space = self.output_space == "gene"
-
-            logger.info("Offsets not found, computing them for pseudo_nearest strategy...")
-            self._compute_pert_mean_offsets_for_inference(use_gene_space=use_gene_space, embed_key=self.embed_key)
-            # re-insert the 'use_gene_space' key if needed
-            strategy_kwargs["use_gene_space"] = use_gene_space
-
-            # Now we instantiate the new strategy
-            logger.info("Instantiating PseudoNearestMappingStrategy with precomputed offsets...")
-            strategy_kwargs["pert_mean_offsets"] = self._pseudo_nearest_pert_offsets
-            strategy_kwargs["global_basal"] = self._pseudo_nearest_global_basal
-
         # normal usage for e.g. NearestNeighborMappingStrategy, etc.
         self.mapping_strategy_cls = strategy_cls
         self.mapping_strategy_kwargs = strategy_kwargs
@@ -625,7 +605,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             idxs = subset.indices  # The subset of row indices relevant to this Subset
 
             # ds.pert_col typically is 'gene' or similar
-            pert_codes = ds.h5_file[f"obs/{ds.pert_col}/codes"][sorted(idxs)]
+            pert_codes = ds.metadata_cache.pert_codes[idxs]
             # Convert each code to its corresponding string label
             pert_names = ds.pert_categories[pert_codes]
 
@@ -655,90 +635,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # Return the control perturbation name
         return self.train_datasets[0].dataset.control_pert
 
-    def _compute_pert_mean_offsets_for_inference(self, use_gene_space: bool = False, embed_key: str = "X_uce"):
-        """
-        This replicates the logic from GlobalSimpleSum to compute a single
-        global_basal and per-pert offset across all training data subsets.
-        We'll do a single pass over the training subsets, accumulate sums
-        and counts, then store them in self._pseudo_nearest_global_basal
-        and self._pseudo_nearest_pert_offsets.
-
-        If use_gene_space=True, we fetch gene expression; else we fetch embed_key (UCE, scGPT, etc).
-        """
-        logger.info("Computing global offset for 'pseudo_nearest' inference...")
-
-        # Sums for all control cells
-        global_ctrl_sum = None
-        global_ctrl_count = 0
-
-        # Sums for each perturbation
-        pert_sum = defaultdict(lambda: None)
-        pert_count = defaultdict(int)
-
-        # We iterate over each dataset subset in our training set
-        train_loader = self.train_dataloader()
-        if train_loader is None:
-            logger.warning("No train dataloader found. Cannot compute offsets.")
-            return
-
-        for subset_ds in train_loader.dataset.datasets:
-            ds = subset_ds.dataset
-            indices = subset_ds.indices
-
-            # We loop over the actual indices in that subset
-            for idx in indices:
-                # 1) fetch embedding or gene expression
-                if use_gene_space:
-                    arr = ds.fetch_gene_expression(idx).cpu().numpy()
-                else:
-                    arr = ds.fetch_obsm_expression(idx, embed_key).cpu().numpy()
-
-                # 2) see if it is control or not
-                is_ctrl = ds.control_mask[idx]
-                # get perturbation name
-                code = ds.h5_file[f"obs/{ds.pert_col}/codes"][idx]
-                p_name = ds.pert_categories[code]
-
-                if is_ctrl:
-                    # accumulate in global_ctrl_sum
-                    if global_ctrl_sum is None:
-                        global_ctrl_sum = np.zeros_like(arr)
-                    global_ctrl_sum += arr
-                    global_ctrl_count += 1
-                else:
-                    # accumulate in pert_sum
-                    if pert_sum[p_name] is None:
-                        pert_sum[p_name] = np.zeros_like(arr)
-                    pert_sum[p_name] += arr
-                    pert_count[p_name] += 1
-
-        # Now compute global mean
-        if global_ctrl_count < 1:
-            logger.warning("No control cells in training?? Using zero vector as basal.")
-            self._pseudo_nearest_global_basal = None
-            return
-
-        global_basal = global_ctrl_sum / float(global_ctrl_count)
-
-        # compute offsets for each pert
-        offsets = {}
-        for p_name, sum_arr in pert_sum.items():
-            c = pert_count[p_name]
-            if c < 1:
-                offsets[p_name] = np.zeros_like(global_basal)
-            else:
-                p_mean = sum_arr / float(c)
-                offsets[p_name] = p_mean - global_basal
-
-        # store in self
-        self._pseudo_nearest_global_basal = global_basal
-        self._pseudo_nearest_pert_offsets = offsets
-        logger.info(
-            "Done. Stored global basal shape=%s, #offsets=%d",
-            global_basal.shape if global_basal is not None else None,
-            len(offsets),
-        )
-
     def _setup_global_celltype_map(self):
         """
         Create a global cell type map across all H5 files in train+test specs,
@@ -751,8 +647,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files_dict = self._find_dataset_files(ds_name)
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
-                    # cats = f["obs/cell_type/categories"][:].astype(str)
-                    cats = [x.decode('utf-8') for x in f["obs/cell_name/categories"][:]]
+                    cats = [x.decode('utf-8') for x in f[f"obs/{self.cell_type_key}/categories"][:]]
                     all_celltypes.update(cats)
 
         if len(all_celltypes) == 0:
@@ -773,8 +668,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files_dict = self._find_dataset_files(ds_name)
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
-                    # cats = f["obs/drug/categories"][:].astype(str)
-                    cats = [x.decode('utf-8') for x in f["obs/drug/categories"][:]]
+                    cats = [x.decode('utf-8') for x in f[f"obs/{self.pert_col}/categories"][:]]
                     all_perts.update(cats)
 
         if len(all_perts) == 0:
@@ -796,10 +690,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             for file_path in files_dict.values():
                 with h5py.File(file_path, "r") as f:
                     try:
-                        # cats = f["obs/gem_group/categories"][:].astype(str)
-                        cats = [x.decode('utf-8') for x in f["obs/drug/categories"][:]]
+                        cats = [x.decode('utf-8') for x in f[f"obs/{self.pert_col}/categories"][:]]
                     except KeyError:
-                        cats = f["obs/gem_group"][:].astype(str)
+                        cats = f[f"obs/{self.pert_col}"][:].astype(str)
                     all_batches.update(cats)
 
         if len(all_batches) == 0:
