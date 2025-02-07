@@ -25,13 +25,18 @@ class RandomMappingStrategy(BaseMappingStrategy):
         We assume that if a filter is provided in the dataset then all indices belong to the same cell type;
         but if no filter was applied, then this grouping is necessary.
         """
-        pool_by_cell = {}
-        for idx in control_indices:
-            ct = dataset.get_cell_type(idx)
-            if ct not in pool_by_cell:
-                pool_by_cell[ct] = []
-            pool_by_cell[ct].append(idx)
-        self.split_control_pool[split] = pool_by_cell
+        # Get cell types for all control indices at once 
+        cell_types = dataset.get_all_cell_types(control_indices)
+        
+        # Group by cell type using a dictionary comprehension
+        for ct in np.unique(cell_types):
+            ct_mask = cell_types == ct
+            ct_indices = control_indices[ct_mask]
+            
+            if ct not in self.split_control_pool[split]:
+                self.split_control_pool[split][ct] = list(ct_indices)
+            else:
+                self.split_control_pool[split][ct].extend(ct_indices)
 
     def get_control_indices(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int) -> np.ndarray:
         """

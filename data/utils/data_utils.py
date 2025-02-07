@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore")
 import logging
 
 import scanpy as sc
+import h5py
 import torch
 import torch.utils.data as data
 import numpy as np
@@ -22,6 +23,57 @@ from scanpy import AnnData
 
 log = logging.getLogger(__name__)
 
+class H5MetadataCache:
+    """Cache for H5 file metadata to avoid repeated disk reads."""
+    
+    def __init__(self, h5_path: str, 
+                 pert_col: str = 'drug',
+                 cell_type_key: str = 'cell_name',
+                 control_pert: str = 'DMSO_TF'):
+        """
+        Args:
+            h5_path: Path to H5 file
+            pert_col: Column name for perturbation data
+            cell_type_key: Column name for cell type data
+            control_pert: Name of control perturbation
+        """
+        self.h5_path = h5_path
+        with h5py.File(h5_path, 'r') as f:
+            # Load categories first
+            self.pert_categories = safe_decode_array(f[f"obs/{pert_col}/categories"][:])
+            self.cell_type_categories = safe_decode_array(f[f"obs/{cell_type_key}/categories"][:])
+            
+            # Then load codes
+            self.pert_codes = f[f"obs/{pert_col}/codes"][:].astype(np.int32)
+            self.cell_type_codes = f[f"obs/{cell_type_key}/codes"][:].astype(np.int32)
+            
+            # Pre-compute names
+            self.pert_names = self.pert_categories[self.pert_codes]
+            self.cell_type_names = self.cell_type_categories[self.cell_type_codes]
+            
+            # Create mask for control perturbations
+            self.control_mask = self.pert_names == control_pert
+            
+            self.n_cells = len(self.pert_codes)
+            
+    def get_cell_info(self, indices: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Get cell types and perturbations for given indices."""
+        return self.cell_type_names[indices], self.pert_names[indices]
+    
+    def get_pert_cell_counts(self) -> Dict[Tuple[str, str], int]:
+        """Get counts of cells per (perturbation, cell type) combination."""
+        unique_pairs, counts = np.unique(
+            list(zip(self.pert_names, self.cell_type_names)), 
+            axis=0, return_counts=True
+        )
+        return {(p, c): n for (p, c), n in zip(unique_pairs, counts)}
+
+# A small helper to decode arrays (so we can reuse it in this module if needed)
+def safe_decode_array(arr):
+    try:
+        return np.array([x.decode("utf-8") if isinstance(x, bytes) else str(x) for x in arr])
+    except Exception:
+        return np.array([str(x) for x in arr])
 
 def merge_adata(adata_list):
     """

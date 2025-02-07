@@ -1,8 +1,8 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Literal, Set
+from typing import Dict, List, Optional, Literal, Set, Tuple
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from data.utils.data_utils import generate_onehot_map  # assuming this helper exists
+from data.utils.data_utils import generate_onehot_map, safe_decode_array, H5MetadataCache
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
 from data.data_modules.perturbation_tracker import PerturbationTracker
@@ -23,6 +23,8 @@ import h5py
 import numpy as np
 import torch
 import logging
+import time
+from tqdm import tqdm  # progress bar
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +162,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # Use the chosen data transform if applicable
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.transform = PCATransform(n_components=200, device=device) if embed_key == "X_pca" else None
+        # self.transform = PCATransform(n_components=200, device=device) if embed_key == "X_pca" else None
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = True if embed_key == "X_hvg" and self.pert_col == 'drug' else False
@@ -241,77 +243,102 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         return dmap
     
     def _setup_global_fewshot_splits(self):
-        """
-        Do a global scan across files to decide train/test perturbation splits for each fewshot cell type.
-        """
-        self.fewshot_splits = {}  # {cell_type: {"train_perts": set(), "test_perts": set()}}
+        """Set up fewshot splits using cached metadata."""
+        start_time = time.time()
+        self.fewshot_splits = {}
         
-        # Find all fewshot specs
-        fewshot_specs = [s for s in self.test_specs if s.task_type == TaskType.FEWSHOT]
-        
-        for spec in fewshot_specs:
-            ct = spec.cell_type
-            # Aggregate counts across all files
-            pert_counts = defaultdict(int)
-            
-            files = self._find_dataset_files(spec.dataset)
-            for fpath in files:
-                with h5py.File(fpath, "r") as f:
-                    # Get cell type codes
-                    ct_code = np.where(safe_decode_array(f[f"obs/{self.cell_type_key}/categories"][:]) == ct)[0][0]
-                    ct_mask = f[f"obs/{self.cell_type_key}/codes"][:] == ct_code
-                    
-                    # Get perturbation names for this cell type's cells
-                    pert_codes = f[f"obs/{self.pert_col}/codes"][:][ct_mask]
-                    pert_categories = safe_decode_array(f[f"obs/{self.pert_col}/categories"][:])
-                    pert_names = pert_categories[pert_codes]
-                    
-                    # Count non-control perturbations
-                    for pert in np.unique(pert_names):
-                        if pert != self.control_pert:
-                            pert_counts[pert] += np.sum(pert_names == pert)
-
-            # Split perturbations greedily based on counts
-            sorted_perts = sorted([(p, c) for p, c in pert_counts.items()], 
-                                key=lambda x: x[1], reverse=True)
-            
-            total_cells = sum(c for _, c in sorted_perts)
-            target_train = total_cells * self.few_shot_percent
-            
-            train_perts = set()
-            test_perts = set()
-            current_train = 0
-            
-            for pert, count in sorted_perts:
-                if abs((current_train + count) - target_train) < abs(current_train - target_train):
-                    train_perts.add(pert)
-                    current_train += count
-                else:
-                    test_perts.add(pert)
-
-            self.fewshot_splits[ct] = {
-                "train_perts": train_perts,
-                "test_perts": test_perts
-            }
-            logger.info(f"Cell type {ct}: {len(train_perts)} train perts, {len(test_perts)} test perts")
-
-    def _setup_training_datasets(self):
-        """
-        Set up training datasets with proper handling of zeroshot/fewshot splits.
-        """
-        # First compute global fewshot splits
-        self._setup_global_fewshot_splits()
-        
-        # Get zeroshot cell types
-        zeroshot_cts = {spec.cell_type for spec in self.test_specs 
-                        if spec.task_type == TaskType.ZEROSHOT}
-        
-        # Process each training spec
-        train_map = self._group_specs_by_dataset(self.train_specs)
-        for ds_name, specs in train_map.items():
+        # Create metadata caches for all files
+        metadata_caches = {}
+        for ds_name in {spec.dataset for spec in self.test_specs}:
             files = self._find_dataset_files(ds_name)
             for fpath in files:
                 fpath = files[fpath]
+                metadata_caches[fpath] = H5MetadataCache(
+                    str(fpath),
+                    self.pert_col,
+                    self.cell_type_key,
+                    self.control_pert
+                )
+        
+        # Process each fewshot spec
+        fewshot_specs = [s for s in self.test_specs if s.task_type == TaskType.FEWSHOT]
+        for spec in fewshot_specs:
+            ct = spec.cell_type
+            pert_counts = defaultdict(int)
+            
+            # Aggregate counts across files
+            files = self._find_dataset_files(spec.dataset)
+            for fname, fpath in files.items():
+                cache = metadata_caches[fpath]
+                mask = cache.cell_type_names == ct
+                if not np.any(mask):
+                    continue
+                    
+                pert_names = cache.pert_names[mask]
+                for pert in np.unique(pert_names):
+                    if pert != self.control_pert:
+                        pert_counts[pert] += np.sum(pert_names == pert)
+            
+            # Split perturbations using the same logic as before
+            total_cells = sum(pert_counts.values())
+            target_train = total_cells * self.few_shot_percent
+            
+            train_perts, test_perts = [], []
+            current_train = 0
+            
+            for pert, count in sorted(pert_counts.items(), key=lambda x: x[1], reverse=True):
+                if abs((current_train + count) - target_train) < abs(current_train - target_train):
+                    train_perts.append(pert)
+                    current_train += count
+                else:
+                    test_perts.append(pert)
+                    
+            self.fewshot_splits[ct] = {
+                "train_perts": set(train_perts),
+                "test_perts": set(test_perts)
+            }
+            
+            end_time = time.time()
+            logger.info(
+                f"Cell type {ct}: {len(train_perts)} train perts, {len(test_perts)} test perts in {end_time - start_time:.2f} seconds."
+            )
+
+    def _setup_datasets(self):
+        """
+        Set up training datasets with proper handling of zeroshot/fewshot splits.
+        Uses H5MetadataCache for faster metadata access.
+        """
+
+        logger.info("Setting up training datasets with metadata caching...")
+
+        # First compute global fewshot splits
+        self._setup_global_fewshot_splits()
+
+        # Get zeroshot cell types
+        zeroshot_cts = {
+            spec.cell_type
+            for spec in self.test_specs
+            if spec.task_type == TaskType.ZEROSHOT
+        }
+
+        # Process each training spec by grouping them by dataset
+        train_map = self._group_specs_by_dataset(self.train_specs)
+        for ds_name, specs in train_map.items():
+            files = self._find_dataset_files(ds_name)
+            # Outer progress bar: iterate over plates (files) in the dataset
+            for fname, fpath in tqdm(list(files.items()),
+                                    desc=f"Processing plates in dataset {ds_name}",
+                                    leave=False):
+                logger.info(f"Processing file: {fpath}")
+
+                # Create metadata cache for this file
+                cache = H5MetadataCache(
+                    str(fpath),
+                    self.pert_col,
+                    self.cell_type_key,
+                    self.control_pert
+                )
+
                 # Create base dataset
                 ds = PerturbationDataset(
                     name=ds_name,
@@ -324,158 +351,157 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     pert_onehot_map=self.pert_onehot_map,
                     batch_onehot_map=self.batch_onehot_map,
                     pert_col=self.pert_col,
-                    cell_type_key="cell_name",
-                    batch_col="drug",
-                    control_pert="DMSO_TF",
+                    cell_type_key=self.cell_type_key,
+                    batch_col=self.batch_col,
+                    control_pert=self.control_pert,
                     random_state=self.random_seed,
                     should_yield_control_cells=self.should_yield_control_cells,
                 )
-                
-                with h5py.File(fpath, "r") as f:
-                    # Get all cell types in this file
-                    cell_types = safe_decode_array(f[f"obs/{self.cell_type_key}/categories"][:])
-                    cell_codes = f[f"obs/{self.cell_type_key}/codes"][:]
-                    pert_categories = safe_decode_array(f[f"obs/{self.pert_col}/categories"][:])
-                    pert_codes = f[f"obs/{self.pert_col}/codes"][:]
-                    
-                    for ct_idx, ct in enumerate(cell_types):
-                        # Skip if no cells of this type
-                        ct_mask = cell_codes == ct_idx
-                        if not np.any(ct_mask):
-                            continue
-                            
-                        if ct in zeroshot_cts:
-                            # For zeroshot, all cells (including controls) go to test
-                            ct_indices = np.where(ct_mask)[0]
-                            test_subset = ds.to_subset_dataset("test", ct_indices, np.array([]))
-                            self.test_datasets.append(test_subset)
-                            
-                        elif ct in self.fewshot_splits:
-                            # For fewshot, split based on pre-computed perturbation allocation
-                            train_perts = self.fewshot_splits[ct]["train_perts"]
-                            test_perts = self.fewshot_splits[ct]["test_perts"]
-                            
-                            # Get indices for this cell type
-                            ct_indices = np.where(ct_mask)[0]
-                            
-                            # Split controls according to fewshot_split
-                            ctrl_mask = pert_categories[pert_codes[ct_indices]] == self.control_pert
-                            ctrl_indices = ct_indices[ctrl_mask]
-                            rng = np.random.default_rng(self.random_seed)
-                            rng.shuffle(ctrl_indices)
-                            n_train_controls = int(len(ctrl_indices) * self.few_shot_percent)
-                            train_controls = ctrl_indices[:n_train_controls]
-                            test_controls = ctrl_indices[n_train_controls:]
-                            
-                            # Split perturbed cells based on perturbation allocation
-                            pert_indices = ct_indices[~ctrl_mask]
-                            pert_names = pert_categories[pert_codes[pert_indices]]
-                            
-                            # Split perturbed cells based on perturbation allocation
-                            train_pert_mask = np.isin(pert_names, list(train_perts))
-                            train_val_pert_indices = pert_indices[train_pert_mask]
-                            test_pert_indices = pert_indices[~train_pert_mask]
 
-                            # Further split train_val into train/val
-                            if len(train_val_pert_indices) > 0:
-                                rng.shuffle(train_val_pert_indices)  # In-place shuffle
-                                n_val = int(len(train_val_pert_indices) * self.val_split)
-                                val_pert_indices = train_val_pert_indices[:n_val]
-                                train_pert_indices = train_val_pert_indices[n_val:]
-                                
-                                # Create train subset
-                                if len(train_pert_indices) > 0:
-                                    train_subset = ds.to_subset_dataset(
-                                        "train", train_pert_indices, train_controls)
-                                    self.train_datasets.append(train_subset)
-                                
-                                # Create val subset
-                                if len(val_pert_indices) > 0:
-                                    val_subset = ds.to_subset_dataset(
-                                        "val", val_pert_indices, train_controls)
-                                    self.val_datasets.append(val_subset)
+                train_val_sum = 0
+                test_sum = 0
 
-                            # Create test subset
-                            if len(test_pert_indices) > 0:
-                                test_subset = ds.to_subset_dataset(
-                                    "test", test_pert_indices, test_controls)
-                                self.test_datasets.append(test_subset)
-                                
-                        else:
-                            # Regular training cell type - split into train/val
-                            splits = ds.prepare_training_splits(self.val_split, self.rng)
-                            
-                            if len(splits["train"]["perturbed"]) > 0:
+                # Inner progress bar: iterate over cell types within the current plate
+                for ct_idx, ct in tqdm(
+                    enumerate(cache.cell_type_categories),
+                    total=len(cache.cell_type_categories),
+                    desc="Processing cell types",
+                    leave=False,
+                ):
+                    # Create mask for this cell type using cached codes
+                    ct_mask = cache.cell_type_codes == ct_idx
+                    n_cells = np.sum(ct_mask)
+
+                    if n_cells == 0:
+                        continue
+
+                    # Get indices for this cell type
+                    ct_indices = np.where(ct_mask)[0]
+
+                    if ct in zeroshot_cts:
+                        # First, split controls
+                        ctrl_mask = cache.pert_names[ct_indices] == self.control_pert
+                        ctrl_indices = ct_indices[ctrl_mask]
+                        pert_indices = ct_indices[~ctrl_mask]
+
+                        # For zeroshot, all cells go to test
+                        test_subset = ds.to_subset_dataset("test", pert_indices, ctrl_indices)
+                        self.test_datasets.append(test_subset)
+                        test_sum += len(test_subset)
+
+                    elif ct in self.fewshot_splits:
+                        # For fewshot, use pre-computed splits
+                        train_perts = self.fewshot_splits[ct]["train_perts"]
+                        test_perts = self.fewshot_splits[ct]["test_perts"]
+
+                        # Use cached pert names for this cell type
+                        ct_pert_names = cache.pert_names[ct_indices]
+
+                        # Split controls
+                        ctrl_mask = ct_pert_names == self.control_pert
+                        ctrl_indices = ct_indices[ctrl_mask]
+
+                        # Shuffle controls
+                        rng = np.random.default_rng(self.random_seed)
+                        ctrl_indices = rng.permutation(ctrl_indices)
+                        n_train_controls = int(len(ctrl_indices) * self.few_shot_percent)
+                        train_controls = ctrl_indices[:n_train_controls]
+                        test_controls = ctrl_indices[n_train_controls:]
+
+                        n_val_controls = int(n_train_controls * self.val_split)
+                        val_controls = train_controls[:n_val_controls]
+                        train_controls = train_controls[n_val_controls:]
+
+                        # Split perturbed cells
+                        pert_indices = ct_indices[~ctrl_mask]
+                        pert_names = ct_pert_names[~ctrl_mask]
+
+                        # Create masks for train/test split using pre-computed pert lists
+                        train_pert_mask = np.isin(pert_names, list(train_perts))
+                        train_val_pert_indices = pert_indices[train_pert_mask]
+                        test_pert_indices = pert_indices[~train_pert_mask]
+
+                        # Split train into train/val if we have any training data
+                        if len(train_val_pert_indices) > 0:
+                            train_val_pert_indices = rng.permutation(train_val_pert_indices)
+                            n_val = int(len(train_val_pert_indices) * self.val_split)
+                            val_pert_indices = train_val_pert_indices[:n_val]
+                            train_pert_indices = train_val_pert_indices[n_val:]
+
+                            # Create train subset
+                            if len(train_pert_indices) > 0:
                                 train_subset = ds.to_subset_dataset(
-                                    "train", 
-                                    splits["train"]["perturbed"],
-                                    splits["train"]["control"]
+                                    "train", train_pert_indices, train_controls
                                 )
                                 self.train_datasets.append(train_subset)
-                                
-                            if len(splits["val"]["perturbed"]) > 0:
+                                train_val_sum += len(train_subset)
+
+                            # Create val subset
+                            if len(val_pert_indices) > 0:
                                 val_subset = ds.to_subset_dataset(
-                                    "val",
-                                    splits["val"]["perturbed"],
-                                    splits["val"]["control"]
+                                    "val", val_pert_indices, val_controls
                                 )
                                 self.val_datasets.append(val_subset)
+                                train_val_sum += len(val_subset)
 
-    def _setup_global_fewshot_splits(self):
-        """
-        Do a global scan across files to decide train/test perturbation splits for each fewshot cell type.
-        """
-        self.fewshot_splits = {}  # {cell_type: {"train_perts": set(), "test_perts": set()}}
-        
-        # Find all fewshot specs
-        fewshot_specs = [s for s in self.test_specs if s.task_type == TaskType.FEWSHOT]
-        
-        for spec in fewshot_specs:
-            ct = spec.cell_type
-            # Aggregate counts across all files
-            pert_counts = defaultdict(int)
-            
-            files = self._find_dataset_files(spec.dataset)
-            for fpath in files:
-                fpath = files[fpath]
-                with h5py.File(fpath, "r") as f:
-                    # Get cell type codes
-                    ct_code = np.where(safe_decode_array(f[f"obs/{self.cell_type_key}/categories"][:]) == ct)[0][0]
-                    ct_mask = f[f"obs/{self.cell_type_key}/codes"][:] == ct_code
-                    
-                    # Get perturbation names for this cell type's cells
-                    pert_codes = f[f"obs/{self.pert_col}/codes"][:][ct_mask]
-                    pert_categories = safe_decode_array(f[f"obs/{self.pert_col}/categories"][:])
-                    pert_names = pert_categories[pert_codes]
-                    
-                    # Count non-control perturbations
-                    for pert in np.unique(pert_names):
-                        if pert != self.control_pert:
-                            pert_counts[pert] += np.sum(pert_names == pert)
+                        # Create test subset
+                        if len(test_pert_indices) > 0:
+                            test_subset = ds.to_subset_dataset(
+                                "test", test_pert_indices, test_controls
+                            )
+                            self.test_datasets.append(test_subset)
+                            test_sum += len(test_subset)
 
-            # Split perturbations greedily based on counts
-            sorted_perts = sorted([(p, c) for p, c in pert_counts.items()], 
-                                key=lambda x: x[1], reverse=True)
-            
-            total_cells = sum(c for _, c in sorted_perts)
-            target_train = total_cells * self.few_shot_percent
-            
-            train_perts = set()
-            test_perts = set()
-            current_train = 0
-            
-            for pert, count in sorted_perts:
-                if abs((current_train + count) - target_train) < abs(current_train - target_train):
-                    train_perts.add(pert)
-                    current_train += count
-                else:
-                    test_perts.add(pert)
+                    else:
+                        # Regular training cell type - no perturbation-based splitting needed
+                        # Get all cells for this cell type
+                        ct_pert_names = cache.pert_names[ct_indices]
 
-            self.fewshot_splits[ct] = {
-                "train_perts": train_perts,
-                "test_perts": test_perts
-            }
-            logger.info(f"Cell type {ct}: {len(train_perts)} train perts, {len(test_perts)} test perts")
+                        # Split into control and perturbed
+                        ctrl_mask = ct_pert_names == self.control_pert
+                        ctrl_indices = ct_indices[ctrl_mask]
+                        pert_indices = ct_indices[~ctrl_mask]
+
+                        # Randomly shuffle indices
+                        rng = np.random.default_rng(self.random_seed)
+                        ctrl_indices = rng.permutation(ctrl_indices)
+                        pert_indices = rng.permutation(pert_indices)
+
+                        # Split into train/val
+                        n_val = int(len(pert_indices) * self.val_split)
+                        val_pert_indices = pert_indices[:n_val]
+                        train_pert_indices = pert_indices[n_val:]
+
+                        n_ctrl_val = int(len(ctrl_indices) * self.val_split)
+                        val_ctrl_indices = ctrl_indices[:n_ctrl_val]
+                        train_ctrl_indices = ctrl_indices[n_ctrl_val:]
+
+                        # Create train subset if we have data
+                        if len(train_pert_indices) > 0:
+                            train_subset = ds.to_subset_dataset(
+                                "train", train_pert_indices, train_ctrl_indices
+                            )
+                            self.train_datasets.append(train_subset)
+                            train_val_sum += len(train_subset)
+
+                        # Create val subset if we have data
+                        if len(val_pert_indices) > 0:
+                            val_subset = ds.to_subset_dataset(
+                                "val", val_pert_indices, val_ctrl_indices
+                            )
+                            self.val_datasets.append(val_subset)
+                            train_val_sum += len(val_subset)
+
+                # Write progress information (using tqdm.write to avoid breaking the progress bars)
+                tqdm.write(
+                    f"Processed {fname} with {cache.n_cells} cells, "
+                    f"{train_val_sum} train/val, {test_sum} test."
+                )
+
+                # Clean up file handles
+                del cache
+
+            logger.info(f"Finished processing dataset {ds_name}")
 
     def setup(self, stage: Optional[str] = None):
         """
@@ -483,7 +509,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         """
         if len(self.train_datasets) == 0:
             logger.info("Setting up training and test datasets...")
-            self._setup_training_datasets()
+            self._setup_datasets()
             logger.info(
                 "Done! Train / Val / Test splits: %d / %d / %d",
                 len(self.train_datasets),
@@ -856,10 +882,3 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 else:
                     train_cts.add(s.cell_type)
         return train_cts
-
-# A small helper to decode arrays (so we can reuse it in this module if needed)
-def safe_decode_array(arr):
-    try:
-        return np.array([x.decode("utf-8") if isinstance(x, bytes) else str(x) for x in arr])
-    except Exception:
-        return np.array([str(x) for x in arr])
