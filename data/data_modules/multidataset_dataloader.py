@@ -2,7 +2,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Literal, Set, Tuple
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from data.utils.data_utils import generate_onehot_map, safe_decode_array, H5MetadataCache
+from data.utils.data_utils import generate_onehot_map, safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
 from data.data_modules.perturbation_tracker import PerturbationTracker
@@ -245,9 +245,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         metadata_caches = {}
         for ds_name in {spec.dataset for spec in self.test_specs}:
             files = self._find_dataset_files(ds_name)
-            for fpath in files:
-                fpath = files[fpath]
-                metadata_caches[fpath] = H5MetadataCache(
+            for fname, fpath in files.items():
+                metadata_caches[fpath] = GlobalH5MetadataCache().get_cache(
                     str(fpath),
                     self.pert_col,
                     self.cell_type_key,
@@ -265,14 +264,19 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files = self._find_dataset_files(spec.dataset)
             for fname, fpath in files.items():
                 cache = metadata_caches[fpath]
-                mask = cache.cell_type_names == ct
+                ct_code = np.where(cache.cell_type_categories == ct)[0][0]
+                mask = cache.cell_type_codes == ct_code
                 if not np.any(mask):
                     continue
                     
-                pert_names = cache.pert_names[mask]
-                for pert in np.unique(pert_names):
-                    if pert != self.control_pert:
-                        pert_counts[pert] += np.sum(pert_names == pert)
+                pert_codes = cache.pert_codes[mask]
+                control_pert_code = cache.control_pert_code
+                for pert_code in range(len(cache.pert_categories)):
+                    if pert_code != control_pert_code:
+                        # Skip control perturbations, count perturbations for this cell type
+                        # over all files
+                        pert_name = cache.pert_categories[pert_code]
+                        pert_counts[pert_name] += np.sum(pert_codes == pert_code)
             
             # Split perturbations using the same logic as before
             total_cells = sum(pert_counts.values())
@@ -281,16 +285,16 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             train_perts, test_perts = [], []
             current_train = 0
             
-            for pert, count in sorted(pert_counts.items(), key=lambda x: x[1], reverse=True):
+            for pert_name, count in sorted(pert_counts.items(), key=lambda x: x[1], reverse=True):
                 if abs((current_train + count) - target_train) < abs(current_train - target_train):
-                    train_perts.append(pert)
+                    train_perts.append(pert_name)
                     current_train += count
                 else:
-                    test_perts.append(pert)
+                    test_perts.append(pert_name)
                     
             self.fewshot_splits[ct] = {
                 "train_perts": set(train_perts),
-                "test_perts": set(test_perts)
+                "test_perts": set(test_perts),
             }
             
             end_time = time.time()
@@ -303,8 +307,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         Set up training datasets with proper handling of zeroshot/fewshot splits.
         Uses H5MetadataCache for faster metadata access.
         """
-
-        logger.info("Setting up training datasets with metadata caching...")
 
         # First compute global fewshot splits
         self._setup_global_fewshot_splits()
@@ -323,11 +325,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             # Outer progress bar: iterate over plates (files) in the dataset
             for fname, fpath in tqdm(list(files.items()),
                                     desc=f"Processing plates in dataset {ds_name}",
-                                    leave=False):
+                                    position=0,
+                                    leave=True):
                 logger.info(f"Processing file: {fpath}")
 
                 # Create metadata cache for this file
-                cache = H5MetadataCache(
+                cache = GlobalH5MetadataCache().get_cache(
                     str(fpath),
                     self.pert_col,
                     self.cell_type_key,
@@ -362,6 +365,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     enumerate(cache.cell_type_categories),
                     total=len(cache.cell_type_categories),
                     desc="Processing cell types",
+                    position=1,
                     leave=False,
                 ):
                     # Create mask for this cell type using cached codes
@@ -376,7 +380,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
                     if ct in zeroshot_cts:
                         # First, split controls
-                        ctrl_mask = cache.pert_names[ct_indices] == self.control_pert
+                        ctrl_mask = cache.pert_codes[ct_indices] == cache.control_pert_code
                         ctrl_indices = ct_indices[ctrl_mask]
                         pert_indices = ct_indices[~ctrl_mask]
 
@@ -388,13 +392,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     elif ct in self.fewshot_splits:
                         # For fewshot, use pre-computed splits
                         train_perts = self.fewshot_splits[ct]["train_perts"]
-                        test_perts = self.fewshot_splits[ct]["test_perts"]
+                        train_pert_codes = np.where(np.isin(cache.pert_categories, list(train_perts)))[0]
 
                         # Use cached pert names for this cell type
-                        ct_pert_names = cache.pert_names[ct_indices]
+                        ct_pert_codes = cache.pert_codes[ct_indices]
+                        control_pert_code = cache.control_pert_code
 
                         # Split controls
-                        ctrl_mask = ct_pert_names == self.control_pert
+                        ctrl_mask = ct_pert_codes == control_pert_code
                         ctrl_indices = ct_indices[ctrl_mask]
 
                         # Shuffle controls
@@ -410,10 +415,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
                         # Split perturbed cells
                         pert_indices = ct_indices[~ctrl_mask]
-                        pert_names = ct_pert_names[~ctrl_mask]
+                        pert_codes = ct_pert_codes[~ctrl_mask]
 
                         # Create masks for train/test split using pre-computed pert lists
-                        train_pert_mask = np.isin(pert_names, list(train_perts))
+                        train_pert_mask = np.isin(pert_codes, list(train_pert_codes))
                         train_val_pert_indices = pert_indices[train_pert_mask]
                         test_pert_indices = pert_indices[~train_pert_mask]
 
@@ -451,10 +456,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     else:
                         # Regular training cell type - no perturbation-based splitting needed
                         # Get all cells for this cell type
-                        ct_pert_names = cache.pert_names[ct_indices]
+                        ct_pert_codes = cache.pert_codes[ct_indices]
 
                         # Split into control and perturbed
-                        ctrl_mask = ct_pert_names == self.control_pert
+                        control_pert_code = cache.control_pert_code
+                        ctrl_mask = ct_pert_codes == control_pert_code
                         ctrl_indices = ct_indices[ctrl_mask]
                         pert_indices = ct_indices[~ctrl_mask]
 

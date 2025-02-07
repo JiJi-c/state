@@ -74,7 +74,8 @@ def compute_metrics(
         (output_space == "gene") or (output_space == "latent" and decoder is not None)
     )
     metrics = {}
-    for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
+    # for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
+    for celltype in pred_celltype_pert_dict:
         with time_it(f"compute_metrics_cell_type_{celltype}"):
             metrics[celltype] = defaultdict(list)
 
@@ -99,7 +100,7 @@ def compute_metrics(
             )
 
             all_perts = shared_perts if shared_perts else pred_celltype_pert_dict[celltype]
-            for pert in tqdm(all_perts, desc="perts"):
+            for pert in all_perts:
                 if pert == control_pert:
                     continue
 
@@ -276,7 +277,6 @@ def compute_metrics(
                     pert_col=pert_col,
                     ctrl_pert=control_pert,
                 )
-                print(f"Perturbation ranking for {celltype}: {class_score}")
                 metrics[celltype]["perturbation_id"] = class_score
 
     for celltype, stats in metrics.items():

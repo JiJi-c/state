@@ -16,10 +16,10 @@ import os
 import pandas as pd
 import anndata
 from pathlib import Path
+from utils.singleton import Singleton
 
 from typing import Dict, Tuple
 from scanpy import AnnData
-
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class H5MetadataCache:
                  pert_col: str = 'drug',
                  cell_type_key: str = 'cell_name',
                  control_pert: str = 'DMSO_TF',
-                 batch_col: str = 'drug', # replace with plate number
+                 batch_col: str = 'sample', # replace with plate number
                 ):
         """
         Args:
@@ -63,27 +63,53 @@ class H5MetadataCache:
             self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
             
             # Pre-compute names
-            self.pert_names = self.pert_categories[self.pert_codes]
-            self.cell_type_names = self.cell_type_categories[self.cell_type_codes]
-            self.batch_names = self.batch_categories[self.batch_codes]
+            # self.pert_names = self.pert_categories[self.pert_codes]
+            # self.cell_type_names = self.cell_type_categories[self.cell_type_codes]
+            # self.batch_names = self.batch_categories[self.batch_codes]
             
             # Create mask for control perturbations
-            self.control_mask = self.pert_names == control_pert
+            self.control_pert_code = np.where(self.pert_categories == control_pert)[0][0]
+            self.control_mask = self.pert_codes == self.control_pert_code
             
             self.n_cells = len(self.pert_codes)
-
-            
-    def get_cell_info(self, indices: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Get cell types and perturbations for given indices."""
-        return self.cell_type_names[indices], self.pert_names[indices]
     
-    def get_pert_cell_counts(self) -> Dict[Tuple[str, str], int]:
-        """Get counts of cells per (perturbation, cell type) combination."""
-        unique_pairs, counts = np.unique(
-            list(zip(self.pert_names, self.cell_type_names)), 
-            axis=0, return_counts=True
-        )
-        return {(p, c): n for (p, c), n in zip(unique_pairs, counts)}
+    def get_batch_names(self, indices: np.ndarray) -> np.ndarray:
+        """Get batch names for given indices."""
+        return self.batch_categories[indices]
+
+    def get_cell_type_names(self, indices: np.ndarray) -> np.ndarray:
+        """Get cell type names for given indices."""
+        return self.cell_type_categories[indices]
+
+    def get_pert_names(self, indices: np.ndarray) -> np.ndarray:
+        """Get perturbation names for given indices."""
+        return self.pert_categories[indices]
+
+class GlobalH5MetadataCache(metaclass=Singleton):
+    """
+    Singleton class to manage a global cache of H5MetadataCache objects.
+    
+    Usage:
+        from utils.data_utils import GlobalH5MetadataCache
+        global_cache = GlobalH5MetadataCache()
+        cache = global_cache.get_cache(h5_path, pert_col, cell_type_key, control_pert, batch_col)
+    """
+    def __init__(self):
+        self._cache = {}  # dictionary mapping parameter tuple to H5MetadataCache instance
+
+    def get_cache(self, h5_path: str, 
+                  pert_col: str = 'drug', 
+                  cell_type_key: str = 'cell_name', 
+                  control_pert: str = 'DMSO_TF', 
+                  batch_col: str = 'drug') -> H5MetadataCache:
+        """
+        Retrieve the H5MetadataCache for the given file and parameters.
+        If it does not exist, it is created and stored.
+        """
+        key = h5_path
+        if key not in self._cache:
+            self._cache[key] = H5MetadataCache(h5_path, pert_col, cell_type_key, control_pert, batch_col)
+        return self._cache[key]
 
 # A small helper to decode arrays (so we can reuse it in this module if needed)
 def safe_decode_array(arr):

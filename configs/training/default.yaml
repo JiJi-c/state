@@ -2,7 +2,7 @@ wandb_track: false
 weight_decay: 0.0005
 batch_size: 512
 lr: 3e-4
-max_steps: 250000
+max_steps: 25000000
 train_seed: 42
 val_freq: 10000
 gradient_clip_val: 10 # 0 means no clipping

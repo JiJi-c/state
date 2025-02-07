@@ -115,7 +115,8 @@ class PerturbationModel(ABC, LightningModule):
         else:
             loss = self.loss_fn(pred, batch["X"])
 
-        if np.random.rand() < 0.1:
+        is_control = "DMSO_TF" == batch["pert_name"][0] or "non-targeting" == batch["pert_name"][0]
+        if np.random.rand() < 0.1 or is_control:
             self._update_val_cache(batch, pred)
         self.log("val_loss", loss)
 
@@ -183,13 +184,14 @@ class PerturbationModel(ABC, LightningModule):
         wandb.define_metric("val", step_metric="epoch")
         # pytorch lightning sanity check runs val for a single batch, which often does
         # not have control so can't compute these metrics
-        if "non-targeting" in obs["pert_name"].unique():  # TODO: make this more robust
+        uniq_perts = obs["pert_name"].unique()
+        if "DMSO_TF" in uniq_perts or "non-targeting" in uniq_perts:
             metrics = compute_metrics(
                 adata_real=adata_real,  # if output space is gene, this contains the true gene expression anyways, so ignore adata_real_exp
                 adata_pred=adata_pred,
                 adata_real_exp=adata_real_exp,  # don't decode out metrics during validation epochs
                 include_dist_metrics=False,
-                control_pert="non-targeting",
+                control_pert="DMSO_TF",
                 pert_col="pert_name",
                 celltype_col="cell_type",
                 DE_metric_flag=False,

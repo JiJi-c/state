@@ -66,8 +66,7 @@ class BaseMappingStrategy(ABC):
         For perturbed cells:
             - Returns (perturbed_expr, control_expr) using get_control_indices()
         """
-        code = dataset.h5_file[f"obs/{dataset.pert_col}/codes"][perturbed_idx]
-        pert_name = dataset.pert_categories[int(code)]
+        pert_name = dataset.get_perturbation_name(perturbed_idx)
         is_control = (pert_name == dataset.control_pert)
 
         # Get expression(s) based on embed_key

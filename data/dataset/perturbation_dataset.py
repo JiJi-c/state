@@ -10,7 +10,7 @@ import functools
 from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Subset
-from data.utils.data_utils import safe_decode_array, H5MetadataCache
+from data.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
 import h5py
 import numpy as np
 from pathlib import Path
@@ -44,7 +44,6 @@ class PerturbationDataset(Dataset):
         mapping_strategy: BaseMappingStrategy,
         pert_onehot_map: Optional[Dict[str, int]] = None,
         batch_onehot_map: Optional[Dict[str, int]] = None,
-        metadata_cache: Optional[H5MetadataCache] = None,
         pert_col: str = "gene",
         cell_type_key: str = "cell_type",
         batch_col: str = "gem_group",
@@ -90,15 +89,13 @@ class PerturbationDataset(Dataset):
         self.should_yield_control_cells = should_yield_control_cells
         self.should_yield_controls = should_yield_control_cells
 
-        if not metadata_cache:
-            metadata_cache = H5MetadataCache(
+        self.metadata_cache = GlobalH5MetadataCache().get_cache(
                 str(self.h5_path),
                 self.pert_col,
                 self.cell_type_key,
                 self.control_pert,
                 self.batch_col,
             )
-        self.metadata_cache = metadata_cache
 
         # Load file
         self.h5_file = h5py.File(self.h5_path, "r")
@@ -163,7 +160,8 @@ class PerturbationDataset(Dataset):
         """
         self.mapping_strategy = new_strategy(**strategy_kwargs)
         self.mapping_strategy.stage = stage
-        for split_name in self.split_perturbed_indices:
+        all_splits = list(self.split_perturbed_indices.keys())
+        for split_name in all_splits:
             # gather perturbed + control as arrays
             pert_array = np.array(sorted(list(self.split_perturbed_indices[split_name])))
             ctrl_array = np.array(sorted(list(self.split_control_indices[split_name])))
@@ -200,14 +198,16 @@ class PerturbationDataset(Dataset):
         pert_expr, ctrl_expr = self.mapping_strategy.get_mapped_expressions(self, split, underlying_idx)
         
         # Get perturbation information using metadata cache
-        pert_name = self.metadata_cache.pert_names[underlying_idx]
+        pert_code = self.metadata_cache.pert_codes[underlying_idx]
+        pert_name = self.metadata_cache.pert_categories[pert_code]
         if self.pert_onehot_map is not None:
             pert_onehot = self.pert_onehot_map[pert_name]
         else:
             pert_onehot = None
 
         # Get cell type using metadata cache
-        cell_type = self.metadata_cache.cell_type_names[underlying_idx]
+        cell_type_code = self.metadata_cache.cell_type_codes[underlying_idx]
+        cell_type = self.metadata_cache.cell_type_categories[cell_type_code]
 
         # Get batch information
         batch = self.metadata_cache.batch_codes[underlying_idx]
@@ -241,19 +241,16 @@ class PerturbationDataset(Dataset):
         return self.h5_file[f"obsm/{key}"].shape[1]
 
     def get_cell_type(self, idx):
-        return self.metadata_cache.cell_type_names[idx]
+        code = self.metadata_cache.cell_type_codes[idx]
+        return self.metadata_cache.cell_type_categories[code]
     
     def get_all_cell_types(self, indices):
-        codes = self.h5_file[f"obs/{self.cell_type_key}/codes"][indices]
-        return self.all_cell_types[codes]
-
-    def get_perturbation_counts(self) -> Dict[str, int]:
-        """Get total cell counts per perturbation for this dataset using metadata cache."""
-        return self.metadata_cache.get_pert_cell_counts()
-
-    def get_indices_for_celltype(self, cell_type: str) -> np.ndarray:
-        """Get indices for a specific cell type using metadata cache."""
-        return np.where(self.metadata_cache.cell_type_names == cell_type)[0]
+        codes = self.metadata_cache.cell_type_codes[indices]
+        return self.metadata_cache.cell_type_categories[codes]
+    
+    def get_perturbation_name(self, idx):
+        pert_code = self.metadata_cache.pert_codes[idx]
+        return self.metadata_cache.pert_categories[pert_code]
 
     # TODO-Abhi: can we move perturbed idx logic and control idx logic internally so these don't have to be passed in?
     def to_subset_dataset(
@@ -443,11 +440,12 @@ class PerturbationDataset(Dataset):
         self.__dict__.update(state)
         # This ensures that after we unpickle, we have a valid h5_file handle again
         self.h5_file = h5py.File(self.h5_path, "r")
-        self.metadata_cache = H5MetadataCache(
+        self.metadata_cache = GlobalH5MetadataCache().get_cache(
             str(self.h5_path),
             self.pert_col,
             self.cell_type_key,
-            self.control_pert
+            self.control_pert,
+            self.batch_col,
         )
 
     def _preload_all_data(self):
