@@ -525,7 +525,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
         ds = MetadataConcatDataset(self.train_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
-        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def train_eval_dataloader(self):
         if len(self.train_eval_datasets) == 0:
@@ -533,7 +533,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
         ds = MetadataConcatDataset(self.train_eval_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
-        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def val_dataloader(self):
         if len(self.val_datasets) == 0:
@@ -541,7 +541,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
         ds = MetadataConcatDataset(self.val_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
-        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
         if len(self.test_datasets) == 0:
@@ -549,7 +549,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
         ds = MetadataConcatDataset(self.test_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
-        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):
         return self.test_dataloader()

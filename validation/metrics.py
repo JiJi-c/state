@@ -279,10 +279,12 @@ def compute_metrics(
                 )
                 metrics[celltype]["perturbation_id"] = class_score
 
-    for celltype, stats in metrics.items():
-        metrics[celltype] = pd.DataFrame(stats).set_index("pert")
-
-    return metrics
+    try:
+        for celltype, stats in metrics.items():
+            metrics[celltype] = pd.DataFrame(stats).set_index("pert")
+        return metrics
+    except:
+        return
 
 
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):

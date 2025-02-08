@@ -10,6 +10,7 @@ kwargs:
   basal_rep: sample
   esm_perts_only: false
   num_workers: 8
+  pin_memory: true
   n_basal_samples: 1
   sampling_random_state: 42
   split_random_state: 42

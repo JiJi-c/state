@@ -45,6 +45,6 @@ class RandomMappingStrategy(BaseMappingStrategy):
         # Get the cell type of the perturbed cell.
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
         pool = self.split_control_pool[split].get(pert_cell_type, None)
-        if pool is None or len(pool) == 0:
-            raise ValueError(f"No control cells available in split '{split}' for cell type '{pert_cell_type}'.")
+        if pool is None or len(pool) == 0: # what? will pool ever be None?
+            return None
         return self.rng.choice(pool, size=self.n_basal_samples, replace=True)

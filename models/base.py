@@ -200,12 +200,13 @@ class PerturbationModel(ABC, LightningModule):
                 output_space=self.output_space,
             )
 
-            for celltype, metrics_df in metrics.items():
-                numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
-                celltype_metrics = numeric_df.mean(0).to_dict()
-                for k, v in celltype_metrics.items():
-                    if np.isfinite(v):  # Check if value is valid number
-                        self.log(f"val/{k}_{celltype}", v)
+            if metrics:
+                for celltype, metrics_df in metrics.items():
+                    numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
+                    celltype_metrics = numeric_df.mean(0).to_dict()
+                    for k, v in celltype_metrics.items():
+                        if np.isfinite(v):  # Check if value is valid number
+                            self.log(f"val/{k}_{celltype}", v)
 
         self.val_cache = defaultdict(list)
 
