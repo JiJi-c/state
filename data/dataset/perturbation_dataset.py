@@ -201,6 +201,7 @@ class PerturbationDataset(Dataset):
         pert_code = self.metadata_cache.pert_codes[underlying_idx]
         pert_name = self.metadata_cache.pert_categories[pert_code]
         if self.pert_onehot_map is not None:
+            # map across all files to a consistent one hot encoding
             pert_onehot = self.pert_onehot_map[pert_name]
         else:
             pert_onehot = None
@@ -338,12 +339,9 @@ class PerturbationDataset(Dataset):
     # Static methods
     ##############################
     @staticmethod
-    def collate_fn(batch, transform=None):
+    def collate_fn(batch, transform=None, cell_sentence_len=32):
         """
-        Custom collate function that can apply transforms on batched data.
-
-        The transform is bound to the dataset instance via a partial, hence why this
-        is a static method.
+        Custom collate that reshapes data into sequences.
         """
         # First do normal collation
         batch_dict = {
@@ -361,9 +359,15 @@ class PerturbationDataset(Dataset):
 
         # Apply transform if provided
         if transform is not None:
-            batch_dict["X"] = torch.log1p(batch_dict["X"]) # log-transform the expression, THIS NEEDS TO BE REMOVED FOR EMBEDDINGS
+            batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])
 
+        # # Reshape into sequences
+        # B = len(batch) // cell_sentence_len
+        # for k in ["X", "basal", "pert"]:
+        #     if torch.is_tensor(batch_dict[k]):
+        #         batch_dict[k] = batch_dict[k].view(B, cell_sentence_len, -1)
+                
         return batch_dict
 
     ##############################

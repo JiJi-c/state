@@ -26,7 +26,7 @@ from callbacks import GradNormCallback, PerturbationMagnitudeCallback
 import logging
 
 logger = logging.getLogger(__name__)
-
+torch.set_float32_matmul_precision("medium")
 
 def get_lightning_module(model_type: str, data_config: dict, model_config: dict, training_config: dict, var_dims: dict):
     """Create model instance based on config."""
@@ -206,7 +206,12 @@ def train(cfg: DictConfig) -> None:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module
-    data_module = get_datamodule(cfg["data"]["name"], cfg["data"]["kwargs"], batch_size=cfg["training"]["batch_size"])
+    data_module = get_datamodule(
+        cfg["data"]["name"],
+        cfg["data"]["kwargs"],
+        batch_size=cfg["training"]["batch_size"],
+        cell_sentence_len=cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"],
+    )
 
     # Special handling for multi-dataset case - TODO-now: revisit this.
     if cfg["data"]["name"] == "MultiDatasetPerturbationDataModule":
@@ -228,6 +233,7 @@ def train(cfg: DictConfig) -> None:
         cfg["training"],
         data_module.get_var_dims(),
     )
+    model = torch.compile(model, backend="inductor", mode="reduce-overhead")
 
     # Set up logging
     loggers = get_loggers(

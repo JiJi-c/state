@@ -94,6 +94,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         eval_pert: Optional[str] = None, # what is this... needs to go
         should_yield_control_cells: bool = True, # this should just always be true, remove it
         preload_data: bool = False, # this can maybe stay... 
+        cell_sentence_len: int = 512,
         **kwargs,
     ):
         """
@@ -135,6 +136,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.k_neighbors = k_neighbors
         self.should_yield_control_cells = should_yield_control_cells
         self.preload_data = preload_data
+        self.cell_sentence_len = cell_sentence_len
+        logger.info(f"Using cell_sentence_len={cell_sentence_len}")
 
         self.pert_col = pert_col
         self.control_pert = control_pert
@@ -522,33 +525,33 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def train_dataloader(self):
         if len(self.train_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def train_eval_dataloader(self):
         if len(self.train_eval_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_eval_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def val_dataloader(self):
         if len(self.val_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
         if len(self.test_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform)
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):

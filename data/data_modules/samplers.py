@@ -19,13 +19,14 @@ class PerturbationBatchSampler(Sampler):
     and `pert_codes` in the H5MetadataCache). This avoids repeated string operations.
     """
     
-    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False):
+    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 32):
         logger.info("Creating perturbation batch sampler with metadata caching (using codes)...")
         start_time = time.time()
 
         # If the provided dataset has a `.data_source` attribute, use that.
         self.dataset = dataset.data_source if hasattr(dataset, "data_source") else dataset
         self.batch_size = batch_size
+        self.cell_sentence_len = cell_sentence_len
         self.drop_last = drop_last
         
         # Create caches for all unique H5 files.
@@ -35,12 +36,51 @@ class PerturbationBatchSampler(Sampler):
             self.metadata_caches[base_dataset.h5_path] = base_dataset.metadata_cache
         
         # Create batches using the code-based grouping.
+        self.sentences = self._create_sentences()
+        avg_num = np.average([len(sentence) for sentence in self.sentences])
+        logger.info(f"Average # cells per perturbation per cell type: {avg_num}.")
+
+        # combine sentences into batches that are flattened
+        logger.info(f"Creating meta-batches with cell_sentence_len={cell_sentence_len}...")
         self.batches = self._create_batches()
-        
+
         end_time = time.time()
         logger.info(
             f"Sampler created with {len(self.batches)} batches in {end_time - start_time:.2f} seconds."
         )
+
+    def _create_batches(self) -> List[List[int]]:
+        """
+        Combines existing batches into meta-batches of size batch_size * cell_sentence_len,
+        sampling with replacement if needed to reach cell_sentence_len.
+        """
+        all_batches = []
+        current_batch = []
+        
+        num_full = 0
+        num_partial = 0
+        for sentence in self.sentences:
+            # If batch is smaller than cell_sentence_len, sample with replacement
+            if len(sentence) < self.cell_sentence_len:
+                sentence = list(np.random.choice(sentence, size=self.cell_sentence_len, replace=True))
+                num_partial += 1
+            else:
+                assert len(sentence) == self.cell_sentence_len
+                num_full += 1
+
+            if len(current_batch) + len(sentence) <= self.batch_size * self.cell_sentence_len:
+                current_batch.extend(sentence)
+            else:
+                if current_batch:  # Add the completed meta-batch
+                    all_batches.append(current_batch)
+                current_batch = sentence
+        logger.info(f"Of all batches, {num_full} were full and {num_partial} were partial.")
+                
+        # Add the last meta-batch if it exists
+        if current_batch:
+            all_batches.append(current_batch)
+            
+        return all_batches
 
     def _process_subset(self, global_offset: int, subset: "Subset") -> List[List[int]]:
         """
@@ -78,15 +118,15 @@ class PerturbationBatchSampler(Sampler):
             np.random.shuffle(group_indices)
             
             # Split the group indices into batches.
-            for i in range(0, len(group_indices), self.batch_size):
-                batch = group_indices[i:i + self.batch_size].tolist()
-                if len(batch) < self.batch_size and self.drop_last:
+            for i in range(0, len(group_indices), self.cell_sentence_len):
+                sentence = group_indices[i:i + self.cell_sentence_len].tolist()
+                if len(sentence) < self.cell_sentence_len and self.drop_last:
                     continue
-                subset_batches.append(batch)
+                subset_batches.append(sentence)
                 
         return subset_batches
 
-    def _create_batches(self) -> List[List[int]]:
+    def _create_sentences(self) -> List[List[int]]:
         """
         Process each subset sequentially (across all datasets) and combine the batches.
         """
@@ -96,6 +136,8 @@ class PerturbationBatchSampler(Sampler):
             subset_batches = self._process_subset(global_offset, subset)
             all_batches.extend(subset_batches)
             global_offset += len(subset)
+
+        np.random.shuffle(all_batches)
         return all_batches
 
     def __iter__(self) -> Iterator[List[int]]:
