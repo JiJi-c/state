@@ -4,12 +4,64 @@ import numpy as np
 
 from collections import defaultdict
 from geomloss import SamplesLoss
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from models.base import PerturbationModel
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
+def uncollate_batch(batch: Dict[str, torch.Tensor], sentence_len: int) -> List[Dict[str, torch.Tensor]]:
+    """
+    Uncollates a batch dictionary where each tensor has shape [B*S, ...] into
+    a list of S dictionaries with shape [B, ...], where:
+    B = batch size (e.g. 512)
+    S = sentence length (e.g. 32)
+    
+    Args:
+        batch: Dictionary of tensors, each with first dimension B*S
+        sentence_len: The length S to split into
+        
+    Returns:
+        List of S dictionaries, each containing tensors of first dimension B
+    """
+    total_size = batch['X'].shape[0]
+    batch_size = total_size // sentence_len
+    
+    uncollated_batches = []
+    
+    for i in range(batch_size):
+        start_idx = i * sentence_len
+        end_idx = (i + 1) * sentence_len
+
+        current_batch = {}
+        for key, tensor in batch.items():
+            if isinstance(tensor, torch.Tensor):
+                current_batch[key] = tensor[start_idx:end_idx]
+            else:
+                # Handle non-tensor data (e.g. lists)
+                current_batch[key] = tensor[start_idx:end_idx]
+                
+        uncollated_batches.append(current_batch)
+        
+    return uncollated_batches
+
+def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
+    """
+    Determines if a batch should be cached based on perturbation names
+    and random sampling probability.
+    
+    Args:
+        pert_names: List of perturbation names for the batch
+        cache_prob: Probability of caching non-control batches
+        
+    Returns:
+        Boolean indicating if batch should be cached
+    """
+    # Check if this is a control batch
+    is_control = pert_names[0] in ["DMSO_TF", "non-targeting"]
+    
+    # Cache if control or random sample
+    return is_control or np.random.rand() < cache_prob
 
 class NeuralOTPerturbationModel(PerturbationModel):
     """
@@ -176,7 +228,7 @@ class NeuralOTPerturbationModel(PerturbationModel):
         # add to basal if predicting residual
         if self.predict_residual:
             # treat the actual prediction as a residual sum to basal
-            out_pred = self.project_out(res_pred + control_cells.squeeze(1))
+            out_pred = self.project_out(res_pred + control_cells)
         else:
             out_pred = self.project_out(res_pred)
 
@@ -212,11 +264,19 @@ class NeuralOTPerturbationModel(PerturbationModel):
             target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
-
-        is_control = "DMSO_TF" == batch["pert_name"][0] or "non-targeting" == batch["pert_name"][0]
-        if np.random.rand() < 0.1 or is_control:
-            self._update_val_cache(batch, pred)
         self.log("val_loss", loss)
+
+        pred = pred.reshape(-1, self.output_dim)
+        target = target.reshape(-1, self.output_dim)
+        
+        # Split batch into sentences
+        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
+        
+        # Process each sentence
+        for idx, current_batch in enumerate(uncollated_batches):
+            if should_cache_batch(current_batch["pert_name"]):
+                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
+                self._update_val_cache(current_batch, current_pred)
 
     def test_step(self, batch, batch_idx):
         """

@@ -1,4 +1,5 @@
 import torch
+import logging
 import wandb
 
 import anndata as ad
@@ -17,6 +18,7 @@ from models.decoders import DecoderInterface
 from models.utils import get_loss_fn
 from validation.metrics import compute_metrics
 
+logger = logging.getLogger(__name__)
 
 class PerturbationModel(ABC, LightningModule):
     """
@@ -185,7 +187,8 @@ class PerturbationModel(ABC, LightningModule):
         # pytorch lightning sanity check runs val for a single batch, which often does
         # not have control so can't compute these metrics
         uniq_perts = obs["pert_name"].unique()
-        if "DMSO_TF" in uniq_perts or "non-targeting" in uniq_perts:
+        # if "DMSO_TF" in uniq_perts or "non-targeting" in uniq_perts:
+        try:
             metrics = compute_metrics(
                 adata_real=adata_real,  # if output space is gene, this contains the true gene expression anyways, so ignore adata_real_exp
                 adata_pred=adata_pred,
@@ -201,12 +204,29 @@ class PerturbationModel(ABC, LightningModule):
             )
 
             if metrics:
+                # Dictionary to store aggregated metrics
+                aggregate_metrics = defaultdict(list)
+                
+                # Collect metrics across all cell types
                 for celltype, metrics_df in metrics.items():
                     numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
                     celltype_metrics = numeric_df.mean(0).to_dict()
+                    
+                    # Log individual cell type metrics
                     for k, v in celltype_metrics.items():
-                        if np.isfinite(v):  # Check if value is valid number
+                        if np.isfinite(v):
                             self.log(f"val/{k}_{celltype}", v)
+                            # Collect for averaging
+                            aggregate_metrics[k].append(v)
+                
+                # Compute and log average metrics across cell types
+                for metric_name, values in aggregate_metrics.items():
+                    avg_value = np.mean([v for v in values if np.isfinite(v)])
+                    if np.isfinite(avg_value):
+                        self.log(f"val/{metric_name}", avg_value)
+        except:
+            # log a warning
+            logger.warning("Error in computing metrics during validation epoch.")
 
         self.val_cache = defaultdict(list)
 

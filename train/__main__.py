@@ -233,7 +233,6 @@ def train(cfg: DictConfig) -> None:
         cfg["training"],
         data_module.get_var_dims(),
     )
-    model = torch.compile(model, backend="inductor", mode="reduce-overhead")
 
     # Set up logging
     loggers = get_loggers(
