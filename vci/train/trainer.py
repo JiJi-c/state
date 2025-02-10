@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
-from vci.model import LitUCEModel
+from vci.nn.model import LitUCEModel
 from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
 from vci.train.callbacks import LogLR, ProfilerCallback
 from vci.utils import get_latest_checkpoint
@@ -39,6 +39,9 @@ def main(cfg):
 
     dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
 
+    generator = torch.Generator()
+    generator.manual_seed(cfg.dataset.seed)
+
     # Training dataloader
     train_dataset = H5adDatasetSentences(cfg)
     train_dataloader = DataLoader(train_dataset,
@@ -46,7 +49,8 @@ def main(cfg):
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
                                   num_workers=3,
-                                  persistent_workers=True)
+                                  persistent_workers=True,
+                                  generator=generator)
 
     val_dataset = H5adDatasetSentences(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
@@ -54,7 +58,8 @@ def main(cfg):
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
                                 num_workers=3,
-                                persistent_workers=True)
+                                persistent_workers=True,
+                                generator=generator)
 
     model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
                         d_model=cfg.model.emsize,
@@ -108,7 +113,7 @@ def main(cfg):
                         # Accumulation
                         gradient_clip_val=cfg.optimizer.max_grad_norm,
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
-                        # precision="bf16-mixed",
+                        precision="bf16-mixed",
                         strategy=DDPStrategy(process_group_backend="nccl"),
                         val_check_interval=val_interval,
                         # Logging

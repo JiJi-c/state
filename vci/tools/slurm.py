@@ -28,7 +28,6 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --output=outputs/{{ exp_name }}/training.log
 #SBATCH --open-mode=append
 #SBATCH --partition={{ partition }}
-#SBATCH --account=vci
 {{ sbatch_overrides }}
 
 NUM_GPUS_PER_NODE={{ num_gpus_per_node }}
@@ -38,7 +37,7 @@ scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
 sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
 MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
-MASTER_PORT='12355'
+MASTER_PORT='12357'
 
 NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
