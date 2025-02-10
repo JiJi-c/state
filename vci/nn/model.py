@@ -246,15 +246,15 @@ class LitUCEModel(L.LightningModule):
             criterion = WassersteinLoss(self.d_model)
             target = Y
         elif self.cfg.loss.name == 'kl_divergence':
-            criterion = KLDivergenceLoss(apply_normalization=self.cfg.model.normalization)
+            criterion = KLDivergenceLoss(apply_normalization=self.cfg.loss.normalization)
             target = batch_weights
         elif self.cfg.loss.name == 'mmd':
-            criterion = MMDLoss(kernel="energy") 
-            target = Y  
+            criterion = MMDLoss(kernel="energy")
+            target = Y
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
-    
-        loss = criterion(input=decs.squeeze(), target=target)
+
+        loss = criterion(p=decs.squeeze(), q=target)
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:

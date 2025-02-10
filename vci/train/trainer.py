@@ -39,6 +39,9 @@ def main(cfg):
 
     dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
 
+    generator = torch.Generator()
+    generator.manual_seed(cfg.dataset.seed)
+
     # Training dataloader
     train_dataset = H5adDatasetSentences(cfg)
     train_dataloader = DataLoader(train_dataset,
@@ -46,7 +49,8 @@ def main(cfg):
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
                                   num_workers=3,
-                                  persistent_workers=True)
+                                  persistent_workers=True,
+                                  generator=generator)
 
     val_dataset = H5adDatasetSentences(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
@@ -54,7 +58,8 @@ def main(cfg):
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
                                 num_workers=3,
-                                persistent_workers=True)
+                                persistent_workers=True,
+                                generator=generator)
 
     model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
                         d_model=cfg.model.emsize,

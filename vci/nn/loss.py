@@ -63,21 +63,19 @@ class KLDivergenceLoss(nn.Module):
         self.apply_normalization = apply_normalization
         self.epsilon = epsilon
 
-    def forward(self, input, target):
-        target = torch.nan_to_num(target, nan=0.0)
+    def forward(self, p, q):
+        q = torch.nan_to_num(q, nan=0.0)
+        p = torch.nan_to_num(p, nan=0.0)
 
-        max_len = max(input.size(1), target.size(1))
-        if input.size(1) < max_len:
-            input = F.pad(input, (0, max_len - input.size(1)), 'constant', 0)
-        if target.size(1) < max_len:
-            target = F.pad(target, (0, max_len - target.size(1)), 'constant', 0)
+        max_len = max(p.size(1), q.size(1))
+        if p.size(1) < max_len:
+            p = F.pad(p, (0, max_len - p.size(1)), 'constant', 0)
+        if q.size(1) < max_len:
+            q = F.pad(q, (0, max_len - q.size(1)), 'constant', 0)
 
         if self.apply_normalization:
-            p = F.softmax(input, dim=-1)
-            q = F.softmax(target, dim=-1)
-        else:
-            p = input
-            q = target
+            p = F.softmax(p, dim=-1)
+            q = F.softmax(q, dim=-1)
 
         return torch.sum(p * torch.log(p / q))
 

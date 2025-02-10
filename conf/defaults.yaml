@@ -10,7 +10,7 @@ experiment:
   num_nodes: 1
   num_gpus_per_node: 1
   master: localhost
-  port: 12355
+  port: 12356
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
@@ -44,6 +44,7 @@ validations:
 
 dataset:
   name: "vci"
+  seed: 42
   train: /scratch/ctc/ML/uce/h5ad_dataset.csv
   val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
   data_dir: /large_storage/ctc/datasets/cellxgene/processed/
@@ -68,7 +69,6 @@ model:
   nlayers: 8
   dropout: 0.1
   output_dim: 256 # TODO: Is emsize different from this?
-  normalization: False
 
 optimizer:
   max_lr: 4e-4
@@ -80,3 +80,4 @@ optimizer:
 
 loss:
   name: "kl_divergence" # Available options: cross_entropy, wasserstein, kl_divergence
+  normalization: False

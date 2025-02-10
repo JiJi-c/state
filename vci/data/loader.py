@@ -22,7 +22,9 @@ def create_dataloader(cfg,
                       datasets=None,
                       shape_dict=None,
                       adata=None,
-                      adata_name=None):
+                      adata_name=None,
+                      shuffle=True,
+                      sentence_collator=None):
         '''
         Expected to be used for inference
         Either datasets and shape_dict or adata and adata_name should be provided
@@ -38,10 +40,11 @@ def create_dataloader(cfg,
                                        shape_dict=shape_dict,
                                        adata=adata,
                                        adata_name=adata_name)
-        sentence_collator = VCIDatasetSentenceCollator(cfg)
+        if sentence_collator is None:
+            sentence_collator = VCIDatasetSentenceCollator(cfg)
         dataloader = DataLoader(dataset,
                                 batch_size=batch_size,
-                                shuffle=False,
+                                shuffle=shuffle,
                                 collate_fn=sentence_collator,
                                 num_workers=workers,
                                 persistent_workers=True)

@@ -182,7 +182,7 @@ if __name__ == '__main__':
 
     gene_seq_map = pd.read_csv(mapping_filename, delimiter='\t')
     mapping_file = os.path.join(args.output,
-                                'Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B.pt')
+                                'Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_mean.pt')
 
     mappings = {}
     if os.path.exists(mapping_file):
@@ -196,7 +196,7 @@ if __name__ == '__main__':
 
         seq = row[1]
         octs = run_forward(seq)
-        emb = octs['embedding_layer.output'].squeeze().sum(0)
+        emb = octs['embedding_layer.output'].squeeze().mean(0)
         mappings[gene] = emb
         logging.debug(f'Embedding of {gene} is {emb}')
 
