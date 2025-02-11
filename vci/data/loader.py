@@ -108,6 +108,12 @@ class H5adDatasetSentences(data.Dataset):
         datafile = os.path.join(self.cfg.dataset.data_dir, f"{dataset}.h5ad")
         return h5py.File(datafile, "r")
 
+    def _get_DE_scores(self, h5f, idx):
+        cluster_id = str(h5f['/obs/leiden/codes'][idx])
+        gene_indices = h5f['/uns/ranked_genes/gene_indices'][cluster_id][:]
+        gene_scores = h5f['/uns/ranked_genes/gene_scores'][cluster_id][:]
+        return gene_indices, gene_scores
+
     def __getitem__(self, idx):
         if isinstance(idx, int):
             if self.adata is not None:
@@ -143,12 +149,13 @@ class H5adDatasetSentences(data.Dataset):
                     log.info('debugging', ds_idx, 'end')
                     log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
+                gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx)
             except IndexError as iex:
                 log.exception(f"Error in dataset {dataset} at index {ds_idx}")
                 raise iex
 
             dataset_num = self.datasets_to_num[dataset]
-            return counts, idx, dataset, dataset_num
+            return counts, idx, dataset, dataset_num, gene_indices, gene_scores
         else:
             raise NotImplementedError
 
@@ -187,8 +194,8 @@ class VCIDatasetSentenceCollator(object):
         i = 0
         max_len = 0
 
-        for counts, idx, dataset, dataset_num in batch:
-            (bs, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset)
+        for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
+            (bs, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
 
             batch_sentences[i, :] = bs
             batch_weight = batch_weight.squeeze()
@@ -214,7 +221,7 @@ class VCIDatasetSentenceCollator(object):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
 
-    def sample_cell_sentences(self, counts, dataset):
+    def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores):
         if torch.isnan(counts).any():
             log.error(f"NaN values in counts for dataset {dataset}")
         batch_weights = torch.log1p(counts)
@@ -273,12 +280,11 @@ class VCIDatasetSentenceCollator(object):
             cell_sentences[c, :] = ordered_choice_idx
             choice_idx_ouput_p = mask_weights  # use the masked genes as task
             if len(choice_idx_ouput_p) > self.cfg.dataset.P:
-                choice_idx_ouput_p = mask_weights[\
-                    torch.randperm(len(mask_weights))[:self.cfg.dataset.P]]
+                choice_idx_ouput_p = mask_weights[torch.randperm(len(mask_weights))[:self.cfg.dataset.P]]
             elif len(choice_idx_ouput_p) < self.cfg.dataset.P:
                 remainder = self.cfg.dataset.P - len(choice_idx_ouput_p)
                 choice_idx_ouput_p = torch.cat((choice_idx_ouput_p,
-                                            pos_genes[torch.randint(len(pos_genes), (remainder,))]))
+                                                pos_genes[torch.randint(len(pos_genes), (remainder,))]))
 
             if self.cfg.dataset.N <= len(neg_genes):
                 choice_idx_ouput_n = torch.randperm(len(neg_genes))[:self.cfg.dataset.N]
