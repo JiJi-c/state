@@ -26,13 +26,9 @@ from vci.utils import compute_gene_overlap_cross_pert
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
 
 
-# def full_block(in_features, out_features, p_drop=0.1):
-#     return nn.Sequential(
-#         nn.Linear(in_features, out_features, bias=True),
-#         nn.LayerNorm(out_features),
-#         nn.GELU(),
-#         nn.Dropout(p=p_drop),
-#     )
+# if flash-attn package is installed and available
+from vci.nn.flash_transformer import FlashTransformerEncoderLayer
+from vci.nn.flash_transformer import FlashTransformerEncoder
 
 
 class SkipBlock(nn.Module):
@@ -104,13 +100,23 @@ class LitUCEModel(L.LightningModule):
                                      nn.SiLU(), # Changed to SiLU
                                     )
 
-        encoder_layers = TransformerEncoderLayer(d_model,
-                                                 nhead,
-                                                 d_hid,
-                                                 dropout=dropout,
-                                                 batch_first=True,
-                                                 activation="gelu") # switch to gelu activation
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        # Check the configuration flag whether to use Flash Attention
+        use_flash = getattr(self.cfg.model, "use_flash_attention", False)
+        if use_flash and FlashTransformerEncoderLayer is not None:
+            print('!!! Using Flash Attention !!!')
+            # Create a list of FlashTransformerEncoderLayer instances
+            layers = [FlashTransformerEncoderLayer(d_model, nhead, d_hid, dropout=dropout)
+                      for _ in range(nlayers)]
+            self.transformer_encoder = FlashTransformerEncoder(layers)
+        else:
+            # Fallback to the standard PyTorch TransformerEncoderLayer
+            encoder_layer = TransformerEncoderLayer(d_model,
+                                                       nhead,
+                                                       d_hid,
+                                                       dropout=dropout,
+                                                       batch_first=True,
+                                                       activation="gelu")
+            self.transformer_encoder = TransformerEncoder(encoder_layer, nlayers)
 
         if compiled:
             self.transformer_encoder = torch.compile(self.transformer_encoder)

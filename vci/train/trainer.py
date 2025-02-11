@@ -96,8 +96,7 @@ def main(cfg):
     wandb_logger.watch(model, log_freq=1000)
 
     callbacks = [checkpoint_callback,
-                 LogLR(100),
-                 RichProgressBar()]
+                 LogLR(100)]
 
     max_steps = -1
     if cfg.experiment.profile.enable_profiler:

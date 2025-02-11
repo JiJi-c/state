@@ -63,6 +63,7 @@ class H5adDatasetSentences(data.Dataset):
 
         self.adata = None
         self.adata_name = adata_name
+        self.test = test
         if adata is not None:
             self.adata = adata
             self.datasets = [adata_name]
@@ -78,6 +79,7 @@ class H5adDatasetSentences(data.Dataset):
             self.datasets = datasets
             self.shapes_dict = shape_dict
 
+        self.datasets = sorted(self.datasets)
         self.cfg = cfg
 
         self.num_cells = {}
@@ -96,7 +98,7 @@ class H5adDatasetSentences(data.Dataset):
         }
 
     def _compute_index(self, idx):
-        for dataset in sorted(self.datasets):
+        for dataset in self.datasets:
             if idx < self.num_cells[dataset]:
                 return dataset, idx
             else:
@@ -121,7 +123,6 @@ class H5adDatasetSentences(data.Dataset):
             attrs = dict(h5f['X'].attrs)
             try:
                 if attrs['encoding-type'] == 'csr_matrix':
-                    # num_genes = attrs['shape'][1]
                     indptrs = h5f["/X/indptr"]
                     start_ptr = indptrs[ds_idx]
                     end_ptr = indptrs[ds_idx + 1]
