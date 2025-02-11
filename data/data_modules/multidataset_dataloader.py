@@ -555,7 +555,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):
-        return self.test_dataloader()
+        if len(self.test_datasets) == 0:
+            return None
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
+        ds = MetadataConcatDataset(self.test_datasets)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def set_inference_mapping_strategy(self, strategy_cls, **strategy_kwargs):
         """

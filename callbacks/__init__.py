@@ -2,8 +2,33 @@ from torch.optim import Optimizer
 from lightning.pytorch.callbacks import Callback
 import torch
 import numpy as np
+import lightning.pytorch as pl
 from models import PerturbationModel
 
+class TestMetricsCallback(Callback):
+    def __init__(self, test_freq):
+        self.test_freq = test_freq
+        self.last_test_global_step = 0
+
+    def on_train_epoch_end(self, trainer, pl_module: PerturbationModel):
+        # Compute the number of steps passed since the last test run
+        if trainer.global_step - self.last_test_global_step >= self.test_freq:
+            # Get the test dataloader
+            test_dataloader = trainer.datamodule.test_dataloader()
+            
+            # Only compute metrics if we have a test dataloader
+            if test_dataloader is not None:
+                # Compute metrics using our consolidated method
+                metrics = pl_module.compute_test_metrics(test_dataloader)
+                
+                # Log all metrics
+                for name, value in metrics.items():
+                    # Ensure value is a tensor on the correct device
+                    if not isinstance(value, torch.Tensor):
+                        value = torch.tensor(value, device=pl_module.device)
+                    pl_module.log(name, value, sync_dist=True)
+                
+                self.last_test_global_step = trainer.global_step
 
 class GradNormCallback(Callback):
     """

@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Dict, Optional, List
 from lightning.pytorch import LightningModule
+from tqdm import tqdm
 
 from models.decoders import DecoderInterface
 from models.utils import get_loss_fn
@@ -49,6 +50,7 @@ class PerturbationModel(ABC, LightningModule):
         output_space: str = "gene",
         decoder: Optional[DecoderInterface] = None,
         gene_names: Optional[List[str]] = None,
+        batch_size: int = 64,
         **kwargs,
     ):
         super().__init__()
@@ -61,6 +63,7 @@ class PerturbationModel(ABC, LightningModule):
         self.pert_dim = pert_dim
         self.embed_key = embed_key
         self.output_space = output_space
+        self.batch_size = batch_size
 
         # Training settings
         self.decoder = decoder if output_space == "latent" else None
@@ -71,6 +74,11 @@ class PerturbationModel(ABC, LightningModule):
 
         # For caching validation data across steps, if desired
         self.val_cache = defaultdict(list)
+        self.test_cache = defaultdict(list)
+
+    def transfer_batch_to_device(self, batch, device, dataloader_idx: int):
+        return {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+                for k, v in batch.items()}
 
     @abstractmethod
     def _build_networks(self):
@@ -123,7 +131,6 @@ class PerturbationModel(ABC, LightningModule):
         self.log("val_loss", loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        """Test step logic."""
         pred = self(batch)
         if self.output_space == "gene":
             if "X_gene" not in batch:
@@ -133,7 +140,9 @@ class PerturbationModel(ABC, LightningModule):
         else:
             loss = self.loss_fn(pred, batch["X"])
 
-        self.log("test_loss", loss)
+        self.log("test_loss", loss, prog_bar=True)
+        self._update_test_cache(batch, pred)  # NEW: cache test outputs
+        return loss
 
     def predict_step(self, batch, batch_idx, **kwargs):
         """
@@ -230,6 +239,65 @@ class PerturbationModel(ABC, LightningModule):
 
         self.val_cache = defaultdict(list)
 
+    def on_test_epoch_end(self) -> None:
+        if len(self.test_cache) == 0:
+            return
+
+        # Concatenate cached arrays just like in validation:
+        for k in self.test_cache:
+            if k in ("X", "X_gene", "pred", "pert", "basal"):
+                self.test_cache[k] = np.concatenate(self.test_cache[k])
+            else:
+                self.test_cache[k] = np.concatenate([np.array(obs) for obs in self.test_cache[k]])
+
+        # Build AnnData objects from the cached predictions and ground truth.
+        obs = pd.DataFrame({k: v for k, v in self.test_cache.items() if k not in ("X", "X_gene", "pred", "pert", "basal")})
+        adata_real = ad.AnnData(obs=obs, X=self.test_cache["X"])
+        adata_pred = ad.AnnData(obs=obs, X=self.test_cache["pred"])
+
+        if self.output_space == "gene" and self.embed_key is not None:
+            adata_real_exp = ad.AnnData(obs=obs, X=self.test_cache["X_gene"])
+            adata_real_exp.var.index = self.gene_names
+            adata_pred.var.index = self.gene_names
+        else:
+            adata_real_exp = None
+
+        try:
+            # Compute the metrics exactly as for validation.
+            metrics = compute_metrics(
+                adata_real=adata_real,
+                adata_pred=adata_pred,
+                adata_real_exp=adata_real_exp,
+                include_dist_metrics=False,
+                control_pert="DMSO_TF",  # or self.control_pert if that is stored in your model
+                pert_col="pert_name",
+                celltype_col="cell_type",
+                DE_metric_flag=False,
+                class_score_flag=True,
+                embed_key=self.embed_key,
+                output_space=self.output_space,
+            )
+
+            if metrics:
+                aggregate_metrics = defaultdict(list)
+                for celltype, metrics_df in metrics.items():
+                    numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
+                    celltype_metrics = numeric_df.mean(0).to_dict()
+                    for k, v in celltype_metrics.items():
+                        if np.isfinite(v):
+                            self.log(f"test/{k}_{celltype}", v)
+                            aggregate_metrics[k].append(v)
+
+                for metric_name, values in aggregate_metrics.items():
+                    avg_value = np.mean([v for v in values if np.isfinite(v)])
+                    if np.isfinite(avg_value):
+                        self.log(f"test/{metric_name}", avg_value)
+        except:
+            logger.warning("Error in computing metrics during test epoch.")
+
+        # Reset the test cache
+        self.test_cache = defaultdict(list)
+
     def _update_val_cache(self, batch, pred):
         for k in batch:
             if k not in self.val_cache:
@@ -244,3 +312,126 @@ class PerturbationModel(ABC, LightningModule):
         if "pred" not in self.val_cache:
             self.val_cache["pred"] = []
         self.val_cache["pred"].append(pred.cpu().numpy())
+
+    def _update_test_cache(self, batch, pred):
+        for k in batch:
+            if k not in self.test_cache:
+                self.test_cache[k] = []
+            if isinstance(batch[k], torch.Tensor):
+                self.test_cache[k].append(batch[k].cpu().numpy())
+            else:
+                self.test_cache[k].append(batch[k])
+        if "pred" not in self.test_cache:
+            self.test_cache["pred"] = []
+        self.test_cache["pred"].append(pred.cpu().numpy())
+
+    def compute_test_metrics(self, dataloader, prefix="test") -> Dict[str, float]:
+        """
+        Compute model metrics on a given dataloader.
+        This consolidates the functionality previously split across test_step and on_test_epoch_end.
+        
+        Args:
+            dataloader: PyTorch DataLoader containing the evaluation data
+            prefix: String prefix for metric names (default: "test")
+            
+        Returns:
+            Dictionary of computed metrics
+        """
+        # Initialize cache for collecting predictions and metadata
+        cache = defaultdict(list)
+        
+        # Collect predictions and data across all batches
+        self.eval()  # Ensure model is in eval mode
+        with torch.no_grad():
+            pbar = tqdm(
+                total=len(dataloader),
+                desc="Testing",
+                unit="batch",
+                leave=True,
+                position=0,
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+            )
+
+            for batch in dataloader:
+                # Move batch to device
+                batch = {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v)
+                        for k, v in batch.items()}
+                
+                # Get predictions
+                pred = self(batch)
+
+                # Cache predictions and data
+                if np.random.rand() < 0.1 / self.batch_size or "DMSO_TF" in batch["pert_name"] or "non-targeting" in batch["pert_name"]:
+                    for k in batch:
+                        if isinstance(batch[k], torch.Tensor):
+                            cache[k].append(batch[k].cpu().numpy())
+                        else:
+                            cache[k].append(batch[k])
+                    cache["pred"].append(pred.cpu().numpy())
+
+                pbar.update(1)
+            pbar.close()
+
+        # Concatenate all cached arrays
+        for k in cache:
+            if k in ("X", "X_gene", "pred", "pert", "basal"):
+                cache[k] = np.concatenate(cache[k])
+            else:
+                cache[k] = np.concatenate([np.array(obs) for obs in cache[k]])
+
+        # Build AnnData objects for metrics computation
+        obs = pd.DataFrame({k: v for k, v in cache.items() 
+                          if k not in ("X", "X_gene", "pred", "pert", "basal")})
+        adata_real = ad.AnnData(obs=obs, X=cache["X"])
+        adata_pred = ad.AnnData(obs=obs, X=cache["pred"])
+
+        if self.output_space == "gene" and self.embed_key is not None:
+            adata_real_exp = ad.AnnData(obs=obs, X=cache["X_gene"])
+            adata_real_exp.var.index = self.gene_names
+            adata_pred.var.index = self.gene_names
+        else:
+            adata_real_exp = None
+
+        try:
+            # Compute metrics using existing compute_metrics function
+            metrics = compute_metrics(
+                adata_real=adata_real,
+                adata_pred=adata_pred,
+                adata_real_exp=adata_real_exp,
+                include_dist_metrics=False,
+                control_pert="DMSO_TF",
+                pert_col="pert_name",
+                celltype_col="cell_type",
+                DE_metric_flag=False,
+                class_score_flag=True,
+                embed_key=self.embed_key,
+                output_space=self.output_space,
+            )
+
+            # Process metrics
+            if metrics:
+                aggregate_metrics = defaultdict(list)
+                metric_dict = {}
+                
+                # Process metrics for each cell type
+                for celltype, metrics_df in metrics.items():
+                    numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
+                    celltype_metrics = numeric_df.mean(0).to_dict()
+                    
+                    for k, v in celltype_metrics.items():
+                        if np.isfinite(v):
+                            metric_name = f"{prefix}/{k}_{celltype}"
+                            metric_dict[metric_name] = v
+                            aggregate_metrics[k].append(v)
+                
+                # Compute averages across cell types
+                for metric_name, values in aggregate_metrics.items():
+                    avg_value = np.mean([v for v in values if np.isfinite(v)])
+                    if np.isfinite(avg_value):
+                        metric_dict[f"{prefix}/{metric_name}"] = avg_value
+
+                return metric_dict
+
+        except Exception as e:
+            logger.warning(f"Error computing metrics: {str(e)}")
+            return {}

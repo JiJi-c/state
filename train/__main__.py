@@ -21,7 +21,7 @@ from models import (
     EmbedSumPerturbationModel,
     NeuralOTPerturbationModel,
 )
-from callbacks import GradNormCallback, PerturbationMagnitudeCallback
+from callbacks import GradNormCallback, PerturbationMagnitudeCallback, TestMetricsCallback
 
 import logging
 
@@ -35,6 +35,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["embed_key"] = data_config["embed_key"]
     module_config["output_space"] = data_config["output_space"]
     module_config["gene_names"] = var_dims["gene_names"]
+    module_config["batch_size"] = training_config["batch_size"]
 
     if data_config["output_space"] == "gene":
         # the model outputs will be in gene space, so no decoder is needed
@@ -133,7 +134,7 @@ def get_loggers(
     return loggers
 
 
-def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int) -> List[ModelCheckpoint]:
+def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, test_freq: int) -> List[ModelCheckpoint]:
     """Create checkpoint callbacks based on validation frequency."""
     checkpoint_dir = join(output_dir, name, "checkpoints")
     callbacks = []
@@ -160,6 +161,9 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int) -> List[
     )
     callbacks.append(periodic_ckpt)
 
+    test_metrics_cb = TestMetricsCallback(test_freq=test_freq)
+    callbacks.append(test_metrics_cb)
+
     return callbacks
 
 
@@ -182,9 +186,15 @@ def train(cfg: DictConfig) -> None:
     if cfg["use_wandb"]:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
-    # Save config
-    with open(join(run_output_dir, "config.yaml"), "w") as f:
-        f.write(cfg_yaml)
+    # if this already exists for a run, then just read it in
+    if exists(join(run_output_dir, "config.yaml")):
+        with open(join(run_output_dir, "config.yaml"), "r") as f:
+            cfg_yaml = f.read()
+        cfg = OmegaConf.load(cfg_yaml)
+        logger.info(f"Config loaded from file.")
+    else:
+        with open(join(run_output_dir, "config.yaml"), "w") as f:
+            f.write(cfg_yaml)
 
     # Set random seeds
     if "train_seed" in cfg["training"]:
@@ -215,15 +225,21 @@ def train(cfg: DictConfig) -> None:
 
     # Special handling for multi-dataset case - TODO-now: revisit this.
     if cfg["data"]["name"] == "MultiDatasetPerturbationDataModule":
-        data_module.setup(stage="fit")
-        data_module.setup(stage="test")
+        # if the data module already exists, just read it in
+        if exists(join(run_output_dir, "data_module.pkl")):
+            with open(join(run_output_dir, "data_module.pkl"), "rb") as f:
+                data_module = pickle.load(f)
+            logger.info(f"Data module loaded from file.")
+        else:
+            data_module.setup(stage="fit")
+            data_module.setup(stage="test")
 
-        # Save data module for reproducibility
-        with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
-            # TODO-Abhi: only save necessary data
-            pickle.dump(data_module, f)
+            # Save data module for reproducibility
+            with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
+                # TODO-Abhi: only save necessary data
+                pickle.dump(data_module, f)
+            logger.info(f"Data module loaded and saved.")
 
-    logger.info(f"Data module saved.")
 
     # Create model
     model = get_lightning_module(
@@ -255,7 +271,7 @@ def train(cfg: DictConfig) -> None:
             break
 
     # Set up callbacks
-    ckpt_callbacks = get_checkpoint_callbacks(cfg["output_dir"], cfg["name"], cfg["training"]["val_freq"])
+    ckpt_callbacks = get_checkpoint_callbacks(cfg["output_dir"], cfg["name"], cfg["training"]["val_freq"], cfg["training"]["test_freq"])
     callbacks = ckpt_callbacks + [GradNormCallback(), PerturbationMagnitudeCallback()]
 
     logger.info('Loggers and callbacks set up.')

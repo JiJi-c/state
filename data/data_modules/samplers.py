@@ -19,7 +19,7 @@ class PerturbationBatchSampler(Sampler):
     and `pert_codes` in the H5MetadataCache). This avoids repeated string operations.
     """
     
-    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 32):
+    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 512):
         logger.info("Creating perturbation batch sampler with metadata caching (using codes)...")
         start_time = time.time()
 

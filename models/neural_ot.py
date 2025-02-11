@@ -278,16 +278,31 @@ class NeuralOTPerturbationModel(PerturbationModel):
                 current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
                 self._update_val_cache(current_batch, current_pred)
 
-    def test_step(self, batch, batch_idx):
-        """
-        Same approach for test.
-        """
-        output_samples = self.forward(batch)
-        target_samples = batch["X"]
-        loss = self.loss_fn(output_samples, target_samples).mean()
+    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+        pred = self(batch)
 
-        self.log("test_loss", loss, prog_bar=True)
-        return loss
+        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        if self.output_space == "gene" and self.embed_key is not None:
+            if "X_gene" not in batch:
+                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
+            target = batch["X_gene"]
+        else:
+            target = batch["X"]
+        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        loss = self.loss_fn(pred, target).mean()
+        self.log("test_loss", loss)
+
+        pred = pred.reshape(-1, self.output_dim)
+        target = target.reshape(-1, self.output_dim)
+        
+        # Split batch into sentences
+        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
+        
+        # Process each sentence
+        for idx, current_batch in enumerate(uncollated_batches):
+            if should_cache_batch(current_batch["pert_name"]):
+                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
+                self._update_test_cache(current_batch, current_pred)
 
     def configure_optimizers(self):
         """
