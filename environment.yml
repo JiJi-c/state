@@ -31,3 +31,5 @@ dependencies:
     - requests
     - fire
     - geomloss
+    - flash-attn
+    - triton
