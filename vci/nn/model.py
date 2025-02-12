@@ -366,10 +366,7 @@ class LitUCEModel(L.LightningModule):
             pert_mean_offsets.update({ctrl_label: np.zeros(mean_ctrl.shape[0])})
 
             # Create predicted and real AnnData objects for the test set
-            pred_adata = sc.AnnData(
-                X=np.zeros_like(test_adata.obsm['X_emb']),
-                obs=test_adata.obs.copy(),
-            )
+            pred_x = np.zeros_like(test_adata.obsm['X_emb']).copy()
             real_adata = sc.AnnData(
                 X=test_adata.obsm['X_emb'],
                 obs=test_adata.obs.copy(),
@@ -401,7 +398,12 @@ class LitUCEModel(L.LightningModule):
                 pred = basal + pert_effect
                 
                 # Store prediction
-                pred_adata.X[i] = pred
+                pred_x[i] = pred
+
+            pred_adata = sc.AnnData(
+                X=pred_x,
+                obs=test_adata.obs.copy(),
+            )
 
             # retain only the cells in pred and real that are not in the blacklist
             pred_adata = pred_adata[pred_adata.obs[col_id].isin(pert_mean_offsets.keys())]

@@ -41,6 +41,13 @@ validations:
     method: null
     dataset: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
     dataset_name: rpe1_top5000_variable
+  perturbation:
+    enable: true
+    eval_interval_multiple: 2
+    pert_col: gene
+    ctrl_label: non-targeting
+    dataset: /large_storage/ctc/userspace/aadduri/vci/validation/replogle_perturbation.h5ad
+    dataset_name: replogle_perturbation
 
 dataset:
   name: "vci"
