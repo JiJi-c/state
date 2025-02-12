@@ -314,6 +314,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # First compute global fewshot splits
         self._setup_global_fewshot_splits()
 
+        # choose 40% of the fewshot cell types for validation
+        num_val_cts = max(int(len(self.fewshot_splits) * 0.4), 1)
+        np.random.seed(self.random_seed)
+        val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
+
         # Get zeroshot cell types
         zeroshot_cts = {
             spec.cell_type
@@ -360,7 +365,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     should_yield_control_cells=self.should_yield_control_cells,
                 )
 
-                train_val_sum = 0
+                train_sum = 0
+                val_sum = 0
                 test_sum = 0
 
                 # Inner progress bar: iterate over cell types within the current plate
@@ -412,49 +418,42 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         train_controls = ctrl_indices[:n_train_controls]
                         test_controls = ctrl_indices[n_train_controls:]
 
-                        n_val_controls = int(n_train_controls * self.val_split)
-                        val_controls = train_controls[:n_val_controls]
-                        train_controls = train_controls[n_val_controls:]
-
                         # Split perturbed cells
                         pert_indices = ct_indices[~ctrl_mask]
                         pert_codes = ct_pert_codes[~ctrl_mask]
 
                         # Create masks for train/test split using pre-computed pert lists
                         train_pert_mask = np.isin(pert_codes, list(train_pert_codes))
-                        train_val_pert_indices = pert_indices[train_pert_mask]
+                        train_pert_indices = pert_indices[train_pert_mask]
                         test_pert_indices = pert_indices[~train_pert_mask]
 
                         # Split train into train/val if we have any training data
-                        if len(train_val_pert_indices) > 0:
-                            train_val_pert_indices = rng.permutation(train_val_pert_indices)
-                            n_val = int(len(train_val_pert_indices) * self.val_split)
-                            val_pert_indices = train_val_pert_indices[:n_val]
-                            train_pert_indices = train_val_pert_indices[n_val:]
+                        if len(train_pert_indices) > 0:
+                            train_pert_indices = rng.permutation(train_pert_indices)
 
                             # Create train subset
-                            if len(train_pert_indices) > 0:
-                                train_subset = ds.to_subset_dataset(
-                                    "train", train_pert_indices, train_controls
-                                )
-                                self.train_datasets.append(train_subset)
-                                train_val_sum += len(train_subset)
+                            train_subset = ds.to_subset_dataset(
+                                "train", train_pert_indices, train_controls
+                            )
+                            self.train_datasets.append(train_subset)
+                            train_sum += len(train_subset)
 
-                            # Create val subset
-                            if len(val_pert_indices) > 0:
+                        # Create test subset. 40% of the specified fewshot cell types (and a minimum of at least 1)
+                        # is used as validation data
+                        if len(test_pert_indices) > 0:
+                            if ct in val_cts:
+                                # If this cell type is in the val set, create a val subset
                                 val_subset = ds.to_subset_dataset(
-                                    "val", val_pert_indices, val_controls
+                                    "val", test_pert_indices, test_controls
                                 )
                                 self.val_datasets.append(val_subset)
-                                train_val_sum += len(val_subset)
-
-                        # Create test subset
-                        if len(test_pert_indices) > 0:
-                            test_subset = ds.to_subset_dataset(
-                                "test", test_pert_indices, test_controls
-                            )
-                            self.test_datasets.append(test_subset)
-                            test_sum += len(test_subset)
+                                val_sum += len(val_subset)
+                            else:
+                                test_subset = ds.to_subset_dataset(
+                                    "test", test_pert_indices, test_controls
+                                )
+                                self.test_datasets.append(test_subset)
+                                test_sum += len(test_subset)
 
                     else:
                         # Regular training cell type - no perturbation-based splitting needed
@@ -469,17 +468,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
                         # Randomly shuffle indices
                         rng = np.random.default_rng(self.random_seed)
-                        ctrl_indices = rng.permutation(ctrl_indices)
-                        pert_indices = rng.permutation(pert_indices)
-
-                        # Split into train/val
-                        n_val = int(len(pert_indices) * self.val_split)
-                        val_pert_indices = pert_indices[:n_val]
-                        train_pert_indices = pert_indices[n_val:]
-
-                        n_ctrl_val = int(len(ctrl_indices) * self.val_split)
-                        val_ctrl_indices = ctrl_indices[:n_ctrl_val]
-                        train_ctrl_indices = ctrl_indices[n_ctrl_val:]
+                        train_ctrl_indices = rng.permutation(ctrl_indices)
+                        train_pert_indices = rng.permutation(pert_indices)
 
                         # Create train subset if we have data
                         if len(train_pert_indices) > 0:
@@ -487,20 +477,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                                 "train", train_pert_indices, train_ctrl_indices
                             )
                             self.train_datasets.append(train_subset)
-                            train_val_sum += len(train_subset)
-
-                        # Create val subset if we have data
-                        if len(val_pert_indices) > 0:
-                            val_subset = ds.to_subset_dataset(
-                                "val", val_pert_indices, val_ctrl_indices
-                            )
-                            self.val_datasets.append(val_subset)
-                            train_val_sum += len(val_subset)
+                            train_sum += len(train_subset)
 
                 # Write progress information (using tqdm.write to avoid breaking the progress bars)
                 tqdm.write(
                     f"Processed {fname} with {cache.n_cells} cells, "
-                    f"{train_val_sum} train/val, {test_sum} test."
+                    f"{train_sum} train, {val_sum} val, {test_sum} test."
                 )
 
                 # Clean up file handles
