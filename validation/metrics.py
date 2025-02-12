@@ -74,7 +74,8 @@ def compute_metrics(
         (output_space == "gene") or (output_space == "latent" and decoder is not None)
     )
     metrics = {}
-    for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
+    # for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
+    for celltype in pred_celltype_pert_dict:
         with time_it(f"compute_metrics_cell_type_{celltype}"):
             metrics[celltype] = defaultdict(list)
 
@@ -98,112 +99,119 @@ def compute_metrics(
                 celltype_col=celltype_col,
             )
 
-            all_perts = shared_perts if shared_perts else pred_celltype_pert_dict[celltype]
-            for pert in tqdm(all_perts, desc="perts"):
-                if pert == control_pert:
-                    continue
+            if shared_perts:
+                all_perts = shared_perts & pred_celltype_pert_dict[celltype]
+            else:
+                all_perts = pred_celltype_pert_dict[celltype]
+            for pert in all_perts:
+                try:
+                    if pert == control_pert:
+                        continue
 
-                with time_it(f"compute_metrics_pert_{pert}"):
-                    adata_pred_pert = get_samples_by_pert_and_celltype(
-                        adata_pred,
-                        pert=pert,
-                        celltype=celltype,
-                        pert_col=pert_col,
-                        celltype_col=celltype_col,
-                    )
+                    with time_it(f"compute_metrics_pert_{pert}"):
+                        adata_pred_pert = get_samples_by_pert_and_celltype(
+                            adata_pred,
+                            pert=pert,
+                            celltype=celltype,
+                            pert_col=pert_col,
+                            celltype_col=celltype_col,
+                        )
 
-                    adata_real_pert = get_samples_by_pert_and_celltype(
-                        adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
-                        pert=pert,
-                        celltype=celltype,
-                        pert_col=pert_col,
-                        celltype_col=celltype_col,
-                    )
+                        adata_real_pert = get_samples_by_pert_and_celltype(
+                            adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
+                            pert=pert,
+                            celltype=celltype,
+                            pert_col=pert_col,
+                            celltype_col=celltype_col,
+                        )
 
-                    ## Use softmap to generate artificial control distributions
-                    pert_idx = adata_pred_pert.obs.index.astype("int").tolist()
+                        ## Use softmap to generate artificial control distributions
+                        pert_idx = adata_pred_pert.obs.index.astype("int").tolist()
 
-                    adata_pred_control.obs.index = pd.Categorical(adata_pred_control.obs.index)
-                    adata_real_control.obs.index = pd.Categorical(adata_real_control.obs.index)
+                        adata_pred_control.obs.index = pd.Categorical(adata_pred_control.obs.index)
+                        adata_real_control.obs.index = pd.Categorical(adata_real_control.obs.index)
 
-                    ## Get the predictions and true values
-                    pert_preds = to_dense(adata_pred_pert.X)
-                    pert_true = to_dense(adata_real_pert.X)
-                    control_true = to_dense(adata_real_control.X)
-                    control_preds = to_dense(adata_pred_control.X)
-                    pred_batches = adata_real_pert.obs[batch_col].values
-                    ctrl_batches = adata_real_control.obs[batch_col].values
+                        ## Get the predictions and true values
+                        pert_preds = to_dense(adata_pred_pert.X)
+                        pert_true = to_dense(adata_real_pert.X)
+                        control_true = to_dense(adata_real_control.X)
+                        control_preds = to_dense(adata_pred_control.X)
+                        pred_batches = adata_real_pert.obs[batch_col].values
+                        ctrl_batches = adata_real_control.obs[batch_col].values
 
-                    ## If matrix is sparse convert to dense
-                    try:
-                        pert_true = pert_true.toarray()
-                        control_true = control_true.toarray()
-                    except:
-                        pass
+                        ## If matrix is sparse convert to dense
+                        try:
+                            pert_true = pert_true.toarray()
+                            control_true = control_true.toarray()
+                        except:
+                            pass
 
-                    ## Compute metrics at the batch level
-                    batched_metrics = _compute_metrics_dict_batched(
-                        pert_preds,
-                        pert_true,
-                        control_true,
-                        control_preds,
-                        pred_batches,
-                        ctrl_batches,
-                        include_dist_metrics=include_dist_metrics,
-                    )
+                        ## Compute metrics at the batch level
+                        batched_metrics = _compute_metrics_dict_batched(
+                            pert_preds,
+                            pert_true,
+                            control_true,
+                            control_preds,
+                            pred_batches,
+                            ctrl_batches,
+                            include_dist_metrics=include_dist_metrics,
+                        )
 
-                    ## Compute metrics at the level of mapped controls for each sample
-                    # nn_metrics = _compute_metrics_nearest(pert_preds,
-                    #                                     pert_true,
-                    #                                     nn_ctrls)
+                        ## Compute metrics at the level of mapped controls for each sample
+                        # nn_metrics = _compute_metrics_nearest(pert_preds,
+                        #                                     pert_true,
+                        #                                     nn_ctrls)
 
-                    ## Compute metrics across all batches for a specific perturbation
-                    curr_metrics = _compute_metrics_dict(
-                        pert_preds,
-                        pert_true,
-                        control_true,
-                        control_preds,
-                        suffix="cell_type",
-                        include_dist_metrics=include_dist_metrics,
-                    )
+                        ## Compute metrics across all batches for a specific perturbation
+                        curr_metrics = _compute_metrics_dict(
+                            pert_preds,
+                            pert_true,
+                            control_true,
+                            control_preds,
+                            suffix="cell_type",
+                            include_dist_metrics=include_dist_metrics,
+                        )
 
-                    ## Softmap metrics
-                    # softmap_metrics = _compute_metrics_dict(pert_preds,
-                    #                                         pert_true,
-                    #                                         control_true_softmap,
-                    #                                         control_pred_softmap,
-                    #                                         suffix="softmap",
-                    #                         include_dist_metrics=include_dist_metrics)
+                        ## Softmap metrics
+                        # softmap_metrics = _compute_metrics_dict(pert_preds,
+                        #                                         pert_true,
+                        #                                         control_true_softmap,
+                        #                                         control_pred_softmap,
+                        #                                         suffix="softmap",
+                        #                         include_dist_metrics=include_dist_metrics)
 
-                    ## Compute alignment across samples
-                    if checking_mapping_quality:
-                        mapped_controls = adata_pred_pert.layers["mapped_control"]
+                        ## Compute alignment across samples
+                        if checking_mapping_quality:
+                            mapped_controls = adata_pred_pert.layers["mapped_control"]
 
-                        true_corr_matrix = np.corrcoef(pert_true - mapped_controls)
-                        upper_tri = np.triu(true_corr_matrix, k=1)
-                        corr_values = upper_tri[upper_tri != 0]
-                        true_mean_corr = np.mean(corr_values)
-                        metrics[celltype]["true_mean_corr"].append(true_mean_corr)
+                            true_corr_matrix = np.corrcoef(pert_true - mapped_controls)
+                            upper_tri = np.triu(true_corr_matrix, k=1)
+                            corr_values = upper_tri[upper_tri != 0]
+                            true_mean_corr = np.mean(corr_values)
+                            metrics[celltype]["true_mean_corr"].append(true_mean_corr)
 
-                        pred_corr_matrix = np.corrcoef(pert_preds - mapped_controls)
-                        upper_tri = np.triu(pred_corr_matrix, k=1)
-                        corr_values = upper_tri[upper_tri != 0]
-                        pred_mean_corr = np.mean(corr_values)
-                        metrics[celltype]["pred_mean_corr"].append(pred_mean_corr)
+                            pred_corr_matrix = np.corrcoef(pert_preds - mapped_controls)
+                            upper_tri = np.triu(pred_corr_matrix, k=1)
+                            corr_values = upper_tri[upper_tri != 0]
+                            pred_mean_corr = np.mean(corr_values)
+                            metrics[celltype]["pred_mean_corr"].append(pred_mean_corr)
 
-                        ## Also measure the magnitude of predicted and true
-                        # perturbation effects
-                        true_norm = np.linalg.norm(pert_true - mapped_controls, axis=1)
-                        pred_norm = np.linalg.norm(pert_preds - mapped_controls, axis=1)
-                        metrics[celltype]["true_effect_norm"] = np.mean(true_norm)
-                        metrics[celltype]["pred_effect_norm"] = np.mean(pred_norm)
+                            ## Also measure the magnitude of predicted and true
+                            # perturbation effects
+                            true_norm = np.linalg.norm(pert_true - mapped_controls, axis=1)
+                            pred_norm = np.linalg.norm(pert_preds - mapped_controls, axis=1)
+                            metrics[celltype]["true_effect_norm"] = np.mean(true_norm)
+                            metrics[celltype]["pred_effect_norm"] = np.mean(pred_norm)
 
-                    metrics[celltype]["pert"].append(pert)
-                    for k, v in curr_metrics.items():
-                        metrics[celltype][k].append(v)
+                        metrics[celltype]["pert"].append(pert)
+                        for k, v in curr_metrics.items():
+                            metrics[celltype][k].append(v)
 
-                    for k, v in batched_metrics.items():
-                        metrics[celltype][k].append(v)
+                        for k, v in batched_metrics.items():
+                            metrics[celltype][k].append(v)
+                except:
+                    print(f"Failed for {celltype} {pert}")
+                    pass
 
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
@@ -276,13 +284,14 @@ def compute_metrics(
                     pert_col=pert_col,
                     ctrl_pert=control_pert,
                 )
-                print(f"Perturbation ranking for {celltype}: {class_score}")
                 metrics[celltype]["perturbation_id"] = class_score
 
-    for celltype, stats in metrics.items():
-        metrics[celltype] = pd.DataFrame(stats).set_index("pert")
-
-    return metrics
+    try:
+        for celltype, stats in metrics.items():
+            metrics[celltype] = pd.DataFrame(stats).set_index("pert")
+        return metrics
+    except:
+        return
 
 
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):

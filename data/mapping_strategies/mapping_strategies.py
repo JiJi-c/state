@@ -66,7 +66,8 @@ class BaseMappingStrategy(ABC):
         For perturbed cells:
             - Returns (perturbed_expr, control_expr) using get_control_indices()
         """
-        is_control = dataset.control_mask[perturbed_idx]
+        pert_name = dataset.get_perturbation_name(perturbed_idx)
+        is_control = (pert_name == dataset.control_pert)
 
         # Get expression(s) based on embed_key
         if dataset.embed_key:
@@ -75,10 +76,11 @@ class BaseMappingStrategy(ABC):
                 return expr, expr  # both X and basal are same control
             else:
                 control_indices = self.get_control_indices(dataset, split, perturbed_idx)
-                ctrl_expr = torch.stack(
-                    [torch.tensor(dataset.fetch_obsm_expression(idx, dataset.embed_key)) for idx in control_indices]
-                ).mean(0)
                 pert_expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
+                if control_indices is None:
+                    ctrl_expr = torch.zeros_like(pert_expr) # default to zero vector 
+                else:
+                    ctrl_expr = dataset.fetch_obsm_expression(control_indices[0], dataset.embed_key) 
                 return pert_expr, ctrl_expr
         else:
             if is_control:

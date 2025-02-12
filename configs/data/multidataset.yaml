@@ -1,6 +1,6 @@
 name: MultiDatasetPerturbationDataModule
 kwargs:
-  embed_key: X_uce
+  embed_key: X_hvg
   output_space: gene
   train_task: replogle
   test_task: replogle_jurkat:zeroshot
@@ -10,6 +10,7 @@ kwargs:
   basal_rep: sample
   esm_perts_only: false
   num_workers: 8
+  pin_memory: true
   n_basal_samples: 1
   sampling_random_state: 42
   split_random_state: 42
@@ -17,8 +18,11 @@ kwargs:
   k_neighbors: 10
   use_batch_ot: false 
   should_yield_control_cells: true
-  split_train_val_controls: true
   neighborhood_fraction: 0.1
   preload_data: false
+  batch_col: gem_group
+  pert_col: gene
+  cell_type_key: cell_type
+  control_pert: DMSO_TF
 output_dir: null
 debug: true

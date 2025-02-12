@@ -40,15 +40,15 @@ def parse_dataset_specs(specs: List[str]) -> List[TaskSpec]:
     for spec in specs:
         parts = spec.split(":")
         dataset_part = parts[0]
+        cell_type = parts[1] if len(parts) > 2 else None
         task_type = TaskType.TRAINING  # Default
 
-        if len(parts) > 1:
-            task_type = TaskType[parts[1].upper()]
+        if len(parts) > 2:
+            task_type = TaskType[parts[2].upper()]
 
         # Parse dataset and optional cell type
-        dataset_parts = dataset_part.split("_")
+        dataset_parts = dataset_part.split(":")
         dataset = dataset_parts[0]
-        cell_type = "_".join(dataset_parts[1:]) if len(dataset_parts) > 1 else None
 
         parsed_specs.append(TaskSpec(dataset=dataset, cell_type=cell_type, task_type=task_type))
 

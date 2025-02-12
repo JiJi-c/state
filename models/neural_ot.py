@@ -1,14 +1,67 @@
 # File: models/neural_ot.py
 import torch
+import numpy as np
 
 from collections import defaultdict
 from geomloss import SamplesLoss
-from typing import Optional
+from typing import Optional, Dict, List
 
 from models.base import PerturbationModel
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
+def uncollate_batch(batch: Dict[str, torch.Tensor], sentence_len: int) -> List[Dict[str, torch.Tensor]]:
+    """
+    Uncollates a batch dictionary where each tensor has shape [B*S, ...] into
+    a list of S dictionaries with shape [B, ...], where:
+    B = batch size (e.g. 512)
+    S = sentence length (e.g. 32)
+    
+    Args:
+        batch: Dictionary of tensors, each with first dimension B*S
+        sentence_len: The length S to split into
+        
+    Returns:
+        List of S dictionaries, each containing tensors of first dimension B
+    """
+    total_size = batch['X'].shape[0]
+    batch_size = total_size // sentence_len
+    
+    uncollated_batches = []
+    
+    for i in range(batch_size):
+        start_idx = i * sentence_len
+        end_idx = (i + 1) * sentence_len
+
+        current_batch = {}
+        for key, tensor in batch.items():
+            if isinstance(tensor, torch.Tensor):
+                current_batch[key] = tensor[start_idx:end_idx]
+            else:
+                # Handle non-tensor data (e.g. lists)
+                current_batch[key] = tensor[start_idx:end_idx]
+                
+        uncollated_batches.append(current_batch)
+        
+    return uncollated_batches
+
+def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
+    """
+    Determines if a batch should be cached based on perturbation names
+    and random sampling probability.
+    
+    Args:
+        pert_names: List of perturbation names for the batch
+        cache_prob: Probability of caching non-control batches
+        
+    Returns:
+        Boolean indicating if batch should be cached
+    """
+    # Check if this is a control batch
+    is_control = pert_names[0] in ["DMSO_TF", "non-targeting"]
+    
+    # Cache if control or random sample
+    return is_control or np.random.rand() < cache_prob
 
 class NeuralOTPerturbationModel(PerturbationModel):
     """
@@ -63,6 +116,8 @@ class NeuralOTPerturbationModel(PerturbationModel):
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
         self.distributional_loss = distributional_loss
+        self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
+
 
         # Build the distributional loss from geomloss
         self.loss_fn = SamplesLoss(loss=self.distributional_loss)
@@ -143,42 +198,111 @@ class NeuralOTPerturbationModel(PerturbationModel):
         else:
             return prediction
 
+    # TODO - add a flexible forward method that can take ragged tensors by sampling by replacement
+    # to pad, forward passing, and taking only the original indices to avoid repeated samples in 
+    # our test set.
+
     def forward(self, batch: dict) -> torch.Tensor:
         """
-        The main forward call. The old code used (B, 2, N) tensors as
-        input to the GPT2-backbone. Here we reshape to (1, B, 2N) to
-        allow cells to attend to one another and learn a distributional
-        set function.
-
+        The main forward call. Batch is a flattened sequence of cell sentences,
+        which we reshape into sequences of length cell_sentence_len.
+        
+        Expects input tensors of shape (B, S, N) where:
+        B = batch size
+        S = sequence length (cell_sentence_len)
+        N = feature dimension
         """
-        pert_embedding = self.encode_perturbation(batch["pert"]).unsqueeze(1)  # shape: [batch_size, 1, hidden_dim]
-        control_cells = self.encode_basal_expression(batch["basal"]).unsqueeze(1)  # shape: [batch_size, 1, hidden_dim]
-        seq_input = torch.cat([pert_embedding, control_cells], dim=1)  # shape: [batch_size, 2, hidden_dim]
-        seq_input = seq_input.permute(1, 0, 2).reshape(
-            1, -1, 2 * self.hidden_dim
-        )  # shape: [1, batch_size, 2 * hidden_dim]
-        seq_input = self.convolve(seq_input)  # shape: [1, batch_size, hidden_dim]
+        pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)
+        basal = batch["basal"].reshape(-1, self.cell_sentence_len, self.input_dim)
 
+        # Shape: [B, S, hidden_dim]
+        pert_embedding = self.encode_perturbation(pert)
+        control_cells = self.encode_basal_expression(basal)
+
+        seq_input = torch.cat([pert_embedding, control_cells], dim=2) # Shape: [B, S, 2 * hidden_dim]
+        seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
+        
         # forward pass + extract CLS last hidden state
-        prediction = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state[0]
+        res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state
 
         # add to basal if predicting residual
         if self.predict_residual:
             # treat the actual prediction as a residual sum to basal
-            return self.project_out(prediction + control_cells.squeeze(1))
+            out_pred = self.project_out(res_pred + control_cells)
         else:
-            return self.project_out(prediction)
+            out_pred = self.project_out(res_pred)
 
-    def test_step(self, batch, batch_idx):
-        """
-        Same approach for test.
-        """
-        output_samples = self.forward(batch)
-        target_samples = batch["X"]
-        loss = self.loss_fn(output_samples, target_samples).mean()
+        return out_pred.reshape(-1, self.output_dim)
 
-        self.log("test_loss", loss, prog_bar=True)
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Training step logic."""
+        pred = self(batch)
+
+        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        if self.output_space == "gene" and self.embed_key is not None:
+            if "X_gene" not in batch:
+                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
+            target = batch["X_gene"]
+        else:
+            target = batch["X"]
+        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        loss = self.loss_fn(pred, target).mean()
+
+        self.log("train_loss", loss)
         return loss
+
+    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+        """Validation step logic."""
+        pred = self(batch)
+
+        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        if self.output_space == "gene" and self.embed_key is not None:
+            if "X_gene" not in batch:
+                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
+            target = batch["X_gene"]
+        else:
+            target = batch["X"]
+        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        loss = self.loss_fn(pred, target).mean()
+        self.log("val_loss", loss)
+
+        pred = pred.reshape(-1, self.output_dim)
+        target = target.reshape(-1, self.output_dim)
+        
+        # Split batch into sentences
+        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
+        
+        # Process each sentence
+        for idx, current_batch in enumerate(uncollated_batches):
+            if should_cache_batch(current_batch["pert_name"]):
+                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
+                self._update_val_cache(current_batch, current_pred)
+
+    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+        pred = self(batch)
+
+        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        if self.output_space == "gene" and self.embed_key is not None:
+            if "X_gene" not in batch:
+                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
+            target = batch["X_gene"]
+        else:
+            target = batch["X"]
+        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        loss = self.loss_fn(pred, target).mean()
+        self.log("test_loss", loss)
+
+        pred = pred.reshape(-1, self.output_dim)
+        target = target.reshape(-1, self.output_dim)
+        
+        # Split batch into sentences
+        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
+        
+        # Process each sentence
+        for idx, current_batch in enumerate(uncollated_batches):
+            if should_cache_batch(current_batch["pert_name"]):
+                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
+                self._update_test_cache(current_batch, current_pred)
 
     def configure_optimizers(self):
         """
@@ -186,69 +310,3 @@ class NeuralOTPerturbationModel(PerturbationModel):
         (Or you can do param re-grouping if needed.)
         """
         return torch.optim.Adam(self.parameters(), lr=self.lr)
-
-
-# Experiment with a learnable alignment loss function that lets
-# the model pick the ground truth for a given cell:
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-class LearnableAlignmentLoss(nn.Module):
-    def __init__(self, hidden_dim=1280, num_heads=4):
-        """
-        Initialize the learnable alignment loss function.
-
-        Args:
-            hidden_dim (int): Dimension of the key/query projection space
-            num_heads (int): Number of attention heads
-        """
-        super().__init__()
-
-        self.hidden_dim = hidden_dim
-        self.num_heads = num_heads
-
-        # Learnable projection matrices for cross-attention
-        self.Q = nn.Linear(hidden_dim, hidden_dim)
-        self.K = nn.Linear(hidden_dim, hidden_dim)
-
-        # Initialize weights
-        nn.init.xavier_uniform_(self.Q.weight)
-        nn.init.xavier_uniform_(self.K.weight)
-
-    def forward(self, pred_samples, target_samples):
-        """
-        Compute the loss between predictions and targets using learnable alignment.
-
-        Args:
-            pred_samples (torch.Tensor): Predictions of shape (B, N)
-            target_samples (torch.Tensor): Targets of shape (B, N)
-
-        Returns:
-            torch.Tensor: Scalar loss value
-        """
-        # Ensure inputs are the correct shape
-        assert pred_samples.shape == target_samples.shape
-
-        B, N = pred_samples.shape  # batch size, feature dimension
-
-        # Project predictions and targets
-        Q = self.Q(pred_samples)  # (B, hidden_dim)
-        K = self.K(target_samples)  # (B, hidden_dim)
-
-        # Compute attention scores
-        # (B, B) = (B, hidden_dim) @ (hidden_dim, B)
-        attention_scores = torch.mm(Q, K.transpose(-2, -1))
-
-        # Apply row-wise softmax to get attention weights
-        attention_weights = F.softmax(attention_scores, dim=-1)  # (B, B)
-
-        # Apply attention weights to targets
-        aligned_targets = torch.mm(attention_weights, target_samples)  # (B, N)
-
-        # Compute MSE loss between aligned targets and predictions
-        loss = F.mse_loss(aligned_targets, pred_samples)
-
-        return loss
