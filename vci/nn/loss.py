@@ -18,7 +18,7 @@ class WassersteinLoss(nn.Module):
         self.p = p
         self.reduction = reduction
 
-    def forward(self, input, target):
+    def forward(self, p, q):
         """
         Compute Wasserstein distance between predicted and target distributions.
 
@@ -31,14 +31,14 @@ class WassersteinLoss(nn.Module):
             torch.Tensor: Computed Wasserstein distance
         """
 
-        target = torch.nan_to_num(target, nan=0.0)
+        q = torch.nan_to_num(q, nan=0.0)
         # Convert logits to probabilities
-        pred_probs = F.softmax(input, dim=-1)
-        target = F.softmax(target, dim=-1)
+        pred_probs = F.softmax(p, dim=-1)
+        q = F.softmax(q, dim=-1)
 
         # Compute cumulative distribution functions (CDFs)
         pred_cdf = torch.cumsum(pred_probs, dim=-1)
-        target_cdf = torch.cumsum(target, dim=-1)
+        target_cdf = torch.cumsum(q, dim=-1)
 
         max_len = max(pred_cdf.size(1), target_cdf.size(1))
         if pred_cdf.size(1) < max_len:

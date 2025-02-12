@@ -52,7 +52,7 @@ validations:
 dataset:
   name: "vci"
   seed: 42
-  train: /scratch/ctc/ML/uce/h5ad_dataset.csv
+  train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
   val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
   data_dir: /large_storage/ctc/datasets/cellxgene/processed/
   protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
