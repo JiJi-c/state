@@ -14,6 +14,8 @@ def get_latest_checkpoint(cfg):
         cfg.optimizer.max_lr,
         cfg.model.output_dim)
 
+    if cfg.experiment.checkpoint.path is None:
+        return run_name, None
     chk_dir = os.path.join(cfg.experiment.checkpoint.path,
                            cfg.experiment.name)
     chk = os.path.join(chk_dir, f'last.ckpt')

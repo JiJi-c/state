@@ -69,6 +69,7 @@ model:
   nlayers: 8
   dropout: 0.1
   output_dim: 256 # TODO: Is emsize different from this?
+  use_flash_attention: true
 
 optimizer:
   max_lr: 4e-4
