@@ -135,7 +135,7 @@ class H5adDatasetSentences(data.Dataset):
                     end_ptr = indptrs[ds_idx + 1]
                     sub_data = torch.tensor(
                         h5f["/X/data"][start_ptr:end_ptr],
-                        dtype=torch.int32)
+                        dtype=torch.float)
                     sub_indices = torch.tensor(
                         h5f["/X/indices"][start_ptr:end_ptr],
                         dtype=torch.int32)
@@ -240,18 +240,27 @@ class VCIDatasetSentenceCollator(object):
 
         for c, cell in enumerate(counts):
             genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
-            gened_sampled_by_exp = torch.multinomial(expression_weights[c], half_len + 1, replacement=True)
+
+            sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
+            try:
+                gened_sampled_by_exp = torch.multinomial(expression_weights[c], sample_size, replacement=True)
+            except Exception as e:
+                log.error(f"Error in dataset {dataset} at index {c}")
+                raise e
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
-            cell_sentences[c, 1: half_len + 1] = genes_ranked_exp
-            cell_sentences[c, half_len + 1:] = gened_sampled_by_exp
+            cell_sentences[c, 1: genes_ranked_exp.shape[0] + 1] = genes_ranked_exp
+            cell_sentences[c, genes_ranked_exp.shape[0] + 1:] = gened_sampled_by_exp
 
             # Convert tokens to Embeddings
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
             de_budget = self.cfg.dataset.P // 2
-            task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=False)]
+            replacement=False
+            if gene_indices.shape[0] < de_budget:
+                replacement=True
+            task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=replacement)]
 
             exp_genes = cell[cell > 0]
             unexp_genes = cell[cell < 1]
@@ -261,10 +270,10 @@ class VCIDatasetSentenceCollator(object):
             else:
                 task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randint(len(exp_genes), (de_budget,))
 
-            if len(unexp_genes) > de_budget:
+            if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]
             else:
-                task_sentence[c, self.cfg.dataset.P:] = torch.randint(len(unexp_genes), (de_budget,))
+                task_sentence[c, self.cfg.dataset.P:] = torch.randint(len(unexp_genes), (self.cfg.dataset.N,))
 
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
 
