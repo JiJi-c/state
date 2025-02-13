@@ -509,7 +509,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def train_eval_dataloader(self):
@@ -517,7 +517,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_eval_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def val_dataloader(self):
@@ -525,7 +525,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
@@ -533,7 +533,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):

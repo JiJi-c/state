@@ -121,7 +121,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             all_ctrl_means = []  # For computing global basal 
             for ct_name, pert_dict in celltype_sums.items():
                 # Get control mean for this cell type
-                ctrl_stats = pert_dict.get("non-targeting")
+                ctrl_stats = pert_dict.get("DMSO_TF")
                 if ctrl_stats is None or ctrl_stats["count"] == 0:
                     logger.warning(f"No control cells found for cell type {ct_name}")
                     continue

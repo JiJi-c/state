@@ -142,7 +142,15 @@ class PerturbationModel(ABC, LightningModule):
 
         self.log("test_loss", loss, prog_bar=True)
         self._update_test_cache(batch, pred)  # NEW: cache test outputs
-        return loss
+        return {
+            "preds": pred,  # The distribution's sample
+            "X": batch.get("X", None),  # The target gene expression or embedding
+            "X_gene": batch.get("X_gene", None),  # the true, raw gene expression
+            "pert_name": batch.get("pert_name", None),
+            "celltype_name": batch.get("cell_type", None),
+            "gem_group": batch.get("gem_group", None),
+            "basal": batch.get("basal", None),
+        }
 
     def predict_step(self, batch, batch_idx, **kwargs):
         """
@@ -206,7 +214,7 @@ class PerturbationModel(ABC, LightningModule):
                 control_pert="DMSO_TF",
                 pert_col="pert_name",
                 celltype_col="cell_type",
-                DE_metric_flag=False,
+                DE_metric_flag=True,
                 class_score_flag=True,
                 embed_key=self.embed_key,
                 output_space=self.output_space,
@@ -238,65 +246,6 @@ class PerturbationModel(ABC, LightningModule):
             logger.warning("Error in computing metrics during validation epoch.")
 
         self.val_cache = defaultdict(list)
-
-    def on_test_epoch_end(self) -> None:
-        if len(self.test_cache) == 0:
-            return
-
-        # Concatenate cached arrays just like in validation:
-        for k in self.test_cache:
-            if k in ("X", "X_gene", "pred", "pert", "basal"):
-                self.test_cache[k] = np.concatenate(self.test_cache[k])
-            else:
-                self.test_cache[k] = np.concatenate([np.array(obs) for obs in self.test_cache[k]])
-
-        # Build AnnData objects from the cached predictions and ground truth.
-        obs = pd.DataFrame({k: v for k, v in self.test_cache.items() if k not in ("X", "X_gene", "pred", "pert", "basal")})
-        adata_real = ad.AnnData(obs=obs, X=self.test_cache["X"])
-        adata_pred = ad.AnnData(obs=obs, X=self.test_cache["pred"])
-
-        if self.output_space == "gene" and self.embed_key is not None:
-            adata_real_exp = ad.AnnData(obs=obs, X=self.test_cache["X_gene"])
-            adata_real_exp.var.index = self.gene_names
-            adata_pred.var.index = self.gene_names
-        else:
-            adata_real_exp = None
-
-        try:
-            # Compute the metrics exactly as for validation.
-            metrics = compute_metrics(
-                adata_real=adata_real,
-                adata_pred=adata_pred,
-                adata_real_exp=adata_real_exp,
-                include_dist_metrics=False,
-                control_pert="DMSO_TF",  # or self.control_pert if that is stored in your model
-                pert_col="pert_name",
-                celltype_col="cell_type",
-                DE_metric_flag=False,
-                class_score_flag=True,
-                embed_key=self.embed_key,
-                output_space=self.output_space,
-            )
-
-            if metrics:
-                aggregate_metrics = defaultdict(list)
-                for celltype, metrics_df in metrics.items():
-                    numeric_df = metrics_df.apply(pd.to_numeric, errors="coerce")
-                    celltype_metrics = numeric_df.mean(0).to_dict()
-                    for k, v in celltype_metrics.items():
-                        if np.isfinite(v):
-                            self.log(f"test/{k}_{celltype}", v)
-                            aggregate_metrics[k].append(v)
-
-                for metric_name, values in aggregate_metrics.items():
-                    avg_value = np.mean([v for v in values if np.isfinite(v)])
-                    if np.isfinite(avg_value):
-                        self.log(f"test/{metric_name}", avg_value)
-        except:
-            logger.warning("Error in computing metrics during test epoch.")
-
-        # Reset the test cache
-        self.test_cache = defaultdict(list)
 
     def _update_val_cache(self, batch, pred):
         for k in batch:
@@ -402,7 +351,7 @@ class PerturbationModel(ABC, LightningModule):
                 control_pert="DMSO_TF",
                 pert_col="pert_name",
                 celltype_col="cell_type",
-                DE_metric_flag=False,
+                DE_metric_flag=True,
                 class_score_flag=True,
                 embed_key=self.embed_key,
                 output_space=self.output_space,

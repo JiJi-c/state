@@ -118,7 +118,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         self.distributional_loss = distributional_loss
         self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
 
-
         # Build the distributional loss from geomloss
         self.loss_fn = SamplesLoss(loss=self.distributional_loss)
         # self.loss_fn = LearnableAlignmentLoss()
@@ -202,7 +201,7 @@ class NeuralOTPerturbationModel(PerturbationModel):
     # to pad, forward passing, and taking only the original indices to avoid repeated samples in 
     # our test set.
 
-    def forward(self, batch: dict) -> torch.Tensor:
+    def forward(self, batch: dict, padded=True) -> torch.Tensor:
         """
         The main forward call. Batch is a flattened sequence of cell sentences,
         which we reshape into sequences of length cell_sentence_len.
@@ -212,8 +211,13 @@ class NeuralOTPerturbationModel(PerturbationModel):
         S = sequence length (cell_sentence_len)
         N = feature dimension
         """
-        pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)
-        basal = batch["basal"].reshape(-1, self.cell_sentence_len, self.input_dim)
+        if padded:
+            pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)
+            basal = batch["basal"].reshape(-1, self.cell_sentence_len, self.input_dim)
+        else:
+            # we are inferencing on a single batch, so accept variable length sentences
+            pert = batch["pert"].reshape(1, -1, self.pert_dim)
+            basal = batch["basal"].reshape(1, -1, self.input_dim)
 
         # Shape: [B, S, hidden_dim]
         pert_embedding = self.encode_perturbation(pert)
@@ -303,6 +307,22 @@ class NeuralOTPerturbationModel(PerturbationModel):
             if should_cache_batch(current_batch["pert_name"]):
                 current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
                 self._update_test_cache(current_batch, current_pred)
+
+    def predict_step(self, batch, batch_idx, padded=True, **kwargs):
+        """
+        Typically used for final inference. We'll replicate old logic:
+         returning 'preds', 'X', 'pert_name', etc.
+        """
+        output_samples = self.forward(batch, padded=padded)  # shape [B, ...]
+        return {
+            "preds": output_samples,  # The distribution's sample
+            "X": batch.get("X", None),  # The target gene expression or embedding
+            "X_gene": batch.get("X_gene", None),  # the true, raw gene expression
+            "pert_name": batch.get("pert_name", None),
+            "celltype_name": batch.get("cell_type", None),
+            "gem_group": batch.get("gem_group", None),
+            "basal": batch.get("basal", None),
+        }
 
     def configure_optimizers(self):
         """

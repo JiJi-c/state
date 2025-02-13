@@ -187,14 +187,14 @@ def train(cfg: DictConfig) -> None:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
     # if this already exists for a run, then just read it in
-    if exists(join(run_output_dir, "config.yaml")):
-        with open(join(run_output_dir, "config.yaml"), "r") as f:
-            cfg_yaml = f.read()
-        cfg = OmegaConf.load(cfg_yaml)
-        logger.info(f"Config loaded from file.")
-    else:
-        with open(join(run_output_dir, "config.yaml"), "w") as f:
-            f.write(cfg_yaml)
+    # if exists(join(run_output_dir, "config.yaml")):
+    #     with open(join(run_output_dir, "config.yaml"), "r") as f:
+    #         cfg = OmegaConf.load(f)
+    #     logger.info(f"Config loaded from file.")
+    # else:
+    with open(join(run_output_dir, "config.yaml"), "w") as f:
+        f.write(cfg_yaml)
+    logger.info(f"Config saved to file.")
 
     # Set random seeds
     if "train_seed" in cfg["training"]:
@@ -216,11 +216,16 @@ def train(cfg: DictConfig) -> None:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module
+    try:
+        sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+    except KeyError:
+        sentence_len = 512
+        
     data_module = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
         batch_size=cfg["training"]["batch_size"],
-        cell_sentence_len=cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"],
+        cell_sentence_len=sentence_len,
     )
 
     # Special handling for multi-dataset case - TODO-now: revisit this.
@@ -317,6 +322,11 @@ def train(cfg: DictConfig) -> None:
         datamodule=data_module,
         ckpt_path=checkpoint_path,
     )
+
+    # at this point if checkpoint_path does not exist, manually create one
+    checkpoint_path = join(ckpt_callbacks[0].dirpath, "final.ckpt")
+    if not exists(checkpoint_path):
+        trainer.save_checkpoint(checkpoint_path)
 
     # Generate and save predictions
     trainer.predict(
