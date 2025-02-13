@@ -247,7 +247,8 @@ class VCIDatasetSentenceCollator(object):
             genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
 
             sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
-            gened_sampled_by_exp = torch.multinomial(expression_weights[c], sample_size, replacement=True)
+            gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
+                                                     sample_size, replacement=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
