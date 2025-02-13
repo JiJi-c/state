@@ -333,12 +333,12 @@ class LitUCEModel(L.LightningModule):
         # Track metrics across all cell types
         all_correlations = []
         all_ranking_scores = []
-        
+
         for holdout_cell_type in adata.obs['cell_type'].unique():
             train_adata = adata[adata.obs['cell_type'] != holdout_cell_type]
             test_adata = adata[adata.obs['cell_type'] == holdout_cell_type]
 
-            mean_pert_dfs = [] # store perturbation mean deltas 
+            mean_pert_dfs = [] # store perturbation mean deltas
             # for each cell type, train a cell type mean perturbation model
             for cell_type in train_adata.obs['cell_type'].unique():
                 adata_cell = train_adata[train_adata.obs['cell_type'] == cell_type]
@@ -353,10 +353,10 @@ class LitUCEModel(L.LightningModule):
                     index=pert_adata.obs_names,
                     columns=[f"emb_{i}" for i in range(pert_offsets.shape[1])]
                 )
-                
+
                 # Add the perturbation label column for grouping
                 pert_df[col_id] = pert_adata.obs[col_id].values
-                
+
                 # Group by the perturbation label and compute the mean offset for this cell type
                 mean_pert_dfs.append(pert_df.groupby(col_id).mean())
 
@@ -389,14 +389,14 @@ class LitUCEModel(L.LightningModule):
                 else:
                     # For perturbed cells, sample a random control cell
                     sampled_ctrl_idx = np.random.choice(ctrl_cells)
-                
+
                 # Get basal expression (control cell embedding)
                 basal = test_adata[sampled_ctrl_idx].obsm['X_emb']
-                
+
                 # Add perturbation effect
                 pert_effect = pert_mean_offsets[pert]
                 pred = basal + pert_effect
-                
+
                 # Store prediction
                 pred_x[i] = pred
 
@@ -414,32 +414,33 @@ class LitUCEModel(L.LightningModule):
             # because we use the zero vector as perturbation for ctrl cells
             correlation = compute_pearson_delta(pred_adata.X, real_adata.X, ctrl_adata.X, ctrl_adata.X)
             ranking_score = compute_perturbation_ranking_score(pred_adata, real_adata)
-            
+
             all_correlations.append(correlation)
             all_ranking_scores.append(ranking_score)
-            
+
         # Log average metrics across all cell types
         self.log("validation/perturbation_correlation_mean", np.mean(all_correlations))
         self.log("validation/perturbation_ranking_mean", np.mean(all_ranking_scores))
-            
+
     def _compute_val_de(self):
         if self.true_top_genes is None:
             de_val_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
-            de_val_adata = sc.pp.log1p(de_val_adata)
+            sc.pp.log1p(de_val_adata)
             sc.tl.rank_genes_groups(de_val_adata,
                                     groupby=self.cfg.validations.diff_exp.obs_pert_col,
                                     reference=self.cfg.validations.diff_exp.obs_filter_label,
                                     rankby_abs=True,
                                     n_genes=self.cfg.validations.diff_exp.top_k_rank,
-                                    method=self.cfg.validations.diff_exp.method)
+                                    method=self.cfg.validations.diff_exp.method,
+                                    use_raw=False)
             self.true_top_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
             self.true_top_genes = self.true_top_genes.T
             del de_val_adata
 
         tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
         pred_exp = self._predict_exp_for_adata(tmp_adata,
-                                                self.cfg.validations.diff_exp.dataset_name,
-                                                self.cfg.validations.diff_exp.obs_pert_col)
+                                               self.cfg.validations.diff_exp.dataset_name,
+                                               self.cfg.validations.diff_exp.obs_pert_col)
 
         de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
         self.log("validation/de", np.array(list(de_metrics.values())).mean())

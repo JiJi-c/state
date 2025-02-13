@@ -123,7 +123,12 @@ class H5adDatasetSentences(data.Dataset):
                 counts = torch.tensor(self.adata.X[idx].todense())
                 dataset = self.adata_name
                 dataset_num = 0
-                return counts, idx, dataset, dataset_num, None, None
+
+                cluster_id = self.adata.obs.leiden[idx]
+                gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][cluster_id].to_numpy())
+                gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][cluster_id].to_numpy())
+                gene_scores = torch.nn.functional.softmax(gene_scores)
+                return counts, idx, dataset, dataset_num, gene_indices, gene_scores
 
             dataset, ds_idx = self._compute_index(idx)
             h5f = self.dataset_file(dataset)
@@ -242,11 +247,7 @@ class VCIDatasetSentenceCollator(object):
             genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
 
             sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
-            try:
-                gened_sampled_by_exp = torch.multinomial(expression_weights[c], sample_size, replacement=True)
-            except Exception as e:
-                log.error(f"Error in dataset {dataset} at index {c}")
-                raise e
+            gened_sampled_by_exp = torch.multinomial(expression_weights[c], sample_size, replacement=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
