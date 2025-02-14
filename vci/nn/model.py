@@ -295,19 +295,19 @@ class LitUCEModel(L.LightningModule):
         if self.global_rank != 0:
             return
 
+        current_step = self.global_step
+
         if self.cfg.validations.diff_exp.enable:
-            current_step = self.global_step
             interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            if current_step - interval > self._last_val_de_check:
+            current_step = current_step - (current_step % 10)
+            if current_step >= interval and current_step % interval == 0:
                 self._compute_val_de()
-            self._last_val_de_check = current_step
 
         if self.cfg.validations.perturbation.enable:
-            current_step = self.global_step
             interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            if current_step - interval > self._last_val_perturbation_check:
+            current_step = current_step - (current_step % 10)
+            if current_step >= interval and current_step % interval == 0:
                 self._compute_val_perturbation()
-            self._last_val_perturbation_check = current_step
 
     def _compute_val_perturbation(self):
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)
