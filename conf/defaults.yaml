@@ -46,7 +46,7 @@ validations:
     eval_interval_multiple: 2
     pert_col: gene
     ctrl_label: non-targeting
-    dataset: /large_storage/ctc/userspace/aadduri/vci/validation/replogle_perturbation.h5ad
+    dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad
     dataset_name: replogle_perturbation
 
 dataset:
@@ -87,5 +87,5 @@ optimizer:
   gradient_accumulation_steps: 1
 
 loss:
-  name: "kl_divergence" # Available options: cross_entropy, wasserstein, kl_divergence
+  name: "wasserstein" # Available options: cross_entropy, wasserstein, kl_divergence
   normalization: False
