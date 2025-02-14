@@ -241,19 +241,19 @@ class VCIDatasetSentenceCollator(object):
 
         # Available length after CLS token
         available_length = self.cfg.dataset.pad_length - 1
-        half_len = available_length // 2
+        half_len = available_length
 
         for c, cell in enumerate(counts):
             genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
 
-            sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
-            gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
-                                                     sample_size, replacement=True)
+            # sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
+            # gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
+            #                                          sample_size, replacement=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
             cell_sentences[c, 1: genes_ranked_exp.shape[0] + 1] = genes_ranked_exp
-            cell_sentences[c, genes_ranked_exp.shape[0] + 1:] = gened_sampled_by_exp
+            # cell_sentences[c, genes_ranked_exp.shape[0] + 1:] = gened_sampled_by_exp
 
             # Convert tokens to Embeddings
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
@@ -278,5 +278,5 @@ class VCIDatasetSentenceCollator(object):
                 task_sentence[c, self.cfg.dataset.P:] = torch.randint(len(unexp_genes), (self.cfg.dataset.N,))
 
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
-
+            task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
         return cell_sentences, task_sentence, task_counts, expression_weights
