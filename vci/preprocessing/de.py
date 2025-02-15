@@ -15,8 +15,7 @@ logging.basicConfig(
 )
 
 N_TOP_GENES = 5000
-ds_files = ['/large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad']
-
+ds_files = [f'/large_storage/ctc/userspace/aadduri/datasets/tahoe_20_ct_train/plate{i}.h5' for i in range(1, 15)]
 
 def add_dataset_de(config_file, start_idx, payload_len=100):
     config_file = Path(config_file)
