@@ -72,7 +72,7 @@ class H5adDatasetSentences(data.Dataset):
             ds_path = cfg.dataset.train
             if test:
                 ds_path = cfg.dataset.val
-            _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
+            _, self.datasets, self.shapes_dict, self.dataset_path_map = utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
             assert len(datasets) == len(shape_dict)
@@ -107,7 +107,7 @@ class H5adDatasetSentences(data.Dataset):
 
     @functools.lru_cache
     def dataset_file(self, dataset):
-        datafile = os.path.join(self.cfg.dataset.data_dir, f"{dataset}.h5ad")
+        datafile = self.dataset_path_map[dataset]
         return h5py.File(datafile, "r")
 
     def _get_DE_scores(self, h5f, idx):
