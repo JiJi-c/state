@@ -30,8 +30,9 @@ def add_dataset_de(config_file, start_idx, payload_len=100):
         df = pd.read_csv(datasets)
         df = df.iloc[start_idx:start_idx + payload_len]
         failed_files = []
+        # ds_files = ds_files[start_idx:start_idx+payload_len]
         for dataset_path in ds_files:
-            dataset_path = os.path.join(data_root, dataset_path)
+            # dataset_path = os.path.join(data_root, dataset_path)
             logging.info(f'Processing file {dataset_path}...')
 
             adata = None
