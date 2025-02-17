@@ -11,7 +11,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, FilteredGenesCounts
 from vci.train.callbacks import LogLR, ProfilerCallback
 from vci.utils import get_latest_checkpoint
 
@@ -42,8 +42,10 @@ def main(cfg):
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
 
+    DatasetClass = FilteredGenesCounts if cfg.dataset.filter else H5adDatasetSentences
+
     # Training dataloader
-    train_dataset = H5adDatasetSentences(cfg)
+    train_dataset = DatasetClass(cfg)
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
@@ -52,7 +54,7 @@ def main(cfg):
                                   persistent_workers=True,
                                   generator=generator)
 
-    val_dataset = H5adDatasetSentences(cfg, test=True)
+    val_dataset = DatasetClass(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,

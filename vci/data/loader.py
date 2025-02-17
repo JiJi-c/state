@@ -10,7 +10,7 @@ from typing import Dict
 
 from torch.utils.data import DataLoader
 import vci.utils as utils
-
+import pandas as pd
 
 log = logging.getLogger(__file__)
 
@@ -217,6 +217,28 @@ class H5adDatasetSentences(data.Dataset):
     def get_dim(self) -> Dict[str, int]:
         return self.num_genes
 
+class FilteredGenesCounts(H5adDatasetSentences):
+    def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
+        super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
+        self.valid_gene_index = {}
+        if cfg.embeddings.esm2.embedding_file is not None:
+            esm_data = torch.load(cfg.embeddings.esm2.embedding_file) 
+            valid_genes_list = list(esm_data.keys()) 
+            for name in self.datasets:
+                if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
+                    a = self.dataset_file(name)  
+                    gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
+                    valid_mask = np.isin(gene_names, valid_genes_list)
+                    self.valid_gene_index[name] = valid_mask
+                    num_valid_genes = np.sum(valid_mask)
+                    print(f"Dataset: {name}, Number of valid genes: {num_valid_genes}")
+    
+    def __getitem__(self, idx):
+        counts, idx, dataset, dataset_num = super().__getitem__(idx)
+        if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
+            valid_mask = self.valid_gene_index[dataset]
+            counts = counts[:, valid_mask] 
+        return counts, idx, dataset, dataset_num
 
 class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):
