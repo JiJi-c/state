@@ -108,28 +108,71 @@ class H5adDatasetSentences(data.Dataset):
     @functools.lru_cache
     def dataset_file(self, dataset):
         datafile = self.dataset_path_map[dataset]
+        print("file path")
+        print(datafile)
         return h5py.File(datafile, "r")
 
     def _get_DE_scores(self, h5f, idx):
-        cluster_id = str(h5f['/obs/leiden/codes'][idx])
-        gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
-        gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
+        de_group = self.cfg.dataset.groupid_for_de
+
+        if de_group == "gene":
+            print()
+            cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
+
+            gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
+            gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
+
+            # gene_categories = h5f['/obs/gene/categories'][:]
+            # gene_codes = h5f['/obs/gene/codes'][:]
+            
+            # gene_code = gene_codes[idx]
+            # gene_name = gene_categories[gene_code].decode('utf-8') 
+
+            # if gene_name == 'non-targeting':
+            #     return None, None # whats a better way for this?
+
+            # print(f"Gene name at index {idx}: {gene_name}")
+
+            # gene_score_path = f'/uns/ranked_genes/gene_scores/{gene_name}'
+            # if gene_score_path not in h5f:
+            #     raise ValueError(f"Gene {gene_name} not found in ranked genes.")
+
+            # gene_indices = torch.tensor(h5f[f'/uns/ranked_genes/gene_indices/{gene_name}'][:])
+            # gene_scores = torch.tensor(h5f[f'/uns/ranked_genes/gene_scores/{gene_name}'][:])
+
+        elif de_group == "leiden":
+            cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
+
+            gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
+            gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
+
+        else:
+            raise ValueError(f"Unsupported de_group: {de_group}. Expected 'gene' or 'leiden'.")
+
         gene_scores = torch.nn.functional.softmax(gene_scores)
+        # gene_scores = torch.nn.functional.softplus(gene_scores)
         return gene_indices, gene_scores
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
             if self.adata is not None:
+                # block is only used during validation
                 counts = torch.tensor(self.adata.X[idx].todense())
                 dataset = self.adata_name
                 dataset_num = 0
 
-                cluster_id = self.adata.obs.leiden[idx]
-                gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][cluster_id].to_numpy())
-                gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][cluster_id].to_numpy())
+                de_group = self.cfg.dataset.groupid_for_de
+                group_id = self.adata.obs[de_group][idx]
+                ranked_genes = self.adata.uns['ranked_genes']['gene_indices'].columns
+
+                if group_id not in ranked_genes:
+                    raise KeyError(f"Gene '{group_id}' missing in ranked_genes.")
+                
+                gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][group_id].to_numpy())
+                gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][group_id].to_numpy())
                 gene_scores = torch.nn.functional.softmax(gene_scores)
                 return counts, idx, dataset, dataset_num, gene_indices, gene_scores
-
+            
             dataset, ds_idx = self._compute_index(idx)
             h5f = self.dataset_file(dataset)
             attrs = dict(h5f['X'].attrs)
@@ -157,6 +200,8 @@ class H5adDatasetSentences(data.Dataset):
                     log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
                 gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx)
+                if gene_indices is None or gene_scores is None:
+                    return None
             except IndexError as iex:
                 log.exception(f"Error in dataset {dataset} at index {ds_idx}")
                 raise iex

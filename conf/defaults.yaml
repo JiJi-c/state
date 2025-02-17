@@ -46,15 +46,15 @@ validations:
     eval_interval_multiple: 10
     pert_col: gene
     ctrl_label: non-targeting
-    dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad #use this path for deaware
+    dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad #use this updated path for deaware
     dataset_name: replogle_perturbation
 
 dataset:
   name: "vci"
   seed: 42
-  train: /scratch/ctc/ML/uce/h5ad_train_dataset_tahoe.csv
-  val: /scratch/ctc/ML/uce/h5ad_val_dataset_tahoe.csv
-  data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+  train: /scratch/ctc/ML/uce/h5ad_dataset_rpe.csv
+  val: /scratch/ctc/ML/uce/h5ad_dataset_jurkat.csv
+  data_dir: /large_storage/ctc/userspace/alishba.imran/cellxgene
   protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
@@ -63,6 +63,7 @@ dataset:
   P: 512
   N: 512
   num_cells:  36238464 # TODO: Is this required
+  groupid_for_de: gene # leiden (based on cluster) or gene (based on perturbation)
 
 tokenizer:
   token_dim: 5120
