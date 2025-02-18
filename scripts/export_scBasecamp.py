@@ -225,22 +225,25 @@ def export(tiledb_path='/scratch/multiomics/nickyoungblut/tiledb-loader/tiledb-s
         logging.info(f"{len(df)} files to be exported with {df['count_all'].sum()} cells in total")
         for i, row in df.iterrows():
             t0 = time.time()
-            srx = row["SRX_accession"]
-            output_file = Path(output_path) / f"{srx}.h5ad"
-            if output_file.exists():
-                logging.info(f"Skipping {srx} as it already exists")
-                continue
+            try:
+                srx = row["SRX_accession"]
+                output_file = Path(output_path) / f"{srx}.h5ad"
+                if output_file.exists():
+                    logging.info(f"Skipping {srx} as it already exists")
+                    continue
 
-            obs_query = tiledbsoma.AxisQuery(value_filter=f'SRX_accession == "{srx}"')
-            # query = exp.axis_query("RNA", obs_query=obs_query)
-            # logging.info(f"{i + 1} of {len(df)}: Exporting {output_file} - {[query.n_obs, query.n_vars]}...")
+                obs_query = tiledbsoma.AxisQuery(value_filter=f'SRX_accession == "{srx}"')
+                # query = exp.axis_query("RNA", obs_query=obs_query)
+                # logging.info(f"{i + 1} of {len(df)}: Exporting {output_file} - {[query.n_obs, query.n_vars]}...")
 
-            # obs_query = tiledbsoma.AxisQuery(value_filter='sample in ["smp_2743", "smp_2643"]')
-            adata = get_anndata(exp, tiledb_path, obs_query=obs_query, measurement_name="RNA", X_name="X")
-            # adata
+                # obs_query = tiledbsoma.AxisQuery(value_filter='sample in ["smp_2743", "smp_2643"]')
+                adata = get_anndata(exp, tiledb_path, obs_query=obs_query, measurement_name="RNA", X_name="X")
+                # adata
 
-            # adata = query.to_anndata(X_name="data")
-            adata.write(output_file)
+                # adata = query.to_anndata(X_name="data")
+                adata.write(output_file)
+            except Exception as e:
+                logging.error(f"Error exporting {srx}: {e}")
             logging.info(f"Exported {output_file} in {time.time() - t0:.2f}s")
 
 
