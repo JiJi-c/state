@@ -69,13 +69,24 @@ def add_dataset_de(config_file, start_idx, payload_len=100):
 
                 df_gene = pd.DataFrame(adata.uns['rank_genes_groups']['names'])
                 df_score = pd.DataFrame(adata.uns['rank_genes_groups']['scores'])
-                import pdb 
-                pdb.set_trace()
+                # import pdb 
+                # pdb.set_trace()
+
 
                 # Convert gene names to numerical indices
                 df_gene_idx = pd.DataFrame()
                 for cluster in df_gene.columns:
                     df_gene_idx[cluster] = adata.var.index.get_indexer(df_gene[cluster])
+                
+                print("===== DEBUG INFO =====")
+                print("Gene Names DataFrame Head:")
+                print(df_gene.head())
+
+                print("\nGene Scores DataFrame Head:")
+                print(df_score.head())
+
+                print("\nGene Indices DataFrame Head:")
+                print(df_gene_idx.head())
 
                 ranked_genes = {
                     'gene_names': df_gene,
@@ -92,6 +103,8 @@ def add_dataset_de(config_file, start_idx, payload_len=100):
                 if adata is not None:
                     adata.file.close()
                     del adata
+            
+            print("\nRanked Genes Dictionary Keys:", ranked_genes.keys())
 
             adata_write = sc.read(dataset_path)
             adata_write.uns['ranked_genes'] = ranked_genes
