@@ -115,40 +115,10 @@ class H5adDatasetSentences(data.Dataset):
     def _get_DE_scores(self, h5f, idx):
         de_group = self.cfg.dataset.groupid_for_de
 
-        if de_group == "gene":
-            print()
-            cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
+        cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
 
-            gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
-            gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
-
-            # gene_categories = h5f['/obs/gene/categories'][:]
-            # gene_codes = h5f['/obs/gene/codes'][:]
-            
-            # gene_code = gene_codes[idx]
-            # gene_name = gene_categories[gene_code].decode('utf-8') 
-
-            # if gene_name == 'non-targeting':
-            #     return None, None # whats a better way for this?
-
-            # print(f"Gene name at index {idx}: {gene_name}")
-
-            # gene_score_path = f'/uns/ranked_genes/gene_scores/{gene_name}'
-            # if gene_score_path not in h5f:
-            #     raise ValueError(f"Gene {gene_name} not found in ranked genes.")
-
-            # gene_indices = torch.tensor(h5f[f'/uns/ranked_genes/gene_indices/{gene_name}'][:])
-            # gene_scores = torch.tensor(h5f[f'/uns/ranked_genes/gene_scores/{gene_name}'][:])
-
-        elif de_group == "leiden":
-            cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
-
-            gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
-            gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
-
-        else:
-            raise ValueError(f"Unsupported de_group: {de_group}. Expected 'gene' or 'leiden'.")
-
+        gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
+        gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
         gene_scores = torch.nn.functional.softmax(gene_scores)
         # gene_scores = torch.nn.functional.softplus(gene_scores)
         return gene_indices, gene_scores
@@ -265,6 +235,7 @@ class VCIDatasetSentenceCollator(object):
 
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
+        
         i = 0
         max_len = 0
 

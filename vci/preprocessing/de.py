@@ -16,21 +16,22 @@ logging.basicConfig(
 
 N_TOP_GENES = 5000
 # ds_files = [f'/large_storage/ctc/userspace/alishba.imran/tahoe/plate{i}.h5' for i in range(1, 15)]
-ds_files = ['/large_storage/ctc/userspace/alishba.imran/tahoe/plate1.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate2.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate3.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate4.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate5.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate6.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate7.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate8.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate9.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate10.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate11.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate13.h5',
-    '/large_storage/ctc/userspace/alishba.imran/tahoe/plate14.h5'
-]
+# ds_files = ['/large_storage/ctc/userspace/alishba.imran/tahoe/plate1.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate2.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate3.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate4.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate5.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate6.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate7.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate8.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate9.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate10.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate11.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate13.h5',
+#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate14.h5'
+# ]
 
+ds_files = ['/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/hepg2.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/jurkat.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/k562.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/rpe1.h5ad']
 
 def add_dataset_de(config_file, start_idx, payload_len=100):
     config_file = Path(config_file)
