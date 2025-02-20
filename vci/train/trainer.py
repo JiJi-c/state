@@ -94,8 +94,11 @@ def main(cfg):
         monitor=cfg.experiment.checkpoint.monitor,
     )
 
-    wandb_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
-    wandb_logger.watch(model, log_freq=1000)
+    if cfg.wandb.enable:
+        exp_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
+        exp_logger.watch(model, log_freq=1000)
+    else:
+        exp_logger = None
 
     callbacks = [checkpoint_callback,
                  LogLR(100),
@@ -119,7 +122,7 @@ def main(cfg):
                         strategy=DDPStrategy(process_group_backend="nccl"),
                         val_check_interval=val_interval,
                         # Logging
-                        logger=wandb_logger,
+                        logger=exp_logger,
                         fast_dev_run=False,
                         limit_val_batches=cfg.experiment.limit_val_batches,
                         )

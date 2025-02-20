@@ -1,15 +1,23 @@
 #!/bin/bash
 
-EMB_SIZE=2048
+python3 -m vci.tools.slurm \
+    --exp_name vci_repro_flash_attn_issue \
+    --set dataset.name=vci \
+    --set model.backbone=vgg16 \
+    --set experiment.num_gpus_per_node=2 \
+    --set wandb.enable=false \
+    --set val_check_interval=50 \
+    --set validations.diff_exp.eval_interval_multiple=1
+
+
+
 
 python3 -m vci.tools.slurm \
-    --exp_name vci_${EMB_SIZE} \
+    --exp_name vci_for_new_dataset \
     --set dataset.name=vci \
-          dataset.data_dir=/large_experiments/goodarzilab/mohsen/cellxgene/processed/ \
-          dataset.val=/scratch/ctc/ML/uce/h5ad_val_dataset.csv \
-          dataset.train=/scratch/ctc/ML/uce/h5ad_dataset.csv \
-          experiment.checkpoint.path=/scratch/ctc/ML/vci/checkpoint/pretrain \
-          experiment.num_epochs=5 \
-          model.name=vci_${EMB_SIZE} \
-          model.emsize=${EMB_SIZE} \
-          model.output_dim=${EMB_SIZE}
+    --set experiment.num_gpus_per_node=2 \
+    --set val_check_interval=50 \
+    --set validations.diff_exp.eval_interval_multiple=1 \
+    --set wandb.enable=false \
+    --set dataset.train=/scratch/ctc/ML/uce/rpe1_pert.csv \
+    --set dataset.val=/scratch/ctc/ML/uce/rpe1_pert.csv

@@ -10,8 +10,8 @@ experiment:
   num_nodes: 1
   num_gpus_per_node: 1
   master: localhost
-  port: 12356 
-  val_check_interval: 250 # Number of steps between tests
+  port: 12356
+  val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
@@ -20,6 +20,7 @@ experiment:
     every_n_train_steps: 1000
 
 wandb:
+  enable: True
   project: "vci"
 
 embeddings:
