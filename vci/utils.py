@@ -14,7 +14,7 @@ def is_valid_uuid(val):
         return True
     except ValueError:
         return False
-    
+
 def compute_pearson_delta(pred, true, ctrl, ctrl_true):
     """
     pred, true, ctrl, ctrl_true are numpy arrays of shape [n_cells, n_genes],
@@ -117,10 +117,17 @@ def get_shapes_dict(dataset_path):
 
     shapes_dict = {}
     dataset_path_map = {}
+    dataset_group_map = {} # Name of the obs column to be used for retrieing DE scrores
 
     for name in sorted_dataset_names:
         shapes_dict[name] = (int(datasets_df.set_index("names").loc[name]["num_cells"]), 8000)
         dataset_path_map[name] = datasets_df.set_index("names").loc[name]["path"]
+
+        if "groupid_for_de" in datasets_df.columns:
+            dataset_group_map[name] = datasets_df.set_index("names").loc[name]["groupid_for_de"]
+        else:
+            # This is for backward compatibility with old datasets CSV
+            dataset_group_map[name] = 'leiden'
 
     for row in datasets_df.iterrows():
         ngenes = row[1].num_genes
@@ -129,4 +136,4 @@ def get_shapes_dict(dataset_path):
         if not np.isnan(ngenes):
             shapes_dict[name] = (int(ncells), int(ngenes))
 
-    return datasets_df, sorted_dataset_names, shapes_dict, dataset_path_map
+    return datasets_df, sorted_dataset_names, shapes_dict, dataset_path_map, dataset_group_map

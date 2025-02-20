@@ -72,7 +72,7 @@ class H5adDatasetSentences(data.Dataset):
             ds_path = cfg.dataset.train
             if test:
                 ds_path = cfg.dataset.val
-            _, self.datasets, self.shapes_dict, self.dataset_path_map = utils.get_shapes_dict(ds_path)
+            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map= utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
             assert len(datasets) == len(shape_dict)
@@ -112,10 +112,12 @@ class H5adDatasetSentences(data.Dataset):
         print(datafile)
         return h5py.File(datafile, "r")
 
-    def _get_DE_scores(self, h5f, idx):
-        de_group = self.cfg.dataset.groupid_for_de
+    def _get_DE_scores(self, h5f, idx, de_group):
 
         cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
+        if de_group != 'leiden':
+            cluster_id = h5f[f'/obs/{de_group}/categories'][int(cluster_id)].decode('utf-8')
+
         gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
         gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
         gene_scores = torch.nn.functional.softmax(gene_scores)
@@ -130,7 +132,7 @@ class H5adDatasetSentences(data.Dataset):
                 dataset = self.adata_name
                 dataset_num = 0
 
-                de_group = self.cfg.dataset.groupid_for_de
+                de_group = 'leiden'
                 group_id = self.adata.obs[de_group][idx]
                 ranked_genes = self.adata.uns['ranked_genes']['gene_indices'].columns
 
@@ -168,7 +170,7 @@ class H5adDatasetSentences(data.Dataset):
                     log.info('debugging', ds_idx, 'end')
                     log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
-                gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx)
+                gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx, self.dataset_group_map[dataset])
                 if gene_indices is None or gene_scores is None:
                     return None
             except IndexError as iex:
