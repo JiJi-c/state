@@ -116,7 +116,6 @@ class H5adDatasetSentences(data.Dataset):
         de_group = self.cfg.dataset.groupid_for_de
 
         cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
-
         gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
         gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
         gene_scores = torch.nn.functional.softmax(gene_scores)
@@ -137,12 +136,12 @@ class H5adDatasetSentences(data.Dataset):
 
                 if group_id not in ranked_genes:
                     raise KeyError(f"Gene '{group_id}' missing in ranked_genes.")
-                
+
                 gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][group_id].to_numpy())
                 gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][group_id].to_numpy())
                 gene_scores = torch.nn.functional.softmax(gene_scores)
                 return counts, idx, dataset, dataset_num, gene_indices, gene_scores
-            
+
             dataset, ds_idx = self._compute_index(idx)
             h5f = self.dataset_file(dataset)
             attrs = dict(h5f['X'].attrs)
@@ -192,22 +191,22 @@ class FilteredGenesCounts(H5adDatasetSentences):
         super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
         if cfg.embeddings.esm2.embedding_file is not None:
-            esm_data = torch.load(cfg.embeddings.esm2.embedding_file) 
-            valid_genes_list = list(esm_data.keys()) 
+            esm_data = torch.load(cfg.embeddings.esm2.embedding_file)
+            valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
                 if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
-                    a = self.dataset_file(name)  
+                    a = self.dataset_file(name)
                     gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
                     valid_mask = np.isin(gene_names, valid_genes_list)
                     self.valid_gene_index[name] = valid_mask
                     num_valid_genes = np.sum(valid_mask)
                     print(f"Dataset: {name}, Number of valid genes: {num_valid_genes}")
-    
+
     def __getitem__(self, idx):
         counts, idx, dataset, dataset_num = super().__getitem__(idx)
         if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
             valid_mask = self.valid_gene_index[dataset]
-            counts = counts[:, valid_mask] 
+            counts = counts[:, valid_mask]
         return counts, idx, dataset, dataset_num
 
 class VCIDatasetSentenceCollator(object):
@@ -235,7 +234,7 @@ class VCIDatasetSentenceCollator(object):
 
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
-        
+
         i = 0
         max_len = 0
 

@@ -64,7 +64,7 @@ dataset:
   P: 512
   N: 512
   num_cells:  36238464 # TODO: Is this required
-  groupid_for_de: gene # leiden (based on cluster) or gene (based on perturbation)
+  groupid_for_de: leiden # leiden (based on cluster) or gene (based on perturbation)
   filter: False # set to True if using Tahoe dataset
 
 tokenizer:
