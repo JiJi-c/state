@@ -14,80 +14,121 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-N_TOP_GENES = 5000
-# ds_files = [f'/large_storage/ctc/userspace/alishba.imran/tahoe/plate{i}.h5' for i in range(1, 15)]
-# ds_files = ['/large_storage/ctc/userspace/alishba.imran/tahoe/plate1.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate2.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate3.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate4.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate5.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate6.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate7.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate8.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate9.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate10.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate11.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate13.h5',
-#     '/large_storage/ctc/userspace/alishba.imran/tahoe/plate14.h5'
-# ]
 
-ds_files = ['/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/hepg2.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/jurkat.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/k562.h5ad', '/large_storage/ctc/userspace/alishba.imran/cellxgene_copy/rpe1.h5ad']
+def _compute_de(adata, dataset_path, top_genes=5000, group_by='leiden', reference=None):
+    logging.info('Clustering...')
+    if group_by == 'leiden':
+        # TODO: Check if dataset alrady has leiden cluster info
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata)
+        sc.pp.highly_variable_genes(adata, n_top_genes=min(top_genes, adata.shape[1]))
 
-def add_dataset_de(config_file, start_idx, payload_len=100):
-    config_file = Path(config_file)
-    config_path = os.path.relpath(Path(config_file).parent, Path(__file__).parent)
-    with initialize(version_base=None, config_path=config_path):
-        logging.info(f'Loading config {config_file}...')
-        cfg = compose(config_name=config_file.name)
+        adata = adata[:, adata.var.highly_variable]
+        sc.pp.scale(adata)
+        sc.tl.pca(adata, svd_solver='arpack')
+        sc.pp.neighbors(adata)
+        sc.tl.leiden(adata)
 
-        datasets = cfg.dataset.val
-        data_root = cfg.dataset.data_dir
+    logging.info('Ranking...')
+    sc.tl.rank_genes_groups(adata,
+                            group_by,
+                            method='wilcoxon',
+                            reference=reference if reference != None else 'rest',
+                            n_genes=adata.shape[1],
+                            use_raw=False)
 
-        df = pd.read_csv(datasets)
+    df_gene = pd.DataFrame(adata.uns['rank_genes_groups']['names'])
+    df_score = pd.DataFrame(adata.uns['rank_genes_groups']['scores'])
+
+    df_gene_idx = pd.DataFrame()
+    for cluster in df_gene.columns:
+        df_gene_idx[cluster] = adata.var.index.get_indexer(df_gene[cluster])
+
+    ranked_genes = {
+        'gene_names': df_gene,
+        'gene_scores': df_score,
+        'gene_indices': df_gene_idx
+    }
+    adata.uns['ranked_genes'] = ranked_genes
+
+    if reference != None:
+        logging.info('Filtering reference gene...')
+        adata = adata[adata.obs[group_by] != reference]
+
+    logging.info('Persisting DE data...')
+    adata.write_h5ad(dataset_path)
+    adata.file.close()
+
+
+def process(dataset: str | list[str], start_idx: int = 0, payload_len: int=100, top_genes: int=5000, reprocess=False,
+            perturbed=False, perturb_group='gene',
+            reference='non-targeting'):
+    '''
+    Process the dataset by computing DE genes and clustering.
+
+    Args:
+    dataset: str
+        Path to the dataset CSV file or a list of files to process.
+    start_idx: int
+        Starting index of the dataset to process.
+    payload_len: int
+        Number of datasets to process.
+    top_genes: int
+        Number of top genes to use for clustering.
+    reprocess: bool
+        Reprocess the dataset even if it has been processed before.
+
+    Example:
+        To process all dataset files in a CSV file:
+            python de.py process --dataset /path/to/dataset.csv --start_idx 0 --payload_len 100
+
+        To process a list of dataset files:
+            python3 vci/preprocessing/de.py process --dataset="['./cellxgene/jurkat.h5ad', './cellxgene/rpe1.h5ad']"
+
+        To process perturbed dataset:
+            python3 vci/preprocessing/de.py process --dataset="['./cellxgene/jurkat.h5ad', './cellxgene/rpe1.h5ad'] --perturbed=True"
+
+        To process perturbed dataset with custom obs column:
+            python3 vci/preprocessing/de.py process --dataset="['./cellxgene/jurkat.h5ad', './cellxgene/rpe1.h5ad'] --perturbed=True" --perturb_group="drug"
+    '''
+    if isinstance(dataset, str):
+        if os.path.splitext(dataset)[1] != '.csv':
+            raise ValueError('Dataset must be a CSV file. For processing individual adatas, use a list of files.')
+        df = pd.read_csv(dataset)
         df = df.iloc[start_idx:start_idx + payload_len]
-        failed_files = []
-        # ds_files = ds_files[start_idx:start_idx+payload_len]
-        for dataset_path in ds_files:
-            # dataset_path = os.path.join(data_root, dataset_path)
-            logging.info(f'Processing file {dataset_path}...')
+        ds_files = df['path'].to_list()
+        ds_files = ds_files[start_idx:start_idx+payload_len]
+    else:
+        ds_files = dataset
 
-            adata = None
+    failed_files = []
+    for dataset_path in ds_files:
+        dataset_path = dataset_path.strip()
+        logging.info(f'Processing file {dataset_path}...')
+        adata = sc.read_h5ad(dataset_path)
+        if not reprocess and 'ranked_genes' in adata.uns and 'leiden' in adata.obs:
+            logging.info('Dataset already clustered and DE computed. Skipping...')
+            continue
+        try:
+            _compute_de(adata, dataset_path, top_genes=top_genes)
+        except Exception as e:
+            failed_files.append(dataset_path)
+            logging.exception(f'Error reading file {dataset_path}: {e}')
+            continue
+        finally:
+            if adata is not None:
+                adata.file.close()
+                del adata
+
+        if perturbed:
+            logging.info('Processing perturbed dataset...')
+            adata = sc.read_h5ad(dataset_path)
             try:
-                adata = sc.read_h5ad(dataset_path)
-
-                if 'ranked_genes' in adata.uns and 'leiden' in adata.obs:
-                    logging.info('Dataset already clustered and DE computed. Skipping...')
-                    continue
-
-                sc.pp.normalize_total(adata)
-                sc.pp.log1p(adata)
-                sc.pp.highly_variable_genes(adata, n_top_genes=min(N_TOP_GENES, adata.shape[1]))
-
-                adata = adata[:, adata.var.highly_variable]
-                sc.pp.scale(adata)
-                sc.tl.pca(adata, svd_solver='arpack')
-                sc.pp.neighbors(adata)
-                sc.tl.leiden(adata)
-                leiden = adata.obs['leiden']
-                sc.tl.rank_genes_groups(adata,
-                                        'leiden',
-                                        method='wilcoxon',
-                                        n_genes=adata.shape[1],
-                                        use_raw=False)
-
-                df_gene = pd.DataFrame(adata.uns['rank_genes_groups']['names'])
-                df_score = pd.DataFrame(adata.uns['rank_genes_groups']['scores'])
-
-                df_gene_idx = pd.DataFrame()
-                for cluster in df_gene.columns:
-                    df_gene_idx[cluster] = adata.var.index.get_indexer(df_gene[cluster])
-
-                ranked_genes = {
-                    'gene_names': df_gene,
-                    'gene_scores': df_score,
-                    'gene_indices': df_gene_idx
-                }
-
+                _compute_de(adata,
+                            dataset_path.replace('.h5ad', '_perturbed.h5ad'),
+                            top_genes=top_genes,
+                            group_by=perturb_group,
+                            reference=reference)
             except Exception as e:
                 failed_files.append(dataset_path)
                 logging.exception(f'Error reading file {dataset_path}: {e}')
@@ -97,18 +138,12 @@ def add_dataset_de(config_file, start_idx, payload_len=100):
                     adata.file.close()
                     del adata
 
-            adata_write = sc.read(dataset_path)
-            adata_write.uns['ranked_genes'] = ranked_genes
-            adata_write.obs['leiden'] = leiden
-            adata_write.write_h5ad(dataset_path)
-            adata_write.file.close()
-            del adata_write
-
-        if len(failed_files) > 0:
-            logging.error(f'Failed to process {len(failed_files)} files: {failed_files}')
+    if len(failed_files) > 0:
+        failed_files = set(failed_files)
+        logging.error(f'Failed to process {len(failed_files)} files: {failed_files}')
 
 
-def validate_de(config_file):
+def validate(config_file):
     config_file = Path(config_file)
     config_path = os.path.relpath(Path(config_file).parent, Path(__file__).parent)
     with initialize(version_base=None, config_path=config_path):
