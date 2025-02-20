@@ -50,7 +50,7 @@ def main(cfg):
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
-                                  num_workers=3,
+                                  num_workers=15,
                                   persistent_workers=True,
                                   generator=generator)
 
@@ -59,7 +59,7 @@ def main(cfg):
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
-                                num_workers=3,
+                                num_workers=15,
                                 persistent_workers=True,
                                 generator=generator)
 

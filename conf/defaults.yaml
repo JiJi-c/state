@@ -35,7 +35,7 @@ embeddings:
 validations:
   diff_exp:
     enable: true
-    eval_interval_multiple: 20
+    eval_interval_multiple: 10
     obs_pert_col: gene
     obs_filter_label: non-targeting
     top_k_rank: 200
@@ -44,7 +44,7 @@ validations:
     dataset_name: rpe1_top5000_variable
   perturbation:
     enable: true
-    eval_interval_multiple: 10
+    eval_interval_multiple: 20
     pert_col: gene
     ctrl_label: non-targeting
     dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad #use this updated path for deaware
@@ -53,9 +53,9 @@ validations:
 dataset:
   name: "vci"
   seed: 42
-  train: /scratch/ctc/ML/uce/h5ad_dataset_rpe.csv
-  val: /scratch/ctc/ML/uce/h5ad_dataset_jurkat.csv
-  data_dir: /large_storage/ctc/userspace/alishba.imran/cellxgene
+  train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
+  val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
+  data_dir: /large_storage/ctc/datasets/cellxgene/processed/
   protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
