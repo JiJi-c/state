@@ -200,7 +200,6 @@ class FilteredGenesCounts(H5adDatasetSentences):
                     valid_mask = np.isin(gene_names, valid_genes_list)
                     self.valid_gene_index[name] = valid_mask
                     num_valid_genes = np.sum(valid_mask)
-                    print(f"Dataset: {name}, Number of valid genes: {num_valid_genes}")
 
     def __getitem__(self, idx):
         counts, idx, dataset, dataset_num = super().__getitem__(idx)

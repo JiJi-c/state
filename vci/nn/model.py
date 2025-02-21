@@ -202,6 +202,7 @@ class LitUCEModel(L.LightningModule):
                           leave=True,
                           ncols=100,
                           desc=f"Embeddings for {dataset_name}",):
+            torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
 
@@ -321,6 +322,7 @@ class LitUCEModel(L.LightningModule):
                           ncols=100,
                           desc=f"Embeddings for {self.cfg.validations.perturbation.dataset_name}",):
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
             all_embs.append(emb)
         all_embs = torch.cat(all_embs, dim=0)
@@ -440,7 +442,7 @@ class LitUCEModel(L.LightningModule):
         pred_exp = self._predict_exp_for_adata(tmp_adata,
                                                self.cfg.validations.diff_exp.dataset_name,
                                                self.cfg.validations.diff_exp.obs_pert_col)
-
+        torch.cuda.synchronize()
         de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
         self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
