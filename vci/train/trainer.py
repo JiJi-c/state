@@ -18,18 +18,10 @@ from vci.utils import get_latest_checkpoint
 
 def get_ESM2_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
-    all_pe = torch.load(cfg.embeddings.esm2.checkpoint)
-    if all_pe.shape[0] == 143574:
-        torch.manual_seed(23)
-        CHROM_TENSORS = torch.normal(mean=0, std=1, size=(1895, cfg.tokenizer.token_dim))
-        # 1894 is the total number of chromosome choices, it is hardcoded for now
-        all_pe = torch.vstack((all_pe, CHROM_TENSORS))  # Add the chrom tensors to the end
-        all_pe.requires_grad = False
-
-    # randomize it!
-    all_pe = torch.randn_like(all_pe)
+    all_pe = torch.load(cfg.embeddings.esm2.embedding_file)
+    all_pe = torch.vstack(list(all_pe.values()))
+    all_pe.requires_grad = False
     return all_pe
-
 
 def main(cfg):
     TOTAL_N_CELL = cfg.dataset.num_cells

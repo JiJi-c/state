@@ -108,8 +108,6 @@ class H5adDatasetSentences(data.Dataset):
     @functools.lru_cache
     def dataset_file(self, dataset):
         datafile = self.dataset_path_map[dataset]
-        print("file path")
-        print(datafile)
         return h5py.File(datafile, "r")
 
     def _get_DE_scores(self, h5f, idx, de_group):
@@ -292,9 +290,10 @@ class VCIDatasetSentenceCollator(object):
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
             cell_sentences[c, 1: genes_ranked_exp.shape[0] + 1] = genes_ranked_exp
-            # cell_sentences[c, genes_ranked_exp.shape[0] + 1:] = gened_sampled_by_exp
 
             # Convert tokens to Embeddings
+            # this also includes the cls token, but we will override it later with a learnable torch vector
+            # that logic is in model.py _compute_embedding_for_batch
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
             de_budget = self.cfg.dataset.P // 2

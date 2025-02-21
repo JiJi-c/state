@@ -91,6 +91,7 @@ class LitUCEModel(L.LightningModule):
         self.cfg = cfg
         self.compiled = compiled
         self.model_type = 'Transformer'
+        self.cls_token = nn.Parameter(torch.randn(1, token_dim))
         # self.pos_encoder = PositionalEncoding(d_model, dropout)
         self.d_model = d_model
         self.warmup_steps = warmup_steps
@@ -148,7 +149,7 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.gene_embedding_layer = torch.compile(self.gene_embedding_layer)
 
-        self.pe_embedding = None
+        self.pe_embedding = None # TODO: make this cleaner for the type checker, right now it gets set externally after model init
         self.step_ctr = 0
 
         self.true_top_genes = None
@@ -164,6 +165,8 @@ class LitUCEModel(L.LightningModule):
         batch_weights = batch[4]
 
         batch_sentences = self.pe_embedding(batch_sentences.long())
+        # Add a learnable CLS token to the beginning of the sentence
+        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
         X = self.pe_embedding(X.long())
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
@@ -234,13 +237,9 @@ class LitUCEModel(L.LightningModule):
         Returns:
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
-        src_temp = src
         src = self.encoder(src) * math.sqrt(self.d_model)
-        encoder_weights = self.encoder[0].weight
-        # src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
-        # embedding = torch.mul(gene_output, mask.t().unsqueeze(2)).sum(0) # average over non zero genes
         # In the new format, the cls token, which is at the 0 index mark, is the output.
         embedding = gene_output[:, 0, :] # select only the CLS token.
         embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
