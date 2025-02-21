@@ -11,25 +11,17 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
+from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, FilteredGenesCounts
 from vci.train.callbacks import LogLR, ProfilerCallback
 from vci.utils import get_latest_checkpoint
 
 
 def get_ESM2_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
-    all_pe = torch.load(cfg.embeddings.esm2.checkpoint)
-    if all_pe.shape[0] == 143574:
-        torch.manual_seed(23)
-        CHROM_TENSORS = torch.normal(mean=0, std=1, size=(1895, cfg.tokenizer.token_dim))
-        # 1894 is the total number of chromosome choices, it is hardcoded for now
-        all_pe = torch.vstack((all_pe, CHROM_TENSORS))  # Add the chrom tensors to the end
-        all_pe.requires_grad = False
-
-    # randomize it!
-    all_pe = torch.randn_like(all_pe)
+    all_pe = torch.load(cfg.embeddings.esm2.embedding_file)
+    all_pe = torch.vstack(list(all_pe.values()))
+    all_pe.requires_grad = False
     return all_pe
-
 
 def main(cfg):
     TOTAL_N_CELL = cfg.dataset.num_cells
@@ -42,22 +34,24 @@ def main(cfg):
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
 
+    DatasetClass = FilteredGenesCounts if cfg.dataset.filter else H5adDatasetSentences
+
     # Training dataloader
-    train_dataset = H5adDatasetSentences(cfg)
+    train_dataset = DatasetClass(cfg)
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
-                                  num_workers=3,
+                                  num_workers=15,
                                   persistent_workers=True,
                                   generator=generator)
 
-    val_dataset = H5adDatasetSentences(cfg, test=True)
+    val_dataset = DatasetClass(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
-                                num_workers=3,
+                                num_workers=15,
                                 persistent_workers=True,
                                 generator=generator)
 
@@ -92,8 +86,11 @@ def main(cfg):
         monitor=cfg.experiment.checkpoint.monitor,
     )
 
-    wandb_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
-    wandb_logger.watch(model, log_freq=1000)
+    if cfg.wandb.enable:
+        exp_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
+        exp_logger.watch(model, log_freq=1000)
+    else:
+        exp_logger = None
 
     callbacks = [checkpoint_callback,
                  LogLR(100),
@@ -117,7 +114,7 @@ def main(cfg):
                         strategy=DDPStrategy(process_group_backend="nccl"),
                         val_check_interval=val_interval,
                         # Logging
-                        logger=wandb_logger,
+                        logger=exp_logger,
                         fast_dev_run=False,
                         limit_val_batches=cfg.experiment.limit_val_batches,
                         )

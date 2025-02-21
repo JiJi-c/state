@@ -10,7 +10,7 @@ from typing import Dict
 
 from torch.utils.data import DataLoader
 import vci.utils as utils
-
+import pandas as pd
 
 log = logging.getLogger(__file__)
 
@@ -63,6 +63,7 @@ class H5adDatasetSentences(data.Dataset):
 
         self.adata = None
         self.adata_name = adata_name
+        self.test = test
         if adata is not None:
             self.adata = adata
             self.datasets = [adata_name]
@@ -71,13 +72,14 @@ class H5adDatasetSentences(data.Dataset):
             ds_path = cfg.dataset.train
             if test:
                 ds_path = cfg.dataset.val
-            _, self.datasets, self.shapes_dict = utils.get_shapes_dict(ds_path)
+            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map= utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
             assert len(datasets) == len(shape_dict)
             self.datasets = datasets
             self.shapes_dict = shape_dict
 
+        self.datasets = sorted(self.datasets)
         self.cfg = cfg
 
         self.num_cells = {}
@@ -96,7 +98,7 @@ class H5adDatasetSentences(data.Dataset):
         }
 
     def _compute_index(self, idx):
-        for dataset in sorted(self.datasets):
+        for dataset in self.datasets:
             if idx < self.num_cells[dataset]:
                 return dataset, idx
             else:
@@ -105,29 +107,52 @@ class H5adDatasetSentences(data.Dataset):
 
     @functools.lru_cache
     def dataset_file(self, dataset):
-        datafile = os.path.join(self.cfg.dataset.data_dir, f"{dataset}.h5ad")
+        datafile = self.dataset_path_map[dataset]
         return h5py.File(datafile, "r")
+
+    def _get_DE_scores(self, h5f, idx, de_group):
+
+        cluster_id = str(h5f[f'/obs/{de_group}/codes'][idx])
+        if de_group != 'leiden':
+            cluster_id = h5f[f'/obs/{de_group}/categories'][int(cluster_id)].decode('utf-8')
+
+        gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
+        gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
+        gene_scores = torch.nn.functional.softmax(gene_scores)
+        # gene_scores = torch.nn.functional.softplus(gene_scores)
+        return gene_indices, gene_scores
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
             if self.adata is not None:
+                # block is only used during validation
                 counts = torch.tensor(self.adata.X[idx].todense())
                 dataset = self.adata_name
                 dataset_num = 0
-                return counts, idx, dataset, dataset_num
+
+                de_group = 'leiden'
+                group_id = self.adata.obs[de_group][idx]
+                ranked_genes = self.adata.uns['ranked_genes']['gene_indices'].columns
+
+                if group_id not in ranked_genes:
+                    raise KeyError(f"Gene '{group_id}' missing in ranked_genes.")
+
+                gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][group_id].to_numpy())
+                gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][group_id].to_numpy())
+                gene_scores = torch.nn.functional.softmax(gene_scores)
+                return counts, idx, dataset, dataset_num, gene_indices, gene_scores
 
             dataset, ds_idx = self._compute_index(idx)
             h5f = self.dataset_file(dataset)
             attrs = dict(h5f['X'].attrs)
             try:
                 if attrs['encoding-type'] == 'csr_matrix':
-                    # num_genes = attrs['shape'][1]
                     indptrs = h5f["/X/indptr"]
                     start_ptr = indptrs[ds_idx]
                     end_ptr = indptrs[ds_idx + 1]
                     sub_data = torch.tensor(
                         h5f["/X/data"][start_ptr:end_ptr],
-                        dtype=torch.int32)
+                        dtype=torch.float)
                     sub_indices = torch.tensor(
                         h5f["/X/indices"][start_ptr:end_ptr],
                         dtype=torch.int32)
@@ -143,12 +168,15 @@ class H5adDatasetSentences(data.Dataset):
                     log.info('debugging', ds_idx, 'end')
                     log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
+                gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx, self.dataset_group_map[dataset])
+                if gene_indices is None or gene_scores is None:
+                    return None
             except IndexError as iex:
                 log.exception(f"Error in dataset {dataset} at index {ds_idx}")
                 raise iex
 
             dataset_num = self.datasets_to_num[dataset]
-            return counts, idx, dataset, dataset_num
+            return counts, idx, dataset, dataset_num, gene_indices, gene_scores
         else:
             raise NotImplementedError
 
@@ -158,6 +186,27 @@ class H5adDatasetSentences(data.Dataset):
     def get_dim(self) -> Dict[str, int]:
         return self.num_genes
 
+class FilteredGenesCounts(H5adDatasetSentences):
+    def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
+        super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
+        self.valid_gene_index = {}
+        if cfg.embeddings.esm2.embedding_file is not None:
+            esm_data = torch.load(cfg.embeddings.esm2.embedding_file)
+            valid_genes_list = list(esm_data.keys())
+            for name in self.datasets:
+                if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
+                    a = self.dataset_file(name)
+                    gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
+                    valid_mask = np.isin(gene_names, valid_genes_list)
+                    self.valid_gene_index[name] = valid_mask
+                    num_valid_genes = np.sum(valid_mask)
+
+    def __getitem__(self, idx):
+        counts, idx, dataset, dataset_num = super().__getitem__(idx)
+        if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
+            valid_mask = self.valid_gene_index[dataset]
+            counts = counts[:, valid_mask]
+        return counts, idx, dataset, dataset_num
 
 class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):
@@ -184,11 +233,12 @@ class VCIDatasetSentenceCollator(object):
 
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
+
         i = 0
         max_len = 0
 
-        for counts, idx, dataset, dataset_num in batch:
-            (bs, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset)
+        for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
+            (bs, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
 
             batch_sentences[i, :] = bs
             batch_weight = batch_weight.squeeze()
@@ -214,84 +264,56 @@ class VCIDatasetSentenceCollator(object):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
 
-    def sample_cell_sentences(self, counts, dataset):
+    def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores):
         if torch.isnan(counts).any():
             log.error(f"NaN values in counts for dataset {dataset}")
-        batch_weights = torch.log1p(counts)
-        batch_weights = (batch_weights / torch.sum(batch_weights))
-        dataset_idxs = self.dataset_to_protein_embeddings[dataset]
+        expression_weights = torch.log1p(counts)
+        expression_weights = (expression_weights / torch.sum(expression_weights))
+
+        ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
-        cell_outputs_X = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
-        cell_outputs_Y = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
+        task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
+        task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
 
         # Available length after CLS token
         available_length = self.cfg.dataset.pad_length - 1
-        half_len = available_length // 2
+        half_len = available_length
 
         for c, cell in enumerate(counts):
-            pos_genes = torch.where(counts[c] > 0)[0]
-            neg_genes = torch.where(counts[c] < 1)[0]
-            if len(pos_genes) == 0:
-                pos_genes = neg_genes
+            genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
 
-            # First half: Sort expressed genes by expression level (descending)
-            # sorted_pos_genes = pos_genes[torch.argsort(counts[c][pos_genes], descending=True)]
-            sorted_pos_genes = pos_genes[torch.argsort(counts[c][pos_genes], descending=False)]
-            num_deterministic = min(half_len, len(sorted_pos_genes))
-            deterministic_genes = sorted_pos_genes[:num_deterministic]
-
-            # Second half: Use original sampling logic
-            weights = batch_weights[c].clone()
-            # 20% random dropout as in original
-            mask_weights = torch.randperm(len(pos_genes))[:max(1, round(len(pos_genes) * 0.2))]
-            mask_weights = pos_genes[mask_weights]
-            weights[mask_weights] = 0
-            weights = torch.nan_to_num(weights, nan=0, neginf=0)
-            weights = torch.nn.functional.softmax(weights, dim=0)
-
-            # Sample second half
-            random_genes = torch.multinomial(weights, half_len, replacement=True)
+            # sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
+            # gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
+            #                                          sample_size, replacement=True)
 
             # Combine into final sequence
-            ordered_choice_idx = torch.full((self.cfg.dataset.pad_length,),
-                                            self.cfg.dataset.cls_token_idx)
+            cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
+            cell_sentences[c, 1: genes_ranked_exp.shape[0] + 1] = genes_ranked_exp
 
-            # Place CLS token at start
-            i = 1
-            # Place deterministic genes
-            if len(deterministic_genes) > 0:
-                ordered_choice_idx[i:i+num_deterministic] = dataset_idxs[deterministic_genes]
-                i += num_deterministic
+            # Convert tokens to Embeddings
+            # this also includes the cls token, but we will override it later with a learnable torch vector
+            # that logic is in model.py _compute_embedding_for_batch
+            cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
-            # Place randomly sampled genes
-            ordered_choice_idx[i:i+len(random_genes)] = dataset_idxs[random_genes]
-            i += len(random_genes)
+            de_budget = self.cfg.dataset.P // 2
+            replacement=False
+            if gene_indices.shape[0] < de_budget:
+                replacement=True
+            task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=replacement)]
 
-            ordered_choice_idx[i:] = self.cfg.dataset.pad_token_idx
+            exp_genes = cell[cell > 0]
+            unexp_genes = cell[cell < 1]
 
-            # Rest of the logic remains exactly the same as original
-            cell_sentences[c, :] = ordered_choice_idx
-            choice_idx_ouput_p = mask_weights  # use the masked genes as task
-            if len(choice_idx_ouput_p) > self.cfg.dataset.P:
-                choice_idx_ouput_p = mask_weights[\
-                    torch.randperm(len(mask_weights))[:self.cfg.dataset.P]]
-            elif len(choice_idx_ouput_p) < self.cfg.dataset.P:
-                remainder = self.cfg.dataset.P - len(choice_idx_ouput_p)
-                choice_idx_ouput_p = torch.cat((choice_idx_ouput_p,
-                                            pos_genes[torch.randint(len(pos_genes), (remainder,))]))
-
-            if self.cfg.dataset.N <= len(neg_genes):
-                choice_idx_ouput_n = torch.randperm(len(neg_genes))[:self.cfg.dataset.N]
+            if len(exp_genes) > de_budget:
+                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randperm(len(exp_genes)) [0:de_budget]
             else:
-                choice_idx_ouput_n = torch.randint(len(neg_genes), (self.cfg.dataset.N,))
-            choice_idx_ouput_n = neg_genes[choice_idx_ouput_n]
+                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randint(len(exp_genes), (de_budget,))
 
-            cell_outputs_X[c] = torch.tensor(
-                np.concatenate((choice_idx_ouput_p, choice_idx_ouput_n)))
-            cell_outputs_Y[c] = torch.cat((torch.ones(self.cfg.dataset.P),
-                                        torch.zeros(self.cfg.dataset.N)))
+            if len(unexp_genes) > self.cfg.dataset.N:
+                task_sentence[c, self.cfg.dataset.P:] = torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]
+            else:
+                task_sentence[c, self.cfg.dataset.P:] = torch.randint(len(unexp_genes), (self.cfg.dataset.N,))
 
-        cell_sentences_pe = cell_sentences.long()
-        cell_outputs_X_pe = dataset_idxs[cell_outputs_X.long()]
-
-        return cell_sentences_pe, cell_outputs_X_pe, cell_outputs_Y, batch_weights
+            task_counts[c] = cell[task_sentence[c].to(torch.int32)]
+            task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
+        return cell_sentences, task_sentence, task_counts, expression_weights

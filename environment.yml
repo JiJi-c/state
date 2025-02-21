@@ -14,7 +14,7 @@ dependencies:
     - torch
     - torchvision
     - torchaudio
-    - lightning
+    - lightning==2.4.0
     - h5py
     - pyyaml
     - jinja2
@@ -31,3 +31,5 @@ dependencies:
     - requests
     - fire
     - geomloss
+    - flash-attn
+    - triton

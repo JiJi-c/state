@@ -75,11 +75,12 @@ class Preprocessor:
         return adata, species
 
     def update_dataset_emb_idx(self, adata, dataset):
-        # if 'feature_name' not in adata.var:
-        #     adata.var['feature_name'] = adata.var.index.values
-        #     adata.var.feature_name = adata.var.feature_name.str.lower()
-        emb_idxs = torch.arange(len(self.gene_filter), dtype=torch.long)
-        
+        if 'feature_name' not in adata.var:
+            adata.var['feature_name'] = adata.var.index.values
+            adata.var.feature_name = adata.var.feature_name.str.lower()
+        emb_idxs = torch.tensor([self.gene_filter.index(k) + self.emb_offset \
+                            for k in adata.var.feature_name]).long()
+
         dataset_emb_idx = {}
         if os.path.exists(self.emb_idx_file):
             dataset_emb_idx = torch.load(self.emb_idx_file)
