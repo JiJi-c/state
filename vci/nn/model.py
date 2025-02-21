@@ -180,7 +180,7 @@ class LitUCEModel(L.LightningModule):
         if self.protein_embeds is None:
             self.protein_embeds = torch.load(self.cfg.embeddings.esm2.embedding_file)
         protein_embeds = [self.protein_embeds[x] \
-                          if x in self.protein_embeds else torch.zeros(5120) for x in genes]
+                          if x in self.protein_embeds else torch.zeros(self.cfg.embeddings.esm2.size) for x in genes]
         protein_embeds = torch.stack(protein_embeds).to(self.device)
         return self.gene_embedding_layer(protein_embeds)
 
@@ -267,7 +267,6 @@ class LitUCEModel(L.LightningModule):
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
 
-        # loss = criterion(p=decs.squeeze(), q=target)
         loss = criterion(decs.squeeze(), target)
         sch = self.lr_schedulers()
 
