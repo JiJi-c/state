@@ -2,8 +2,9 @@ import os
 import h5py
 import logging
 import torch
-import functools
 import torch.utils.data as data
+import torch.nn.functional as F
+import functools
 import numpy as np
 
 from typing import Dict
@@ -272,6 +273,10 @@ class VCIDatasetSentenceCollator(object):
     def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores):
         if torch.isnan(counts).any():
             log.error(f"NaN values in counts for dataset {dataset}")
+
+        if torch.any(counts < 0):
+            counts = F.relu(counts)
+
         expression_weights = torch.log1p(counts)
         expression_weights = (expression_weights / torch.sum(expression_weights))
 
@@ -293,7 +298,8 @@ class VCIDatasetSentenceCollator(object):
             # paste the most expressed genes first
             cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
             # sample with replacement weighted by normalized log counts
-            cell_sentences[c, start_sentence + 1:] = torch.multinomial(cell, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+            cell_sentences[c, start_sentence + 1:] = torch.multinomial(
+                    expression_weights[c], self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
             # Convert tokens to Embeddings
             # this also includes the cls token, but we will override it later with a learnable torch vector
