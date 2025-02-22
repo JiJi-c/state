@@ -202,11 +202,11 @@ class FilteredGenesCounts(H5adDatasetSentences):
                     num_valid_genes = np.sum(valid_mask)
 
     def __getitem__(self, idx):
-        counts, idx, dataset, dataset_num = super().__getitem__(idx)
+        counts, idx, dataset, dataset_num, gene_indices, gene_scores = super().__getitem__(idx)
         if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
             valid_mask = self.valid_gene_index[dataset]
             counts = counts[:, valid_mask]
-        return counts, idx, dataset, dataset_num
+        return counts, idx, dataset, dataset_num, gene_indices, gene_scores
 
 class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):
@@ -316,4 +316,6 @@ class VCIDatasetSentenceCollator(object):
 
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
             task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
+
+            task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
         return cell_sentences, task_sentence, task_counts, expression_weights

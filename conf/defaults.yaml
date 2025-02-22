@@ -95,5 +95,5 @@ optimizer:
   gradient_accumulation_steps: 1
 
 loss:
-  name: "mmd"
+  name: "cross_entropy" # cross_entropy, cross_entropy, mse, wasserstein
   apply_normalization: False
