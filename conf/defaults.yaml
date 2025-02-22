@@ -2,6 +2,7 @@ experiment:
   name: "vci_pretrain_${loss.name}_${model.nhead}_${model.nlayers}"
   local: "local"
   compiled: false
+  deaware: true
   profile:
     enable_profiler: false
     profile_steps: [10, 100]
@@ -63,8 +64,8 @@ dataset:
   pad_token_idx: 0
   cls_token_idx: 3
   chrom_token_right_idx: 2
-  P: 512
-  N: 512
+  P: 1024 # P + N should be pad_length
+  N: 1024
   num_cells:  36238464 # TODO: Is this required
   filter: true
 

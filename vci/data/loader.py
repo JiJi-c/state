@@ -168,9 +168,11 @@ class H5adDatasetSentences(data.Dataset):
                     log.info('debugging', ds_idx, 'end')
                     log.info(ds_idx)
                     counts = torch.tensor(h5f["X"][ds_idx]).unsqueeze(0)
-                gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx, self.dataset_group_map[dataset])
-                if gene_indices is None or gene_scores is None:
-                    return None
+
+                gene_indices, gene_scores = None, None
+                if self.cfg.experiment.deaware:
+                    gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx, self.dataset_group_map[dataset])
+
             except IndexError as iex:
                 log.exception(f"Error in dataset {dataset} at index {ds_idx}")
                 raise iex
@@ -275,44 +277,50 @@ class VCIDatasetSentenceCollator(object):
         task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
 
-        # Available length after CLS token
-        available_length = self.cfg.dataset.pad_length - 1
-        half_len = available_length
-
         for c, cell in enumerate(counts):
-            genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
-
-            # sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
-            # gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
-            #                                          sample_size, replacement=True)
+            start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), cell.shape[0] // 2)
+            genes_ranked_exp = torch.argsort(cell, descending=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
-            cell_sentences[c, 1: genes_ranked_exp.shape[0] + 1] = genes_ranked_exp
+            cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
+            cell_sentences[c, start_sentence + 1:] = torch.multinomial(cell, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
             # Convert tokens to Embeddings
             # this also includes the cls token, but we will override it later with a learnable torch vector
             # that logic is in model.py _compute_embedding_for_batch
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
-            de_budget = self.cfg.dataset.P // 2
-            replacement=False
-            if gene_indices.shape[0] < de_budget:
-                replacement=True
-            task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=replacement)]
+            if gene_indices is not None:
+                # Task sentence for DE aware
+                de_budget = self.cfg.dataset.P // 2
 
-            exp_genes = cell[cell > 0]
-            unexp_genes = cell[cell < 1]
-
-            if len(exp_genes) > de_budget:
-                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randperm(len(exp_genes)) [0:de_budget]
+                task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores,
+                                                                              de_budget,
+                                                                              replacement=(gene_indices.shape[0] < de_budget))]
+                exp_genes = torch.where(cell > 0)
+                unexp_genes = torch.where(cell < 1)
+                task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                    exp_genes[torch.multinomial(cell[exp_genes],
+                                                de_budget,
+                                                replacement=(len(exp_genes) < de_budget))]
             else:
-                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randint(len(exp_genes), (de_budget,))
+
+                task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                    exp_genes[torch.multinomial(cell[exp_genes],
+                                                de_budget,
+                                                replacement=(len(exp_genes) < de_budget))]
+
+                # Task sentence for DE aware
+                if len(exp_genes) > self.cfg.dataset.P:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes)) [0:de_budget]]
+                else:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (de_budget,))]
 
             if len(unexp_genes) > self.cfg.dataset.N:
-                task_sentence[c, self.cfg.dataset.P:] = torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]
+                task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
             else:
-                task_sentence[c, self.cfg.dataset.P:] = torch.randint(len(unexp_genes), (self.cfg.dataset.N,))
+                task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
 
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
             task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
