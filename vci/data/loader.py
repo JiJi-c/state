@@ -230,6 +230,7 @@ class VCIDatasetSentenceCollator(object):
         idxs = torch.zeros(batch_size)
         Xs = torch.zeros((batch_size, (self.P + self.N)))
         Ys = torch.zeros((batch_size, (self.P + self.N)))
+        masks = torch.zeros((batch_size, self.pad_length))
 
         dataset_nums = torch.zeros(batch_size)
 
@@ -240,9 +241,10 @@ class VCIDatasetSentenceCollator(object):
         max_len = 0
 
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
-            (bs, xx, yy, batch_weight) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
+            (bs, xx, yy, batch_weight, mask) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
 
             batch_sentences[i, :] = bs
+            masks[i, :] = mask
             batch_weight = batch_weight.squeeze()
             batch_weights[i, :len(batch_weight)] = batch_weight
 
@@ -259,7 +261,8 @@ class VCIDatasetSentenceCollator(object):
             Xs,
             Ys,
             idxs,
-            batch_weights
+            batch_weights,
+            masks
         )
 
     def softmax(self, x):
@@ -276,14 +279,20 @@ class VCIDatasetSentenceCollator(object):
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
+        mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
 
         for c, cell in enumerate(counts):
-            start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), cell.shape[0] // 2)
+            num_pos_genes = torch.sum(cell > 0)
+            # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
+            # the first is only used if you have more expressed genes than pad_length / 2
+            start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), num_pos_genes)
             genes_ranked_exp = torch.argsort(cell, descending=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
+            # paste the most expressed genes first
             cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
+            # sample with replacement weighted by normalized log counts
             cell_sentences[c, start_sentence + 1:] = torch.multinomial(cell, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
             # Convert tokens to Embeddings
@@ -293,30 +302,30 @@ class VCIDatasetSentenceCollator(object):
 
             if gene_indices is not None:
                 # Task sentence for DE aware
-                de_budget = self.cfg.dataset.P // 2
+                de_budget = min(self.cfg.dataset.P // 4, len(gene_indices))
 
-                task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores,
-                                                                              de_budget,
-                                                                              replacement=(gene_indices.shape[0] < de_budget))]
-                exp_genes = torch.where(cell > 0)
-                unexp_genes = torch.where(cell < 1)
-                task_sentence[c, de_budget:self.cfg.dataset.P] = \
-                    exp_genes[torch.multinomial(cell[exp_genes],
-                                                de_budget,
-                                                replacement=(len(exp_genes) < de_budget))]
-            else:
+                # TODO: if this overlaps too much we might mask out too much of the sentence
+                task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=False)]
 
-                task_sentence[c, de_budget:self.cfg.dataset.P] = \
-                    exp_genes[torch.multinomial(cell[exp_genes],
-                                                de_budget,
-                                                replacement=(len(exp_genes) < de_budget))]
+                # NOTE: this may overlap with the first half of task sentence. let's talk about this more.
+                exp_genes = torch.where(cell > 0)[0]
 
-                # Task sentence for DE aware
-                if len(exp_genes) > self.cfg.dataset.P:
-                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes)) [0:de_budget]]
+                if len(exp_genes) > self.cfg.dataset.P - de_budget:
+                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                        exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P - de_budget]]
                 else:
-                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (de_budget,))]
+                    # sample with replacement
+                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                        exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
+                
+            else:
+                exp_genes = torch.where(cell > 0)[0]
+                if len(exp_genes) > self.cfg.dataset.P:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P]]
+                else:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
+            unexp_genes = torch.where(cell < 1)[0]
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
             else:
@@ -326,4 +335,9 @@ class VCIDatasetSentenceCollator(object):
             task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
 
             task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
-        return cell_sentences, task_sentence, task_counts, expression_weights
+
+            # compute mask for cell_sentence, storing all indices that appear in task_sentence that should be masked in cell_sentence
+            # remove all indices that appear in task_sentence to be masked
+            task_tensor = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
+            mask[c] = ~torch.isin(cell_sentences[c], task_tensor)
+        return cell_sentences, task_sentence, task_counts, expression_weights, mask

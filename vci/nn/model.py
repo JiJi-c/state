@@ -163,15 +163,21 @@ class LitUCEModel(L.LightningModule):
         X = batch[1].to(self.device)
         Y = batch[2]
         batch_weights = batch[4]
+        mask = batch[5]
+        mask = mask.to(torch.bool)
 
+        # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences.long())
+        X = self.pe_embedding(X.long())
+
         # Add a learnable CLS token to the beginning of the sentence
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
-        X = self.pe_embedding(X.long())
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-        _, embedding = self.forward(batch_sentences, mask=None)
+
+        # mask out the genes embeddings that appear in the task sentence
+        _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding

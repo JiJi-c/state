@@ -24,10 +24,6 @@ def get_ESM2_embeddings(cfg):
     return all_pe
 
 def main(cfg):
-
-    # Add all configuration checks here
-    assert cfg.dataset.pad_length == cfg.dataset.N + cfg.dataset.P
-
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
@@ -46,7 +42,7 @@ def main(cfg):
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
-                                  num_workers=15,
+                                  num_workers=4,
                                   persistent_workers=True,
                                   generator=generator)
 
@@ -55,7 +51,7 @@ def main(cfg):
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
-                                num_workers=15,
+                                num_workers=4,
                                 persistent_workers=True,
                                 generator=generator)
 

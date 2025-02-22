@@ -64,8 +64,8 @@ dataset:
   pad_token_idx: 0
   cls_token_idx: 3
   chrom_token_right_idx: 2
-  P: 1024 # P + N should be pad_length
-  N: 1024
+  P: 512
+  N: 512
   num_cells:  36238464 # TODO: Is this required
   filter: true
 
