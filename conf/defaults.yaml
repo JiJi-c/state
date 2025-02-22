@@ -14,7 +14,7 @@ experiment:
   val_check_interval: 2000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
-    path: /large_storage/ctc/userspace/aadduri/vci/checkpoint/
+    path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
     monitor: trainer/train_loss
     every_n_train_steps: 1000
