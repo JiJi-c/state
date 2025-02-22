@@ -10,6 +10,7 @@ import pandas as pd
 from base64 import decodebytes
 from io import BytesIO
 from numpy import load
+from Bio.Seq import Seq
 
 
 from vci.data.gene_emb import create_genename_sequence_map
@@ -182,7 +183,7 @@ if __name__ == '__main__':
 
     gene_seq_map = pd.read_csv(mapping_filename, delimiter='\t')
     mapping_file = os.path.join(args.output,
-                                'Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_mean.pt')
+                                'Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_reverse.pt')
 
     mappings = {}
     if os.path.exists(mapping_file):
@@ -196,8 +197,15 @@ if __name__ == '__main__':
 
         seq = row[1]
         octs = run_forward(seq)
+
+        dna_sequence = Seq(seq)
+        reverse_complement_seq = str(dna_sequence.reverse_complement())
+        rev_octs = run_forward(reverse_complement_seq)
+
         emb = octs['embedding_layer.output'].squeeze().mean(0)
-        mappings[gene] = emb
+        rev_emb = rev_octs['embedding_layer.output'].squeeze().mean(0)
+
+        mappings[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
         logging.debug(f'Embedding of {gene} is {emb}')
 
         if idx % 100 == 0:
