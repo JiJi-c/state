@@ -10,6 +10,7 @@ sys.path.append('../../')
 import vci.train.trainer as train
 
 log = logging.getLogger(__name__)
+# os.environ["NCCL_TIMEOUT"] = "36000"
 
 
 def main(config_file):
