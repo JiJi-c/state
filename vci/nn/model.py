@@ -143,6 +143,14 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
 
+        if self.cfg.model.rda:
+            self.counts_embed = nn.Linear(1, d_model)
+            self.count_scale = nn.Parameter(torch.tensor(0.1))
+
+            if compiled:
+                self.counts_embed = torch.compile(self.counts_embed)
+                self.count_scale = torch.compile(self.count_scale)
+
         # Encodes Tokens for Decoder
         self.gene_embedding_layer = self.encoder # reuse this layer
 
@@ -166,6 +174,9 @@ class LitUCEModel(L.LightningModule):
         mask = batch[5]
         mask = mask.to(torch.bool)
 
+        if self.cfg.model.rda:
+            total_counts = batch[6].to(self.device)
+
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences.long())
         X = self.pe_embedding(X.long())
@@ -177,7 +188,10 @@ class LitUCEModel(L.LightningModule):
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
 
         # mask out the genes embeddings that appear in the task sentence
-        _, embedding = self.forward(batch_sentences, mask=mask)
+        if self.cfg.model.rda: 
+            _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
+        else: 
+            _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -237,14 +251,22 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
-    def forward(self, src: Tensor, mask: Tensor):
+    def forward(self, src: Tensor, mask: Tensor, total_counts: Tensor = None):
         """
         Args:
-            src: Tensor, shape [seq_len, batch_size]
+            src: Tensor, shape [batch_size, seq_len, ntoken]
         Returns:
-            output Tensor of shape [seq_len, batch_size, ntoken]
+            output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
+
+        # add the read depth information broadcasted onto all tokens
+        if self.cfg.model.rda and total_counts is not None:
+            counts_emb = self.counts_embed(total_counts.unsqueeze(1).float()) # [batch_size x d_model]
+            counts_emb = counts_emb * self.count_scale
+            counts_emb = counts_emb.unsqueeze(1)
+            src = src + counts_emb
+
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.

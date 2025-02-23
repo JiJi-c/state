@@ -238,11 +238,15 @@ class VCIDatasetSentenceCollator(object):
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
 
+        total_counts_all = None
+        if self.cfg.model.rda:
+            total_counts_all = torch.zeros(batch_size)
+
         i = 0
         max_len = 0
 
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
-            (bs, xx, yy, batch_weight, mask) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
+            (bs, xx, yy, batch_weight, mask, cell_total_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
 
             batch_sentences[i, :] = bs
             masks[i, :] = mask
@@ -255,6 +259,8 @@ class VCIDatasetSentenceCollator(object):
             Xs[i] = xx  # [pn_idx]
             Ys[i] = yy.squeeze()  # [pn_idx]
             dataset_nums[i] = dataset_num
+            if self.cfg.model.rda and cell_total_counts is not None:
+                total_counts_all[i] = cell_total_counts[0]
             i += 1
 
         return (
@@ -263,7 +269,8 @@ class VCIDatasetSentenceCollator(object):
             Ys,
             idxs,
             batch_weights,
-            masks
+            masks,
+            total_counts_all if self.cfg.model.rda else None,
         )
 
     def softmax(self, x):
@@ -277,16 +284,21 @@ class VCIDatasetSentenceCollator(object):
         if torch.any(counts < 0):
             counts = F.relu(counts)
 
-        expression_weights = torch.log1p(counts)
-        expression_weights = (expression_weights / torch.sum(expression_weights))
-
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
 
+        if self.cfg.model.rda:
+            cell_total_counts = torch.zeros((counts.shape[0],))
+        else:
+            cell_total_counts = None
+
         for c, cell in enumerate(counts):
+            if self.cfg.model.rda:
+                cell_total_counts[c] = torch.sum(cell)
+
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -299,7 +311,7 @@ class VCIDatasetSentenceCollator(object):
             cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
             # sample with replacement weighted by normalized log counts
             cell_sentences[c, start_sentence + 1:] = torch.multinomial(
-                    expression_weights[c], self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+                    cell, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
             # Convert tokens to Embeddings
             # this also includes the cls token, but we will override it later with a learnable torch vector
@@ -338,12 +350,20 @@ class VCIDatasetSentenceCollator(object):
                 task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
 
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
-            task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
 
+            if self.cfg.loss.name == "cross_entropy":
+                # binarize the counts to 0/1
+                task_counts[c] = (task_counts[c] > 0).float()
+            else:
+                # normalize the counts to sum to 1
+                task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
+
+            # convert from dataset specific gene indices to global gene indices
             task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
 
             # compute mask for cell_sentence, storing all indices that appear in task_sentence that should be masked in cell_sentence
             # remove all indices that appear in task_sentence to be masked
-            task_tensor = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
-            mask[c] = ~torch.isin(cell_sentences[c], task_tensor)
-        return cell_sentences, task_sentence, task_counts, expression_weights, mask
+            task_gene_set = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
+            mask[c] = ~torch.isin(cell_sentences[c], task_gene_set)
+
+        return cell_sentences, task_sentence, task_counts, counts, mask, cell_total_counts if self.cfg.model.rda else None
