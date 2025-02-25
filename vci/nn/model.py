@@ -181,11 +181,11 @@ class LitUCEModel(L.LightningModule):
         batch_sentences = self.pe_embedding(batch_sentences.long())
         X = self.pe_embedding(X.long())
 
-        # Add a learnable CLS token to the beginning of the sentence
-        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
-
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
+
+        # Add a learnable CLS token to the beginning of the sentence
+        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
         if self.cfg.model.rda: 
@@ -351,9 +351,9 @@ class LitUCEModel(L.LightningModule):
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
-            all_embs.append(emb)
-        all_embs = torch.cat(all_embs, dim=0)
-        adata.obsm['X_emb'] = all_embs.cpu().numpy()
+            all_embs.append(emb.cpu().detach().numpy())
+        all_embs = np.concatenate(all_embs, axis=0)
+        adata.obsm['X_emb'] = all_embs
 
         col_id = self.cfg.validations.perturbation.pert_col
         ctrl_label = self.cfg.validations.perturbation.ctrl_label

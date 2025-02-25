@@ -15,7 +15,6 @@ import pandas as pd
 
 log = logging.getLogger(__file__)
 
-
 def create_dataloader(cfg,
                       batch_size=32,
                       workers=1,
@@ -284,11 +283,18 @@ class VCIDatasetSentenceCollator(object):
         if torch.any(counts < 0):
             counts = F.relu(counts)
 
+        # if the data has not already been log transformed
+        if torch.max(counts) > 20:
+            expression_weights = torch.log1p(counts)
+        else:
+            expression_weights = counts
+        expression_weights = (expression_weights / torch.sum(expression_weights))
+
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
-        mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
+        mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length), dtype=torch.bool)
 
         if self.cfg.model.rda:
             cell_total_counts = torch.zeros((counts.shape[0],))
@@ -311,7 +317,7 @@ class VCIDatasetSentenceCollator(object):
             cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
             # sample with replacement weighted by normalized log counts
             cell_sentences[c, start_sentence + 1:] = torch.multinomial(
-                    cell, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+                    expression_weights, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
             # Convert tokens to Embeddings
             # this also includes the cls token, but we will override it later with a learnable torch vector
@@ -361,9 +367,46 @@ class VCIDatasetSentenceCollator(object):
             # convert from dataset specific gene indices to global gene indices
             task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
 
-            # compute mask for cell_sentence, storing all indices that appear in task_sentence that should be masked in cell_sentence
-            # remove all indices that appear in task_sentence to be masked
+            # mask out the task genes from the cell sentence
             task_gene_set = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
-            mask[c] = ~torch.isin(cell_sentences[c], task_gene_set)
+            potential_mask = torch.isin(cell_sentences[c], task_gene_set)
+
+            # Calculate target number of masked tokens 
+            target_mask_count = int(self.cfg.task.mask * self.cfg.dataset.pad_length)
+            current_mask_count = potential_mask.sum().item()
+
+            if current_mask_count > target_mask_count:
+                # Too many tokens are being masked - randomly select subset
+                # Only consider indices after the CLS token (index 0)
+                mask_indices = torch.where(potential_mask[1:])[0] + 1  # +1 to adjust for offset
+                keep_indices = torch.randperm(len(mask_indices))[:target_mask_count]
+                selected_indices = mask_indices[keep_indices]
+                
+                # Create new mask with only the selected indices, ensuring CLS is not masked
+                final_mask = torch.zeros_like(potential_mask)
+                final_mask[selected_indices] = True
+                mask[c] = final_mask
+            elif current_mask_count < target_mask_count:
+                # Not enough tokens masked - we need to mask additional tokens
+                non_masked = ~potential_mask
+
+                # Exclude the CLS token (index 0) by only considering indices 1 and up
+                non_masked_indices = torch.where(non_masked[1:])[0] + 1  # +1 to adjust for offset
+                
+                # Calculate how many more tokens to mask
+                additional_needed = target_mask_count - current_mask_count
+                additional_needed = min(additional_needed, len(non_masked_indices))
+                
+                if len(non_masked_indices) > 0 and additional_needed > 0:
+                    additional_indices = non_masked_indices[torch.randperm(len(non_masked_indices))[:additional_needed]]
+                    potential_mask[additional_indices] = True
+                
+                mask[c] = potential_mask
+            else:
+                # Exactly self.cfg.task.mask percent are masked, use the potential mask as is
+                mask[c] = potential_mask
+
+            # make sure that the CLS token is never masked out.
+            mask[c, 0] = False
 
         return cell_sentences, task_sentence, task_counts, counts, mask, cell_total_counts if self.cfg.model.rda else None
