@@ -303,7 +303,12 @@ class VCIDatasetSentenceCollator(object):
 
         for c, cell in enumerate(counts):
             if self.cfg.model.rda:
-                cell_total_counts[c] = torch.sum(cell)
+                total_cnt = torch.sum(cell)
+                # if total_cnt <= 1:
+                #     min_value = cell[cell > 0].min()
+                #     max_value = cell.max()
+                #     total_cnt = cell * (max_value - min_value) + min_value
+                cell_total_counts[c] = total_cnt
 
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
@@ -341,7 +346,7 @@ class VCIDatasetSentenceCollator(object):
                     # sample with replacement
                     task_sentence[c, de_budget:self.cfg.dataset.P] = \
                         exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
-                
+
             else:
                 exp_genes = torch.where(cell > 0)[0]
                 if len(exp_genes) > self.cfg.dataset.P:
