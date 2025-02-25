@@ -119,7 +119,6 @@ class H5adDatasetSentences(data.Dataset):
         gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
         gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
         gene_scores = torch.nn.functional.softmax(gene_scores)
-        # gene_scores = torch.nn.functional.softplus(gene_scores)
         return gene_indices, gene_scores
 
     def __getitem__(self, idx):
@@ -285,10 +284,8 @@ class VCIDatasetSentenceCollator(object):
 
         # if the data has not already been log transformed
         if torch.max(counts) > 20:
-            expression_weights = torch.log1p(counts)
-        else:
-            expression_weights = counts
-        expression_weights = (expression_weights / torch.sum(expression_weights))
+            counts = torch.log1p(counts)
+        expression_weights = (counts / torch.sum(counts))
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
@@ -302,9 +299,6 @@ class VCIDatasetSentenceCollator(object):
             cell_total_counts = None
 
         for c, cell in enumerate(counts):
-            if self.cfg.model.rda:
-                cell_total_counts[c] = torch.sum(cell)
-
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -360,9 +354,12 @@ class VCIDatasetSentenceCollator(object):
             if self.cfg.loss.name == "cross_entropy":
                 # binarize the counts to 0/1
                 task_counts[c] = (task_counts[c] > 0).float()
-            else:
-                # normalize the counts to sum to 1
-                task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
+
+            # REMOVED NORMALIZATION FOR MMD! #
+
+            if self.cfg.model.rda:
+                # sum the counts of the task sentence before converting to global indices
+                cell_total_counts[c] = torch.sum(task_counts[c])
 
             # convert from dataset specific gene indices to global gene indices
             task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]

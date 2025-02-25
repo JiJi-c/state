@@ -92,7 +92,6 @@ class LitUCEModel(L.LightningModule):
         self.compiled = compiled
         self.model_type = 'Transformer'
         self.cls_token = nn.Parameter(torch.randn(1, token_dim))
-        # self.pos_encoder = PositionalEncoding(d_model, dropout)
         self.d_model = d_model
         self.warmup_steps = warmup_steps
         self.dropout = dropout
@@ -134,22 +133,15 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.decoder = torch.compile(self.decoder)
 
+        count_info = 1 if self.cfg.model.rda else 0
         self.binary_decoder = nn.Sequential(
-            SkipBlock(output_dim + d_model),
-            SkipBlock(output_dim + d_model),
-            nn.Linear(output_dim + d_model, 1, bias=True)
+            SkipBlock(output_dim + d_model + count_info),
+            SkipBlock(output_dim + d_model + count_info),
+            nn.Linear(output_dim + d_model + count_info, 1, bias=True)
         )
 
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
-
-        if self.cfg.model.rda:
-            self.counts_embed = nn.Linear(1, d_model)
-            self.count_scale = nn.Parameter(torch.tensor(0.1))
-
-            if compiled:
-                self.counts_embed = torch.compile(self.counts_embed)
-                self.count_scale = torch.compile(self.count_scale)
 
         # Encodes Tokens for Decoder
         self.gene_embedding_layer = self.encoder # reuse this layer
@@ -188,10 +180,7 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        if self.cfg.model.rda: 
-            _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
-        else: 
-            _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -251,7 +240,7 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
-    def forward(self, src: Tensor, mask: Tensor, total_counts: Tensor = None):
+    def forward(self, src: Tensor, mask: Tensor):
         """
         Args:
             src: Tensor, shape [batch_size, seq_len, ntoken]
@@ -259,14 +248,6 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
-
-        # add the read depth information broadcasted onto all tokens
-        if self.cfg.model.rda and total_counts is not None:
-            counts_emb = self.counts_embed(total_counts.unsqueeze(1).float()) # [batch_size x d_model]
-            counts_emb = counts_emb * self.count_scale
-            counts_emb = counts_emb.unsqueeze(1)
-            src = src + counts_emb
-
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
@@ -276,12 +257,27 @@ class LitUCEModel(L.LightningModule):
 
     def shared_step(self, batch, batch_idx):
         X, Y, batch_weights, embs = self._compute_embedding_for_batch(batch)
+        total_counts = batch[6] if self.cfg.model.rda else None
+
         embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
-        combine = torch.cat((X, embs), dim=2)
+        if total_counts is not None:
+            reshaped_counts = total_counts.unsqueeze(1).unsqueeze(2)
+            reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
+            
+            # Concatenate all three tensors along the third dimension
+            combine = torch.cat((X, embs, reshaped_counts), dim=2)
+        else:
+            # Original behavior if total_counts is None
+            combine = torch.cat((X, embs), dim=2)
+
+        # concatenate the counts
         decs = self.binary_decoder(combine)
 
         if self.cfg.loss.name == 'cross_entropy':
             criterion = BCEWithLogitsLoss()
+            target = Y
+        elif self.cfg.loss.name == 'mse':
+            criterion = nn.MSELoss()
             target = Y
         elif self.cfg.loss.name == 'wasserstein':
             criterion = WassersteinLoss(self.d_model)
