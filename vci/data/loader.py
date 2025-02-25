@@ -299,6 +299,14 @@ class VCIDatasetSentenceCollator(object):
             cell_total_counts = None
 
         for c, cell in enumerate(counts):
+            if self.cfg.model.rda:
+                total_cnt = torch.sum(cell)
+                # if total_cnt <= 1:
+                #     min_value = cell[cell > 0].min()
+                #     max_value = cell.max()
+                #     total_cnt = cell * (max_value - min_value) + min_value
+                cell_total_counts[c] = total_cnt
+
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -336,7 +344,7 @@ class VCIDatasetSentenceCollator(object):
                     # sample with replacement
                     task_sentence[c, de_budget:self.cfg.dataset.P] = \
                         exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
-                
+
             else:
                 exp_genes = torch.where(cell > 0)[0]
                 if len(exp_genes) > self.cfg.dataset.P:
@@ -370,7 +378,7 @@ class VCIDatasetSentenceCollator(object):
             task_gene_set = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
             potential_mask = torch.isin(cell_sentences[c], task_gene_set)
 
-            # Calculate target number of masked tokens 
+            # Calculate target number of masked tokens
             target_mask_count = int(self.cfg.task.mask * self.cfg.dataset.pad_length)
             current_mask_count = potential_mask.sum().item()
 
@@ -380,7 +388,7 @@ class VCIDatasetSentenceCollator(object):
                 mask_indices = torch.where(potential_mask[1:])[0] + 1  # +1 to adjust for offset
                 keep_indices = torch.randperm(len(mask_indices))[:target_mask_count]
                 selected_indices = mask_indices[keep_indices]
-                
+
                 # Create new mask with only the selected indices, ensuring CLS is not masked
                 final_mask = torch.zeros_like(potential_mask)
                 final_mask[selected_indices] = True
@@ -391,15 +399,15 @@ class VCIDatasetSentenceCollator(object):
 
                 # Exclude the CLS token (index 0) by only considering indices 1 and up
                 non_masked_indices = torch.where(non_masked[1:])[0] + 1  # +1 to adjust for offset
-                
+
                 # Calculate how many more tokens to mask
                 additional_needed = target_mask_count - current_mask_count
                 additional_needed = min(additional_needed, len(non_masked_indices))
-                
+
                 if len(non_masked_indices) > 0 and additional_needed > 0:
                     additional_indices = non_masked_indices[torch.randperm(len(non_masked_indices))[:additional_needed]]
                     potential_mask[additional_indices] = True
-                
+
                 mask[c] = potential_mask
             else:
                 # Exactly self.cfg.task.mask percent are masked, use the potential mask as is
