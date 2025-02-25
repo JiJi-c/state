@@ -143,14 +143,6 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
 
-        if self.cfg.model.rda:
-            self.counts_embed = nn.Linear(1, d_model)
-            self.count_scale = nn.Parameter(torch.tensor(0.1))
-
-            if compiled:
-                self.counts_embed = torch.compile(self.counts_embed)
-                self.count_scale = torch.compile(self.count_scale)
-
         # Encodes Tokens for Decoder
         self.gene_embedding_layer = self.encoder # reuse this layer
 
@@ -171,27 +163,15 @@ class LitUCEModel(L.LightningModule):
         X = batch[1].to(self.device)
         Y = batch[2]
         batch_weights = batch[4]
-        mask = batch[5]
-        mask = mask.to(torch.bool)
 
-        if self.cfg.model.rda:
-            total_counts = batch[6].to(self.device)
-
-        # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences.long())
+        # Add a learnable CLS token to the beginning of the sentence
+        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
         X = self.pe_embedding(X.long())
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-
-        # Add a learnable CLS token to the beginning of the sentence
-        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
-
-        # mask out the genes embeddings that appear in the task sentence
-        if self.cfg.model.rda:
-            _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
-        else:
-            _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding = self.forward(batch_sentences, mask=None)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -222,7 +202,6 @@ class LitUCEModel(L.LightningModule):
                           leave=True,
                           ncols=100,
                           desc=f"Embeddings for {dataset_name}",):
-            torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
 
@@ -251,22 +230,14 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
-    def forward(self, src: Tensor, mask: Tensor, total_counts: Tensor = None):
+    def forward(self, src: Tensor, mask: Tensor):
         """
         Args:
-            src: Tensor, shape [batch_size, seq_len, ntoken]
+            src: Tensor, shape [seq_len, batch_size]
         Returns:
-            output Tensor of shape [batch_size, seq_len, ntoken]
+            output Tensor of shape [seq_len, batch_size, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
-
-        # add the read depth information broadcasted onto all tokens
-        if self.cfg.model.rda and total_counts is not None:
-            counts_emb = self.counts_embed(total_counts.unsqueeze(1).float()) # [batch_size x d_model]
-            counts_emb = counts_emb * self.count_scale
-            counts_emb = counts_emb.unsqueeze(1)
-            src = src + counts_emb
-
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
@@ -284,7 +255,7 @@ class LitUCEModel(L.LightningModule):
             criterion = BCEWithLogitsLoss()
             target = Y
         elif self.cfg.loss.name == 'wasserstein':
-            criterion = WassersteinLoss()
+            criterion = WassersteinLoss(self.d_model)
             target = Y
         elif self.cfg.loss.name == 'kl_divergence':
             criterion = KLDivergenceLoss(apply_normalization=self.cfg.loss.normalization)
@@ -319,22 +290,25 @@ class LitUCEModel(L.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        if self.global_rank != 0:
-            return
+        self.trainer.strategy.barrier()
 
-        current_step = self.global_step
+        if self.global_rank == 0:
+            current_step = self.global_step
+            if self.cfg.validations.diff_exp.enable:
+                interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
+                current_step = current_step - (current_step % 10)
+                if current_step >= interval and current_step % interval == 0:
+                    self._compute_val_de()
 
-        if self.cfg.validations.diff_exp.enable:
-            interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            current_step = current_step - (current_step % 10)
-            if current_step >= interval and current_step % interval == 0:
-                self._compute_val_de()
+        self.trainer.strategy.barrier()
+        if self.global_rank == 0:
+            if self.cfg.validations.perturbation.enable:
+                interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
+                current_step = current_step - (current_step % 10)
+                if current_step >= interval and current_step % interval == 0:
+                    self._compute_val_perturbation()
 
-        if self.cfg.validations.perturbation.enable:
-            interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            current_step = current_step - (current_step % 10)
-            if current_step >= interval and current_step % interval == 0:
-                self._compute_val_perturbation()
+        self.trainer.strategy.barrier()
 
     def _compute_val_perturbation(self):
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)
@@ -349,11 +323,10 @@ class LitUCEModel(L.LightningModule):
                           ncols=100,
                           desc=f"Embeddings for {self.cfg.validations.perturbation.dataset_name}",):
             torch.cuda.empty_cache()
-            torch.cuda.synchronize()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
-            all_embs.append(emb.cpu().detach().numpy())
-        all_embs = np.concatenate(all_embs, axis=0)
-        adata.obsm['X_emb'] = all_embs
+            all_embs.append(emb)
+        all_embs = torch.cat(all_embs, dim=0)
+        adata.obsm['X_emb'] = all_embs.cpu().numpy()
 
         col_id = self.cfg.validations.perturbation.pert_col
         ctrl_label = self.cfg.validations.perturbation.ctrl_label
@@ -469,7 +442,6 @@ class LitUCEModel(L.LightningModule):
         pred_exp = self._predict_exp_for_adata(tmp_adata,
                                                self.cfg.validations.diff_exp.dataset_name,
                                                self.cfg.validations.diff_exp.obs_pert_col)
-        torch.cuda.synchronize()
         de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
         self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
