@@ -188,9 +188,9 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        if self.cfg.model.rda: 
+        if self.cfg.model.rda:
             _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
-        else: 
+        else:
             _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
@@ -284,7 +284,7 @@ class LitUCEModel(L.LightningModule):
             criterion = BCEWithLogitsLoss()
             target = Y
         elif self.cfg.loss.name == 'wasserstein':
-            criterion = WassersteinLoss(self.d_model)
+            criterion = WassersteinLoss()
             target = Y
         elif self.cfg.loss.name == 'kl_divergence':
             criterion = KLDivergenceLoss(apply_normalization=self.cfg.loss.normalization)
