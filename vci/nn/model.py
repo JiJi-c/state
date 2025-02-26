@@ -292,6 +292,9 @@ class LitUCEModel(L.LightningModule):
             # Original behavior if total_counts is None
             combine = torch.cat((X, embs), dim=2)
 
+        # concatenate the counts
+        decs = self.binary_decoder(combine)
+
         if self.cfg.loss.name == 'cross_entropy':
             criterion = BCEWithLogitsLoss()
             target = Y
@@ -349,9 +352,9 @@ class LitUCEModel(L.LightningModule):
             interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
             current_step = current_step - (current_step % 10)
             if current_step >= interval and current_step % interval == 0:
-                self._compute_val_perturbation()
+                self._compute_val_perturbation(current_step)
 
-    def _compute_val_perturbation(self):
+    def _compute_val_perturbation(self, current_step):
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)
         adata.X = np.log1p(adata.X)
         dataloader = create_dataloader(self.cfg,
@@ -369,7 +372,7 @@ class LitUCEModel(L.LightningModule):
             all_embs.append(emb.cpu().detach().numpy())
         all_embs = np.concatenate(all_embs, axis=0)
         adata.obsm['X_emb'] = all_embs
-        cluster_embedding(adata, emb_key='X_emb', use_pca=True, job_name=self.cfg.experiment.name)
+        cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_name=self.cfg.experiment.name)
 
         col_id = self.cfg.validations.perturbation.pert_col
         ctrl_label = self.cfg.validations.perturbation.ctrl_label

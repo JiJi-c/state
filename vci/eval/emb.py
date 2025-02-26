@@ -7,7 +7,7 @@ import umap
 import wandb
 
 
-def cluster_embedding(adata, emb_key='X_emb', use_pca=True, job_name=''):
+def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_name=''):
     if use_pca:
         embedding = PCA(n_components=2).fit_transform(adata.obsm[emb_key])
     else:
@@ -28,7 +28,7 @@ def cluster_embedding(adata, emb_key='X_emb', use_pca=True, job_name=''):
     plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=5, alpha=0.7)
     plt.xlabel("Component 1")
     plt.ylabel("Component 2")
-    plt.title(f"Embedding ({'PCA' if use_pca else 'UMAP'}) for {emb_key} ({job_name})")
+    plt.title(f"Embedding ({'PCA' if use_pca else 'UMAP'}) for {emb_key} ({job_name} - Iteration: {current_step})")
 
 
     # Create legend handles for each cell type
@@ -38,4 +38,4 @@ def cluster_embedding(adata, emb_key='X_emb', use_pca=True, job_name=''):
     ]
     plt.legend(handles=handles, title="Cell Type", bbox_to_anchor=(1.05, 1), loc='upper left')
     fig = plt.gcf()
-    wandb.log({"Clusters using embedding": fig})
+    wandb.log({f"Clusters using embedding Iteration: {current_step}": fig})
