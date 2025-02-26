@@ -25,6 +25,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert
+from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
 
 
@@ -186,7 +187,10 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        _, embedding = self.forward(batch_sentences, mask=mask)
+        if self.cfg.model.rda:
+            _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
+        else:
+            _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -206,7 +210,7 @@ class LitUCEModel(L.LightningModule):
         if task_counts is not None:
             reshaped_counts = task_counts.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, A.shape[1], 1)
-            
+
             # Concatenate all three tensors along the third dimension
             mlp_input = torch.cat((A, B, reshaped_counts), dim=-1)
         else:
@@ -281,15 +285,12 @@ class LitUCEModel(L.LightningModule):
         if total_counts is not None:
             reshaped_counts = total_counts.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
-            
+
             # Concatenate all three tensors along the third dimension
             combine = torch.cat((X, embs, reshaped_counts), dim=2)
         else:
             # Original behavior if total_counts is None
             combine = torch.cat((X, embs), dim=2)
-
-        # concatenate the counts
-        decs = self.binary_decoder(combine)
 
         if self.cfg.loss.name == 'cross_entropy':
             criterion = BCEWithLogitsLoss()
@@ -298,7 +299,7 @@ class LitUCEModel(L.LightningModule):
             criterion = nn.MSELoss()
             target = Y
         elif self.cfg.loss.name == 'wasserstein':
-            criterion = WassersteinLoss(self.d_model)
+            criterion = WassersteinLoss()
             target = Y
         elif self.cfg.loss.name == 'kl_divergence':
             criterion = KLDivergenceLoss(apply_normalization=self.cfg.loss.normalization)
@@ -368,6 +369,7 @@ class LitUCEModel(L.LightningModule):
             all_embs.append(emb.cpu().detach().numpy())
         all_embs = np.concatenate(all_embs, axis=0)
         adata.obsm['X_emb'] = all_embs
+        cluster_embedding(adata, emb_key='X_emb', use_pca=True, job_name=self.cfg.experiment.name)
 
         col_id = self.cfg.validations.perturbation.pert_col
         ctrl_label = self.cfg.validations.perturbation.ctrl_label
