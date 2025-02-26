@@ -188,6 +188,7 @@ class LitUCEModel(L.LightningModule):
 
         # mask out the genes embeddings that appear in the task sentence
         if self.cfg.model.rda:
+            total_counts = batch[6].to(self.device)
             _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
         else:
             _, embedding = self.forward(batch_sentences, mask=mask)

@@ -19,19 +19,10 @@ def main(config_file):
         log.info(f'Loading config {config_file}...')
         cfg = compose(config_name=config_file.name)
 
-    os.environ['MASTER_ADDR'] = cfg.experiment.master
     os.environ['MASTER_PORT'] = str(cfg.experiment.port)
-
     # WAR: Workaround for sbatch failing when --ntasks-per-node is set.
     # lightning expects this to be set.
     os.environ['SLURM_NTASKS_PER_NODE'] = str(cfg.experiment.num_gpus_per_node)
-
-    # TODO: Not sure why this is set. Delete if not necessary.
-    os.environ["OMP_NUM_THREADS"] = "10"  # export OMP_NUM_THREADS=4
-    os.environ["OPENBLAS_NUM_THREADS"] = "10"  # export OPENBLAS_NUM_THREADS=4
-    os.environ["MKL_NUM_THREADS"] = "10"  # export MKL_NUM_THREADS=6
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "10"  # export VECLIB_MAXIMUM_THREADS=4
-    os.environ["NUMEXPR_NUM_THREADS"] = "10"
 
     log.info(f'*************** Training {cfg.experiment.name} ***************')
     log.info(cfg)
@@ -41,7 +32,7 @@ def main(config_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Create dataset list CSV file"
+        description="VCI pretraining"
     )
     parser.add_argument(
         '-c', "--config",

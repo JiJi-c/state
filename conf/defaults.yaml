@@ -10,7 +10,6 @@ experiment:
   num_epochs: 16
   num_nodes: 1
   num_gpus_per_node: 1
-  master: localhost
   port: 12399
   val_check_interval: 2000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
@@ -55,6 +54,8 @@ validations:
 dataset:
   name: "vci"
   seed: 42
+  num_train_workers: 8
+  num_val_workers: 4
   train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
   val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
   data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed

@@ -37,10 +37,15 @@ scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
 sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
 MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
-MASTER_PORT='12357'
 
 NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
+
+#export NCCL_DEBUG=INFO
+#export NCCL_DEBUG_SUBSYS=ALL
+#export NCCL_VERBOSE_MARK=100
+#export TORCH_DISTRIBUTED_DEBUG=DETAIL
+#export TORCH_CPP_LOG_LEVEL=INFO
 
 srun \\
     python -m vci.train --config {{ traing_config_file }}
