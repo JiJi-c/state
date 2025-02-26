@@ -283,7 +283,7 @@ class VCIDatasetSentenceCollator(object):
             counts = F.relu(counts)
 
         # if the data has not already been log transformed
-        if torch.max(counts) > 20:
+        if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
         expression_weights = (counts / torch.sum(counts))
 
@@ -323,6 +323,7 @@ class VCIDatasetSentenceCollator(object):
                 de_budget = min(self.cfg.dataset.P // 4, len(gene_indices))
 
                 # TODO: if this overlaps too much we might mask out too much of the sentence
+                # THIS CONTAINS EXPRESSED AND UNEXPRESSED GENES
                 task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=False)]
 
                 # NOTE: this may overlap with the first half of task sentence. let's talk about this more.
@@ -343,6 +344,7 @@ class VCIDatasetSentenceCollator(object):
                 else:
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
+            # DE AWARE FOR UNEXPRESSED GENES???
             unexp_genes = torch.where(cell < 1)[0]
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
@@ -402,6 +404,14 @@ class VCIDatasetSentenceCollator(object):
             else:
                 # Exactly self.cfg.task.mask percent are masked, use the potential mask as is
                 mask[c] = potential_mask
+
+                # TODO: DOUBLE CHECK THE MASKING FOR CELL SENTENCE VS TASK SENTENCE.
+                # housekeeping genes, ribosomal and mitochondrial genes take up a lot of the cell sentence
+                # many of these genes are expressed in every cell - log transform helps a lot
+
+                # 1. how much are we masking
+                # 2. on average how much overlap is there
+                # 3. entropy in the cell sentence and the task sentence
 
             # make sure that the CLS token is never masked out.
             mask[c, 0] = False

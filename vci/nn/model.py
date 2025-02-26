@@ -92,6 +92,7 @@ class LitUCEModel(L.LightningModule):
         self.compiled = compiled
         self.model_type = 'Transformer'
         self.cls_token = nn.Parameter(torch.randn(1, token_dim))
+        # self.pos_encoder = PositionalEncoding(d_model, dropout)
         self.d_model = d_model
         self.warmup_steps = warmup_steps
         self.dropout = dropout
@@ -143,6 +144,14 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
 
+        # if self.cfg.model.rda:
+        #     self.counts_embed = nn.Linear(1, d_model)
+        #     self.count_scale = nn.Parameter(torch.tensor(0.001))
+
+        #     if compiled:
+        #         self.counts_embed = torch.compile(self.counts_embed)
+        #         self.count_scale = torch.compile(self.count_scale)
+
         # Encodes Tokens for Decoder
         self.gene_embedding_layer = self.encoder # reuse this layer
 
@@ -165,9 +174,6 @@ class LitUCEModel(L.LightningModule):
         batch_weights = batch[4]
         mask = batch[5]
         mask = mask.to(torch.bool)
-
-        if self.cfg.model.rda:
-            total_counts = batch[6].to(self.device)
 
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences.long())
@@ -194,10 +200,18 @@ class LitUCEModel(L.LightningModule):
         return self.gene_embedding_layer(protein_embeds)
 
     @staticmethod
-    def resize_batch(cell_embeds, task_embeds):
+    def resize_batch(cell_embeds, task_embeds, task_counts=None):
         A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)
         B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)
-        mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
+        if task_counts is not None:
+            reshaped_counts = task_counts.unsqueeze(1).unsqueeze(2)
+            reshaped_counts = reshaped_counts.repeat(1, A.shape[1], 1)
+            
+            # Concatenate all three tensors along the third dimension
+            mlp_input = torch.cat((A, B, reshaped_counts), dim=-1)
+        else:
+            # Original behavior if total_counts is None
+            mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
         return mlp_input
 
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
@@ -214,8 +228,12 @@ class LitUCEModel(L.LightningModule):
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
+            if self.cfg.model.rda:
+                task_counts = batch[6].to(self.device)
+            else:
+                task_counts = None
 
-            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds)
+            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts)
             logprobs_batch = self.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
             logprobs_batchs.append(logprobs_batch.squeeze())
