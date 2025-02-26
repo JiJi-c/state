@@ -31,7 +31,7 @@ from validation.metrics import compute_metrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 def parse_args():
     """
@@ -108,8 +108,6 @@ def get_latest_step_checkpoint(directory):
     
     return checkpoint_path
 
-
-
 def main():
     args = parse_args()
 
@@ -185,6 +183,10 @@ def main():
         from models.global_simple_sum import GlobalSimpleSumPerturbationModel
 
         ModelClass = GlobalSimpleSumPerturbationModel
+    elif model_class_name.lower() == "celltypemean":
+        from models.cell_type_mean import CellTypeMeanModel
+
+        ModelClass = CellTypeMeanModel
     else:
         raise ValueError(f"Unknown model class: {model_class_name}")
 
@@ -341,7 +343,6 @@ def main():
         DE_metric_flag=True,
         class_score_flag=True,
         embed_key=data_module.embed_key,
-        transform=data_module.transform,  # if using a PCA transform
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         decoder=model.decoder,
         shared_perts=shared_perts,

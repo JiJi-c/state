@@ -403,8 +403,11 @@ class PerturbationDataset(Dataset):
             n_cols = self.h5_file["X"].shape[1]
         except Exception:
             # If stored as sparse, infer from indices
-            indices = self.h5_file["X/indices"][:]
-            n_cols = indices.max() + 1
+            try:
+                indices = self.h5_file["X/indices"][:]
+                n_cols = indices.max() + 1
+            except:
+                n_cols = self.h5_file["obsm/X_hvg"].shape[1]
         return n_cols
 
     def _get_num_cells(self) -> int:
@@ -412,9 +415,13 @@ class PerturbationDataset(Dataset):
         try:
             n_rows = self.h5_file["X"].shape[0]
         except Exception:
-            # If stored as sparse
-            indptr = self.h5_file["X/indptr"][:]
-            n_rows = len(indptr) - 1
+            try:
+                # If stored as sparse
+                indptr = self.h5_file["X/indptr"][:]
+                n_rows = len(indptr) - 1
+            except Exception:
+                # if this also fails, fall back to obsm
+                n_rows = self.h5_file["obsm/X_hvg"].shape[0]
         return n_rows
 
     def get_pert_name(self, idx: int) -> str:

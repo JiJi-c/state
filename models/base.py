@@ -46,6 +46,7 @@ class PerturbationModel(ABC, LightningModule):
         dropout: float = 0.1,
         lr: float = 3e-4,
         loss_fn: nn.Module = nn.MSELoss(),
+        control_pert: str = "non-targeting",
         embed_key: Optional[str] = None,
         output_space: str = "gene",
         decoder: Optional[DecoderInterface] = None,
@@ -64,6 +65,7 @@ class PerturbationModel(ABC, LightningModule):
         self.embed_key = embed_key
         self.output_space = output_space
         self.batch_size = batch_size
+        self.control_pert = control_pert
 
         # Training settings
         self.decoder = decoder if output_space == "latent" else None
@@ -125,7 +127,7 @@ class PerturbationModel(ABC, LightningModule):
         else:
             loss = self.loss_fn(pred, batch["X"])
 
-        is_control = "DMSO_TF" == batch["pert_name"][0] or "non-targeting" == batch["pert_name"][0]
+        is_control = self.control_pert in batch["pert_name"]
         if np.random.rand() < 0.1 or is_control:
             self._update_val_cache(batch, pred)
         self.log("val_loss", loss)
@@ -204,14 +206,17 @@ class PerturbationModel(ABC, LightningModule):
         # pytorch lightning sanity check runs val for a single batch, which often does
         # not have control so can't compute these metrics
         uniq_perts = obs["pert_name"].unique()
-        # if "DMSO_TF" in uniq_perts or "non-targeting" in uniq_perts:
+        if self.control_pert not in uniq_perts:
+            self.val_cache = defaultdict(list)
+            return
+
         try:
             metrics = compute_metrics(
                 adata_real=adata_real,  # if output space is gene, this contains the true gene expression anyways, so ignore adata_real_exp
                 adata_pred=adata_pred,
                 adata_real_exp=adata_real_exp,  # don't decode out metrics during validation epochs
                 include_dist_metrics=False,
-                control_pert="DMSO_TF",
+                control_pert=self.control_pert,
                 pert_col="pert_name",
                 celltype_col="cell_type",
                 DE_metric_flag=True,
@@ -307,10 +312,10 @@ class PerturbationModel(ABC, LightningModule):
                         for k, v in batch.items()}
                 
                 # Get predictions
-                pred = self(batch)
+                pred = self(batch, padded=False)
 
                 # Cache predictions and data
-                if np.random.rand() < 0.1 / self.batch_size or "DMSO_TF" in batch["pert_name"] or "non-targeting" in batch["pert_name"]:
+                if np.random.rand() < 0.1 / self.batch_size or self.control_pert in batch["pert_name"]:
                     for k in batch:
                         if isinstance(batch[k], torch.Tensor):
                             cache[k].append(batch[k].cpu().numpy())

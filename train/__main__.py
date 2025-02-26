@@ -18,6 +18,7 @@ from models.decoders import UCELogProbDecoder
 from models import (
     SimpleSumPerturbationModel,
     GlobalSimpleSumPerturbationModel,
+    CellTypeMeanModel,
     EmbedSumPerturbationModel,
     NeuralOTPerturbationModel,
 )
@@ -36,6 +37,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["output_space"] = data_config["output_space"]
     module_config["gene_names"] = var_dims["gene_names"]
     module_config["batch_size"] = training_config["batch_size"]
+    module_config["control_pert"] = data_config.get("control_pert", "non-targeting")
 
     if data_config["output_space"] == "gene":
         # the model outputs will be in gene space, so no decoder is needed
@@ -72,6 +74,13 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "globalsimplesum":
         return GlobalSimpleSumPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "celltypemean":
+        return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
@@ -156,7 +165,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, test_fre
         dirpath=checkpoint_dir,
         filename="{step}",
         save_last=False,  # Don't create/update symlink
-        every_n_train_steps=val_freq,
+        every_n_train_steps=4000,
         save_top_k=-1,  # Keep all periodic checkpoints
     )
     callbacks.append(periodic_ckpt)
@@ -294,7 +303,7 @@ def train(cfg: DictConfig) -> None:
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
-    if (cfg["model"]["name"].lower() == "simplesum" or cfg["model"]["name"].lower() == "globalsimplesum") and cfg[
+    if (cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum") and cfg[
         "data"
     ]["kwargs"]["output_space"] == "latent":
         trainer_kwargs["max_epochs"] = 1  # do exactly one epoch
@@ -327,13 +336,6 @@ def train(cfg: DictConfig) -> None:
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "final.ckpt")
     if not exists(checkpoint_path):
         trainer.save_checkpoint(checkpoint_path)
-
-    # Generate and save predictions
-    trainer.predict(
-        model,
-        datamodule=data_module,
-        ckpt_path=checkpoint_path,
-    )
 
 if __name__ == "__main__":
     train()

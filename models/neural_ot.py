@@ -241,7 +241,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic."""
         pred = self(batch)
-
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
             if "X_gene" not in batch:
@@ -258,7 +257,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         pred = self(batch)
-
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
             if "X_gene" not in batch:
@@ -283,16 +281,15 @@ class NeuralOTPerturbationModel(PerturbationModel):
                 self._update_val_cache(current_batch, current_pred)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        pred = self(batch)
-
-        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        pred = self.forward(batch, padded=False)
+        pred = pred.reshape(1, -1, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
             if "X_gene" not in batch:
                 raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
             target = batch["X_gene"]
         else:
             target = batch["X"]
-        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
         self.log("test_loss", loss)
 

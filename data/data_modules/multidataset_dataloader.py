@@ -2,7 +2,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Literal, Set, Tuple
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from data.utils.data_utils import generate_onehot_map, safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
+from data.utils.data_utils import generate_onehot_map, safe_decode_array, GlobalH5MetadataCache
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
 from data.data_modules.perturbation_tracker import PerturbationTracker
@@ -267,9 +267,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files = self._find_dataset_files(spec.dataset)
             for fname, fpath in files.items():
                 cache = metadata_caches[fpath]
-                ct_code = np.where(cache.cell_type_categories == ct)[0][0]
-                mask = cache.cell_type_codes == ct_code
-                if not np.any(mask):
+                try:
+                    ct_code = np.where(cache.cell_type_categories == ct)[0][0]
+                    mask = cache.cell_type_codes == ct_code
+                except:
+                    # Skip cell type if not found in this file
                     continue
                     
                 pert_codes = cache.pert_codes[mask]
@@ -318,6 +320,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         num_val_cts = max(int(len(self.fewshot_splits) * 0.4), 1)
         np.random.seed(self.random_seed)
         val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
+
+        # if we only have val_cts, just set it to empty set
+        if len(val_cts) == len(self.fewshot_splits):
+            val_cts = set()
 
         # Get zeroshot cell types
         zeroshot_cts = {
@@ -441,19 +447,32 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         # Create test subset. 40% of the specified fewshot cell types (and a minimum of at least 1)
                         # is used as validation data
                         if len(test_pert_indices) > 0:
-                            if ct in val_cts:
-                                # If this cell type is in the val set, create a val subset
-                                val_subset = ds.to_subset_dataset(
-                                    "val", test_pert_indices, test_controls
-                                )
-                                self.val_datasets.append(val_subset)
-                                val_sum += len(val_subset)
-                            else:
+                            if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
                                 test_subset = ds.to_subset_dataset(
                                     "test", test_pert_indices, test_controls
                                 )
                                 self.test_datasets.append(test_subset)
                                 test_sum += len(test_subset)
+
+                                val_subset = ds.to_subset_dataset(
+                                    "val", test_pert_indices, test_controls
+                                )
+                                self.val_datasets.append(val_subset)
+                                val_sum += len(val_subset)
+                            else: # otherwise we can split
+                                if ct in val_cts:
+                                    # If this cell type is in the val set, create a val subset
+                                    val_subset = ds.to_subset_dataset(
+                                        "val", test_pert_indices, test_controls
+                                    )
+                                    self.val_datasets.append(val_subset)
+                                    val_sum += len(val_subset)
+                                else:
+                                    test_subset = ds.to_subset_dataset(
+                                        "test", test_pert_indices, test_controls
+                                    )
+                                    self.test_datasets.append(test_subset)
+                                    test_sum += len(test_subset)
 
                     else:
                         # Regular training cell type - no perturbation-based splitting needed
