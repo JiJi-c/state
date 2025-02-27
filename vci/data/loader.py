@@ -299,9 +299,6 @@ class VCIDatasetSentenceCollator(object):
             cell_total_counts = None
 
         for c, cell in enumerate(counts):
-            if self.cfg.model.rda:
-                cell_total_counts[c] =  torch.sum(cell)
-
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -348,7 +345,11 @@ class VCIDatasetSentenceCollator(object):
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
             # DE AWARE FOR UNEXPRESSED GENES???
-            unexp_genes = torch.where(cell < 1)[0]
+            unexp_genes = torch.where(cell == 0)[0]
+            if len(unexp_genes) == 0:
+                print(f"WARNING: No unexpressed genes (== 0) found for cell {c}. Falling back to < 1.")
+                unexp_genes = torch.where(cell < 1)[0]  # Fallback to < 1
+
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
             else:
