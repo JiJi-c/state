@@ -243,9 +243,9 @@ class NeuralOTPerturbationModel(PerturbationModel):
         pred = self(batch)
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
         else:
             target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
@@ -259,9 +259,9 @@ class NeuralOTPerturbationModel(PerturbationModel):
         pred = self(batch)
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
         else:
             target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
@@ -284,9 +284,9 @@ class NeuralOTPerturbationModel(PerturbationModel):
         pred = self.forward(batch, padded=False)
         pred = pred.reshape(1, -1, self.output_dim)
         if self.output_space == "gene" and self.embed_key is not None:
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
         else:
             target = batch["X"]
         target = target.reshape(1, -1, self.output_dim)
@@ -314,7 +314,7 @@ class NeuralOTPerturbationModel(PerturbationModel):
         return {
             "preds": output_samples,  # The distribution's sample
             "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_gene": batch.get("X_gene", None),  # the true, raw gene expression
+            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
             "gem_group": batch.get("gem_group", None),

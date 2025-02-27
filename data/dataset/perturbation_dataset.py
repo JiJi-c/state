@@ -51,9 +51,7 @@ class PerturbationDataset(Dataset):
         embed_key: Literal["X_uce", "X_pca"] = "X_uce",
         store_raw_expression: bool = False,
         random_state: int = 42,
-        pert_tracker = None,
         should_yield_control_cells: bool = True,
-        preload_data: bool = False,
         **kwargs,
     ):
         """
@@ -85,7 +83,6 @@ class PerturbationDataset(Dataset):
         self.embed_key = embed_key
         self.store_raw_expression = store_raw_expression
         self.rng = np.random.RandomState(random_state)
-        self.pert_tracker = pert_tracker
         self.should_yield_control_cells = should_yield_control_cells
         self.should_yield_controls = should_yield_control_cells
 
@@ -117,12 +114,6 @@ class PerturbationDataset(Dataset):
         # Also track the number of cells (after filtering)
         self.n_cells = len(self.all_indices)
 
-        # TODO-Abhi: we should move this logic to MultiDatasetPerturbationDataModule
-        if self.pert_tracker is not None:
-            cell_type = str(self.cell_type_categories[0])  # single type per file
-            dataset_name = name
-            self.valid_perts = self.pert_tracker.track_celltype_perturbations(self.h5_file, dataset_name, cell_type)
-
         # We'll store the indices for each split.
         self.split_perturbed_indices = {
             "train": set(),
@@ -136,11 +127,6 @@ class PerturbationDataset(Dataset):
             "val": set(),
             "test": set(),
         }
-
-        self.preloaded_data = {}
-        if preload_data:
-            logger.info(f"[{self.name}] Preloading all data into memory...")
-            self._preload_all_data()
 
     def set_store_raw_expression(self, flag: bool):
         """
@@ -223,7 +209,7 @@ class PerturbationDataset(Dataset):
         }
         # Optionally, if raw gene expression is needed:
         if self.store_raw_expression:
-            sample["X_gene"] = self.fetch_gene_expression(underlying_idx)
+            sample["X_hvg"] = self.fetch_obsm_expression(underlying_idx)
         return sample
 
     def get_batch(self, idx: int) -> torch.Tensor:
@@ -291,9 +277,6 @@ class PerturbationDataset(Dataset):
             return Subset(self, perturbed_indices)
 
     def fetch_gene_expression(self, idx: int) -> torch.Tensor:
-        if hasattr(self, "preloaded_data") and "X" in self.preloaded_data:
-            return torch.tensor(self.preloaded_data["X"][idx], dtype=torch.float32)
-
         attrs = dict(self.h5_file["X"].attrs)
         if attrs["encoding-type"] == "csr_matrix":
             indptr = self.h5_file["/X/indptr"]
@@ -314,8 +297,6 @@ class PerturbationDataset(Dataset):
         return data
 
     def fetch_obsm_expression(self, idx: int, key: str) -> torch.Tensor:
-        if hasattr(self, "preloaded_data") and key in self.preloaded_data:
-            return torch.tensor(self.preloaded_data[key][idx], dtype=torch.float32)
         row_data = self.h5_file[f"/obsm/{key}"][idx]
         return torch.tensor(row_data, dtype=torch.float32)
 
@@ -353,9 +334,9 @@ class PerturbationDataset(Dataset):
             "gem_group": torch.tensor([item["gem_group"] for item in batch]),
         }
 
-        # If the first sample has "X_gene", assume the entire batch does
-        if "X_gene" in batch[0]:
-            batch_dict["X_gene"] = torch.stack([item["X_gene"] for item in batch])
+        # If the first sample has "X_hvg", assume the entire batch does
+        if "X_hvg" in batch[0]:
+            batch_dict["X_hvg"] = torch.stack([item["X_hvg"] for item in batch])
 
         # Apply transform if provided
         if transform is not None:
@@ -458,18 +439,3 @@ class PerturbationDataset(Dataset):
             self.control_pert,
             self.batch_col,
         )
-
-    def _preload_all_data(self):
-        """Preload all data into memory."""
-        logger.info(f"[{self.name}] Preloading all data into memory...")
-
-        # Load gene expression
-        self.preloaded_data["X"] = torch.stack([self.fetch_gene_expression(i) for i in range(self.n_cells)])
-
-        # Load embeddings if used
-        if self.embed_key:
-            self.preloaded_data[self.embed_key] = torch.stack(
-                [self.fetch_obsm_expression(i, self.embed_key) for i in range(self.n_cells)]
-            )
-
-        logger.info(f"[{self.name}] Preload complete.")

@@ -106,9 +106,9 @@ class PerturbationModel(ABC, LightningModule):
         """Training step logic."""
         pred = self(batch)
         if self.output_space == "gene" and self.embed_key is not None:
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
             loss = self.loss_fn(pred, target)
         else:
             loss = self.loss_fn(pred, batch["X"])
@@ -120,9 +120,9 @@ class PerturbationModel(ABC, LightningModule):
         """Validation step logic."""
         pred = self(batch)
         if self.output_space == "gene" and self.embed_key is not None:
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
             loss = self.loss_fn(pred, target)
         else:
             loss = self.loss_fn(pred, batch["X"])
@@ -135,9 +135,9 @@ class PerturbationModel(ABC, LightningModule):
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         pred = self(batch)
         if self.output_space == "gene":
-            if "X_gene" not in batch:
-                raise ValueError("We expected 'X_gene' to be in batch for gene-level output!")
-            target = batch["X_gene"]
+            if "X_hvg" not in batch:
+                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
+            target = batch["X_hvg"]
             loss = self.loss_fn(pred, target)
         else:
             loss = self.loss_fn(pred, batch["X"])
@@ -147,7 +147,7 @@ class PerturbationModel(ABC, LightningModule):
         return {
             "preds": pred,  # The distribution's sample
             "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_gene": batch.get("X_gene", None),  # the true, raw gene expression
+            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
             "gem_group": batch.get("gem_group", None),
@@ -163,7 +163,7 @@ class PerturbationModel(ABC, LightningModule):
         return {
             "preds": output_samples,  # The distribution's sample
             "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_gene": batch.get("X_gene", None),  # the true, raw gene expression
+            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
             "gem_group": batch.get("gem_group", None),
@@ -180,14 +180,14 @@ class PerturbationModel(ABC, LightningModule):
             return
 
         for k in self.val_cache:
-            if k in ("X", "X_gene", "pred", "pert", "basal"):
+            if k in ("X", "X_hvg", "pred", "pert", "basal"):
                 self.val_cache[k] = np.concatenate(self.val_cache[k])
             else:
                 self.val_cache[k] = np.concatenate([np.array(obs) for obs in self.val_cache[k]])
 
         # store the non-array, like pert_name, data in adata obs
         obs = pd.DataFrame(
-            {k: v for k, v in self.val_cache.items() if k not in ("X", "X_gene", "pred", "pert", "basal")}
+            {k: v for k, v in self.val_cache.items() if k not in ("X", "X_hvg", "pred", "pert", "basal")}
         )
         adata_real = ad.AnnData(obs=obs, X=self.val_cache["X"])
         adata_pred = ad.AnnData(obs=obs, X=self.val_cache["pred"])
@@ -195,7 +195,7 @@ class PerturbationModel(ABC, LightningModule):
         # TODO: update the evaluation script now.
         if self.output_space == "gene" and self.embed_key is not None:
             # we need to remove this. during validation
-            adata_real_exp = ad.AnnData(obs=obs, X=self.val_cache["X_gene"])
+            adata_real_exp = ad.AnnData(obs=obs, X=self.val_cache["X_hvg"])
             adata_real.var.index = self.gene_names
             adata_pred.var.index = self.gene_names
         else:
@@ -259,25 +259,25 @@ class PerturbationModel(ABC, LightningModule):
 
             # add to calculate validation set metrics during training
             if isinstance(batch[k], torch.Tensor):
-                self.val_cache[k].append(batch[k].cpu().numpy())
+                self.val_cache[k].append(batch[k].detach().cpu().numpy())
             else:
                 self.val_cache[k].append(batch[k])
 
         if "pred" not in self.val_cache:
             self.val_cache["pred"] = []
-        self.val_cache["pred"].append(pred.cpu().numpy())
+        self.val_cache["pred"].append(pred.detach().cpu().numpy())
 
     def _update_test_cache(self, batch, pred):
         for k in batch:
             if k not in self.test_cache:
                 self.test_cache[k] = []
             if isinstance(batch[k], torch.Tensor):
-                self.test_cache[k].append(batch[k].cpu().numpy())
+                self.test_cache[k].append(batch[k].detach().cpu().numpy())
             else:
                 self.test_cache[k].append(batch[k])
         if "pred" not in self.test_cache:
             self.test_cache["pred"] = []
-        self.test_cache["pred"].append(pred.cpu().numpy())
+        self.test_cache["pred"].append(pred.detach().cpu().numpy())
 
     def compute_test_metrics(self, dataloader, prefix="test") -> Dict[str, float]:
         """
@@ -318,29 +318,29 @@ class PerturbationModel(ABC, LightningModule):
                 if np.random.rand() < 0.1 / self.batch_size or self.control_pert in batch["pert_name"]:
                     for k in batch:
                         if isinstance(batch[k], torch.Tensor):
-                            cache[k].append(batch[k].cpu().numpy())
+                            cache[k].append(batch[k].detach().cpu().numpy())
                         else:
                             cache[k].append(batch[k])
-                    cache["pred"].append(pred.cpu().numpy())
+                    cache["pred"].append(pred.detach().cpu().numpy())
 
                 pbar.update(1)
             pbar.close()
 
         # Concatenate all cached arrays
         for k in cache:
-            if k in ("X", "X_gene", "pred", "pert", "basal"):
+            if k in ("X", "X_hvg", "pred", "pert", "basal"):
                 cache[k] = np.concatenate(cache[k])
             else:
                 cache[k] = np.concatenate([np.array(obs) for obs in cache[k]])
 
         # Build AnnData objects for metrics computation
         obs = pd.DataFrame({k: v for k, v in cache.items() 
-                          if k not in ("X", "X_gene", "pred", "pert", "basal")})
+                          if k not in ("X", "X_hvg", "pred", "pert", "basal")})
         adata_real = ad.AnnData(obs=obs, X=cache["X"])
         adata_pred = ad.AnnData(obs=obs, X=cache["pred"])
 
         if self.output_space == "gene" and self.embed_key is not None:
-            adata_real_exp = ad.AnnData(obs=obs, X=cache["X_gene"])
+            adata_real_exp = ad.AnnData(obs=obs, X=cache["X_hvg"])
             adata_real_exp.var.index = self.gene_names
             adata_pred.var.index = self.gene_names
         else:

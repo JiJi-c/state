@@ -45,8 +45,6 @@ class MetadataConcatDataset(ConcatDataset):
         self.soft_mapped_nn_ctrl_indices = None
         self.mapped_nn_ctrl_indices = None
 
-        self.pert_tracker = getattr(first_dataset, "pert_tracker", None)
-
         # Validate all datasets have same metadata
         for dataset in datasets:
             base_dataset = dataset.dataset
@@ -93,7 +91,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         k_neighbors: int = 10, # this should be removed as it's only part of mapping strategy logic now
         eval_pert: Optional[str] = None, # what is this... needs to go
         should_yield_control_cells: bool = True, # this should just always be true, remove it
-        preload_data: bool = False, # this can maybe stay... 
         cell_sentence_len: int = 512,
         **kwargs,
     ):
@@ -135,7 +132,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.n_basal_samples = n_basal_samples
         self.k_neighbors = k_neighbors
         self.should_yield_control_cells = should_yield_control_cells
-        self.preload_data = preload_data
         self.cell_sentence_len = cell_sentence_len
         logger.info(f"Using cell_sentence_len={cell_sentence_len}")
 
@@ -187,8 +183,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # track shared perts for evaluation
         self.eval_pert = eval_pert
-        self.pert_tracker = PerturbationTracker() if eval_pert else None
-
         self._setup_global_maps()
 
     def _find_dataset_files(self, dataset_name: str) -> List[Path]:

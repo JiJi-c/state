@@ -65,12 +65,6 @@ def parse_args():
         ],
         help="Override the mapping strategy at inference time (optional).",
     )
-    parser.add_argument(
-        "--test_time_finetune",
-        type=int,
-        default=0,
-        help="Number of epochs to fine-tune on control cells from test set before evaluation (default: 0, no fine-tuning)",
-    )
     return parser.parse_args()
 
 
@@ -216,19 +210,6 @@ def main():
         logger.warning("No test dataloader found. Exiting.")
         sys.exit(0)
 
-    if args.test_time_finetune > 0:
-        from train.test_time_finetuner import TestTimeFineTuner
-
-        logger.info(f"Running test-time fine-tuning for {args.test_time_finetune} epochs...")
-        finetuner = TestTimeFineTuner(
-            model=model,
-            test_loader=test_loader,
-            control_pert=data_module.get_control_pert(),
-            num_epochs=args.test_time_finetune,
-            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        )
-        finetuner.finetune()
-
     logger.info("Generating predictions on test set using manual loop...")
     preds = []
     device = next(model.parameters()).device
@@ -250,8 +231,9 @@ def main():
     all_celltypes = []
     all_gem_groups = []
     all_reals = []
-    # If you have gene-level output
-    all_X_gene = []
+
+    # If we have output_space = gene
+    all_X_hvg = []
 
     for item in preds:
         # item["preds"] shape: [B, #genes or embed_dim], etc.
@@ -294,20 +276,19 @@ def main():
         else:
             all_reals.append(None)
 
-        if "X_gene" in item and item["X_gene"] is not None:
-            all_X_gene.append(item["X_gene"].cpu().numpy())
+        if "X_hvg" in item and item["X_hvg"] is not None:
+            all_X_hvg.append(item["X_hvg"].cpu().numpy())
         else:
-            all_X_gene.append(None)
+            all_X_hvg.append(None)
 
     # Because each predict_step might have a different batch size, we need to concatenate carefully
     final_preds = np.concatenate([arr for arr in all_preds if arr is not None], axis=0)
     final_reals = np.concatenate([arr for arr in all_reals if arr is not None], axis=0)
 
-    # If you have gene-level output
-    if any(x is not None for x in all_X_gene):
-        final_X_gene = np.concatenate([x for x in all_X_gene if x is not None], axis=0)
+    if any(x is not None for x in all_X_hvg):
+        final_X_hvg = np.concatenate([x for x in all_X_hvg if x is not None], axis=0)
     else:
-        final_X_gene = None
+        final_X_hvg = None
 
     # Build adatas for pred and real
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
@@ -320,12 +301,12 @@ def main():
 
     adata_real_exp = None
 
-    # TODO-Abhi: Remove this before merging, this is to account for a bug with training
-    # that didn't store the decoder
-    if data_module.embed_key == "X_uce" and cfg["data"]["kwargs"]["output_space"] == "latent":
-        model.decoder = UCELogProbDecoder()
-    else:
-        model.decoder = None
+    # # TODO-Abhi: Remove this before merging, this is to account for a bug with training
+    # # that didn't store the decoder
+    # if data_module.embed_key == "X_uce" and cfg["data"]["kwargs"]["output_space"] == "latent":
+    #     model.decoder = UCELogProbDecoder()
+    # else:
+    #     model.decoder = None
 
     shared_perts = data_module.get_shared_perturbations()
 

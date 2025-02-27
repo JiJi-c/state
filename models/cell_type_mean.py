@@ -98,7 +98,7 @@ class CellTypeMeanModel(PerturbationModel):
             for batch in train_loader:
                 # Select the proper expression space
                 if self.output_space == "gene":
-                    X_vals = batch["X_gene"]
+                    X_vals = batch["X_hvg"]
                 else:
                     X_vals = batch["X"]
                 
@@ -142,7 +142,7 @@ class CellTypeMeanModel(PerturbationModel):
         
         Args:
             batch (dict): Dictionary containing at least the keys "cell_type", "pert_name", and the expression key 
-                          ("X_gene" if output_space == "gene", else "X").
+                          ("X_hvg" if output_space == "gene", else "X").
         
         Returns:
             torch.Tensor: Predicted expression tensor of shape (B, output_dim).
@@ -150,7 +150,7 @@ class CellTypeMeanModel(PerturbationModel):
         B = len(batch["cell_type"])
         device = self.dummy_param.device
         # Determine which key to use for the expression values.
-        output_key = "X_gene" if self.output_space == "gene" else "X"
+        output_key = "X_hvg" if self.output_space == "gene" else "X"
         pred_out = torch.zeros((B, self.output_dim), device=device)
         
         for i in range(B):
@@ -181,7 +181,7 @@ class CellTypeMeanModel(PerturbationModel):
             torch.Tensor: The computed loss.
         """
         pred = self(batch)
-        output_key = "X_gene" if self.output_space == "gene" else "X"
+        output_key = "X_hvg" if self.output_space == "gene" else "X"
         target = batch[output_key]
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, prog_bar=True)

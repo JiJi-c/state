@@ -52,7 +52,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             lr: Learning rate if there's anything to optimize. We only keep a dummy param.
             loss_fn: The chosen PyTorch loss function for training (default MSE).
             embed_key: Possibly an embedding key from the datamodule (unused).
-            output_space: 'gene' or 'latent' (we handle either; just read from batch["X_gene"] or batch["X"]).
+            output_space: 'gene' or 'latent' (we handle either; just read from batch["X_hvg"] or batch["X"]).
             decoder: Possibly a separate decoder if output_space='latent' for final evaluation.
             gene_names: Names of genes if needed for logging.
             kwargs: Catch-all for extra arguments from config.
@@ -102,7 +102,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         with torch.no_grad():
             for batch in train_loader:
                 if self.output_space == "gene":
-                    X_vals = batch["X_gene"]
+                    X_vals = batch["X_hvg"]
                 else:
                     X_vals = batch["X"]
                 
@@ -205,7 +205,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         """
         pred = self(batch)
         if self.output_space == "gene":
-            target = batch["X_gene"]
+            target = batch["X_hvg"]
         else:
             target = batch["X"]
         loss = self.loss_fn(pred, target)
