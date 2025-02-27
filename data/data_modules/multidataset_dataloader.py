@@ -5,7 +5,6 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
 from data.utils.data_utils import generate_onehot_map, safe_decode_array, GlobalH5MetadataCache
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
-from data.data_modules.perturbation_tracker import PerturbationTracker
 from data.data_modules.samplers import PerturbationBatchSampler
 from data.data_modules.tasks import TaskSpec, TaskType
 from data.mapping_strategies import (
@@ -16,7 +15,6 @@ from data.mapping_strategies import (
     NearestNeighborMappingStrategy,
     PseudoBulkMappingStrategy,
 )
-from data.transforms.pca import PCATransform  # if needed
 
 import h5py
 import numpy as np
@@ -56,11 +54,6 @@ class MetadataConcatDataset(ConcatDataset):
                 raise ValueError("All datasets must have same pert_col")
             if base_dataset.batch_col != self.batch_col:
                 raise ValueError("All datasets must have same batch_col")
-
-        # TODO-Abhi: Aggregate individual dataset nearest neighbor maps, based on
-        # per-dataset indices, to create a unified mapping across all datasets
-        # for evals.
-
 
 class MultiDatasetPerturbationDataModule(LightningDataModule):
     """
@@ -159,9 +152,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "neighborhood_fraction", 0.0
         )  # move this to a mapping strategy specific config
 
-        # Use the chosen data transform if applicable
-        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # self.transform = PCATransform(n_components=200, device=device) if embed_key == "X_pca" else None
+        self.store_raw_expression = False
+        if self.embed_key != "X_hvg" and self.output_space == "gene":
+            self.store_raw_expression = True
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = True if embed_key == "X_hvg" and self.pert_col == 'drug' else False
@@ -363,6 +356,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     control_pert=self.control_pert,
                     random_state=self.random_seed,
                     should_yield_control_cells=self.should_yield_control_cells,
+                    store_raw_expression=self.store_raw_expression,
                 )
 
                 train_sum = 0
@@ -583,15 +577,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         else:
             input_dim = underlying_ds.n_genes
 
-        if self.output_space == "gene":
-            output_dim = underlying_ds.n_genes
-        else:
-            output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
+        gene_dim = underlying_ds.n_genes
+        output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
 
         gene_names = underlying_ds.get_gene_names()
 
         return {
             "input_dim": input_dim,
+            "gene_dim": gene_dim,
             "output_dim": output_dim,
             "pert_dim": len(self.pert_onehot_map),
             "gene_names": gene_names,

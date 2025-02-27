@@ -234,6 +234,7 @@ def main():
 
     # If we have output_space = gene
     all_X_hvg = []
+    all_gene_preds = []
 
     for item in preds:
         # item["preds"] shape: [B, #genes or embed_dim], etc.
@@ -276,19 +277,33 @@ def main():
         else:
             all_reals.append(None)
 
+        # Store X_hvg for HVG space ground truth
         if "X_hvg" in item and item["X_hvg"] is not None:
             all_X_hvg.append(item["X_hvg"].cpu().numpy())
         else:
             all_X_hvg.append(None)
+        
+        # Store the decoded gene predictions if available
+        if "gene_preds" in item and item["gene_preds"] is not None:
+            all_gene_preds.append(item["gene_preds"].cpu().numpy())
+        else:
+            all_gene_preds.append(None)
 
     # Because each predict_step might have a different batch size, we need to concatenate carefully
     final_preds = np.concatenate([arr for arr in all_preds if arr is not None], axis=0)
     final_reals = np.concatenate([arr for arr in all_reals if arr is not None], axis=0)
 
+    # Handle HVG ground truth if available
     if any(x is not None for x in all_X_hvg):
         final_X_hvg = np.concatenate([x for x in all_X_hvg if x is not None], axis=0)
     else:
         final_X_hvg = None
+
+    # Handle decoded gene predictions if available
+    if any(x is not None for x in all_gene_preds):
+        final_gene_preds = np.concatenate([x for x in all_gene_preds if x is not None], axis=0)
+    else:
+        final_gene_preds = None
 
     # Build adatas for pred and real
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
@@ -299,8 +314,6 @@ def main():
     # Create adata for real
     adata_real = anndata.AnnData(X=final_reals, obs=obs.copy())
 
-    adata_real_exp = None
-
     # # TODO-Abhi: Remove this before merging, this is to account for a bug with training
     # # that didn't store the decoder
     # if data_module.embed_key == "X_uce" and cfg["data"]["kwargs"]["output_space"] == "latent":
@@ -308,14 +321,23 @@ def main():
     # else:
     #     model.decoder = None
 
-    shared_perts = data_module.get_shared_perturbations()
+    # Create adata for real data in gene space (if available)
+    adata_real_gene = None
+    if final_X_hvg is not None:
+        adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs.copy())
+
+    # Create adata for gene predictions (if available)
+    adata_pred_gene = None
+    if final_gene_preds is not None:
+        adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs.copy())
 
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
     metrics = compute_metrics(
         adata_pred=adata_pred,
         adata_real=adata_real,
-        adata_real_exp=adata_real_exp,
+        adata_pred_gene=adata_pred_gene,
+        adata_real_gene=adata_real_gene,
         include_dist_metrics=True,
         control_pert=data_module.get_control_pert(),
         pert_col="pert_name",
@@ -326,7 +348,7 @@ def main():
         embed_key=data_module.embed_key,
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         decoder=model.decoder,
-        shared_perts=shared_perts,
+        shared_perts=data_module.get_shared_perturbations(),
     )
 
     # 7. Summarize results

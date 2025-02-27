@@ -210,7 +210,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             target = batch["X"]
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, prog_bar=True)
-        return None
+        return {"loss": None, "predictions": pred}
 
     def on_save_checkpoint(self, checkpoint):
         """

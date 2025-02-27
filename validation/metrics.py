@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 def compute_metrics(
     adata_pred,  # predictions in uce space
     adata_real,  # true values in uce space
-    adata_real_exp=None,  # gene expression values
+    adata_pred_gene=None,  # predictions in gene space
+    adata_real_gene=None,  # true values in gene space
     embed_key=None,
     include_dist_metrics=False,
     control_pert="non-targeting",
@@ -66,9 +67,6 @@ def compute_metrics(
         adata_real.obs = adata_real.obs.reset_index()
     adata_pred.obs = adata_pred.obs.reset_index()
 
-    should_use_exp = (adata_real_exp) and (
-        (output_space == "gene") or (output_space == "latent" and decoder is not None)
-    )
     metrics = {}
     # for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
     for celltype in pred_celltype_pert_dict:
@@ -84,7 +82,7 @@ def compute_metrics(
             )
 
             adata_real_control = get_samples_by_pert_and_celltype(
-                adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
+                adata_real,
                 pert=control_pert,
                 celltype=celltype,
                 pert_col=pert_col,
@@ -110,7 +108,7 @@ def compute_metrics(
                         )
 
                         adata_real_pert = get_samples_by_pert_and_celltype(
-                            adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
+                            adata_real,
                             pert=pert,
                             celltype=celltype,
                             pert_col=pert_col,
@@ -173,25 +171,22 @@ def compute_metrics(
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
 
-            if should_use_exp:
+            adata_real_gene_ct = None
+            adata_pred_gene_ct = None
+            if adata_real_gene is not None and adata_pred_gene is not None:
                 logger.info(f"Using gene expression data for {celltype}")
-                adata_real_exp_ct = adata_real_exp[adata_real_exp.obs[celltype_col] == celltype]
-            else:
-                adata_real_exp_ct = None
-
-            if adata_real_exp_ct and output_space == "gene":
-                adata_pred_ct.var.index = adata_real_exp_ct.var.index
+                adata_real_gene_ct = adata_real_gene[adata_real_gene.obs[celltype_col] == celltype]
+                adata_pred_gene_ct = adata_pred_gene[adata_pred_gene.obs[celltype_col] == celltype]
 
             if DE_metric_flag:
                 ## Compute differential expression at the full adata level for speed
 
                 # 2) Actually compute DE for both truth & pred
-                # for num_de in [10, 50, 100, 150, 200]:
                 for num_de in [50]:
                     logger.info(f"Computing DE for {num_de} genes")
                     DE_true, DE_pred = compute_DE_for_truth_and_pred(
-                        adata_real_exp_ct or adata_real_ct,
-                        adata_pred_ct,
+                        adata_real_gene_ct or adata_real_ct,
+                        adata_pred_gene_ct or adata_pred_ct,
                         control_pert=control_pert,
                         pert_col=pert_col,
                         n_top_genes=2000,  # default HVG
@@ -237,7 +232,7 @@ def compute_metrics(
                 ## Compute classification score
                 class_score = compute_perturbation_ranking_score(
                     adata_pred_ct,
-                    adata_real_ct if adata_pred_ct.X.shape == adata_real_ct.X.shape else adata_real_exp_ct,
+                    adata_real_ct,
                     pert_col=pert_col,
                     ctrl_pert=control_pert,
                 )

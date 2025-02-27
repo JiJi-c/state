@@ -176,7 +176,8 @@ class PerturbationDataset(Dataset):
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
         if self.embed_key:
             # For example, get the embedding from obsm/X_uce
-            pert_expr = torch.tensor(self.h5_file[f"obsm/{self.embed_key}"][underlying_idx])
+            # pert_expr = torch.tensor(self.h5_file[f"obsm/{self.embed_key}"][underlying_idx])
+            pert_expr = self.fetch_obsm_expression(underlying_idx, self.embed_key)
         else:
             # Otherwise, fetch from X directly
             pert_expr = self.fetch_gene_expression(underlying_idx)
@@ -209,7 +210,7 @@ class PerturbationDataset(Dataset):
         }
         # Optionally, if raw gene expression is needed:
         if self.store_raw_expression:
-            sample["X_hvg"] = self.fetch_obsm_expression(underlying_idx)
+            sample["X_hvg"] = self.fetch_obsm_expression(underlying_idx, 'X_hvg')
         return sample
 
     def get_batch(self, idx: int) -> torch.Tensor:
@@ -335,20 +336,16 @@ class PerturbationDataset(Dataset):
         }
 
         # If the first sample has "X_hvg", assume the entire batch does
+        # This should be log transformed always, since X_hvg is not log counts
         if "X_hvg" in batch[0]:
             batch_dict["X_hvg"] = torch.stack([item["X_hvg"] for item in batch])
+            batch_dict["X_hvg"] = torch.log1p(batch_dict["X_hvg"])
 
         # Apply transform if provided
         if transform is not None:
             batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])
 
-        # # Reshape into sequences
-        # B = len(batch) // cell_sentence_len
-        # for k in ["X", "basal", "pert"]:
-        #     if torch.is_tensor(batch_dict[k]):
-        #         batch_dict[k] = batch_dict[k].view(B, cell_sentence_len, -1)
-                
         return batch_dict
 
     ##############################

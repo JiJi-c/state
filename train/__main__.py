@@ -39,21 +39,22 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["batch_size"] = training_config["batch_size"]
     module_config["control_pert"] = data_config.get("control_pert", "non-targeting")
 
-    if data_config["output_space"] == "gene":
-        # the model outputs will be in gene space, so no decoder is needed
-        module_config["decoder"] = None
-    else:
-        # the model outputs will be in latent space, so a decoder is needed
-        if module_config["embed_key"] == "X_uce":
-            # UCE log prob decoder requires gene names
-            module_config["decoder"] = UCELogProbDecoder()  # TODO-Abhi: try out new decoders here
-        else:
-            # Add more decoders here as needed
-            module_config["decoder"] = None
+    # if data_config["output_space"] == "gene" and data_config["embed_key"] == "X_uce":
+    #     # the model outputs will be in gene space, so no decoder is needed
+    #     module_config["decoder"] = None
+    # else:
+    #     # the model outputs will be in latent space, so a decoder is needed
+    #     if module_config["embed_key"] == "X_uce":
+    #         # UCE log prob decoder requires gene names
+    #         module_config["decoder"] = UCELogProbDecoder()  # TODO-Abhi: try out new decoders here
+    #     else:
+    #         # Add more decoders here as needed
+    #         module_config["decoder"] = None
 
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -61,6 +62,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "neuralot":
         return NeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -68,6 +70,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "simplesum":
         return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -75,6 +78,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "globalsimplesum":
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -82,6 +86,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "celltypemean":
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
