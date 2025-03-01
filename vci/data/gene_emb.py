@@ -8,6 +8,7 @@ def parse_genename_seq(fasta_file):
     with gzip.open(fasta_file, 'rt') as handle:
         for record in SeqIO.parse(handle, 'fasta'):
             header_parts = record.description.split()
+            gene_name = None
             for part in header_parts:
                 if part.startswith('gene_symbol:'):
                     gene_name = part.split(':')[1]
@@ -17,9 +18,10 @@ def parse_genename_seq(fasta_file):
 
 
 def create_genename_sequence_map(fasta_file, output_file=None):
-    logging.info(f'Parsing {fasta_file} for genename and DNA Sequence mapping...')
     gene_dict = parse_genename_seq(fasta_file)
+    logging.info(f'{len(gene_dict)} genes found in {fasta_file}')
     if output_file is not None:
-        with open(output_file, 'w') as f:
+        with open(output_file, 'a') as f:
             for gene, seq in gene_dict.items():
                 f.write(f'{gene}\t{seq}\n')
+    return gene_dict

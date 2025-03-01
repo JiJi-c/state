@@ -1,8 +1,10 @@
 import os
+import shutil
 import logging
 
 import torch
-import scanpy as sc
+import h5py as h5
+import scipy.sparse as sp
 
 from pathlib import Path
 
@@ -40,39 +42,47 @@ class Preprocessor:
                 with open(summary_file, 'w') as f:
                     f.write('species,path,names,num_cells,num_genes\n')
 
-    def _update_summary(self, adata, species, path, dataset):
-        num_cells = adata.X.shape[0]
-        num_genes = adata.X.shape[1]
+    def _convert_to_csr(self, h5f, attrs):
 
-        with open(self.summary_file, 'a') as f:
-            f.write(f'{species},{path},{dataset},{num_cells},{num_genes}\n')
+        num_cells = attrs['shape'][0]
+        num_genes = attrs['shape'][1]
 
-    def _process(self, h5ad_file, ):
-        log.info(f'Processing {h5ad_file}...')
-        species = 'human'
+        data = h5f['X/data'][:]
+        indices = h5f['X/indices'][:]
+        indptr = h5f['X/indptr'][:]
 
-        adata = sc.read(h5ad_file)
-        original_shape = adata.shape
+        csc_matrix = sp.csc_matrix((data, indices, indptr),
+                                   shape=(num_cells, num_genes))
+        csr_matrix = csc_matrix.tocsr()
 
-        sc.pp.filter_genes(adata, min_cells=10)
-        sc.pp.filter_cells(adata, min_genes=25)
-        basic_flt_shape = adata.shape
+        del h5f['X']
+        x_group = h5f.create_group('X')
+        x_group.attrs['encoding-type'] = 'csr_matrix'
+        x_group.attrs['encoding-version'] = '0.1.0'
+        x_group.attrs['shape'] = [num_cells, num_genes]
 
-        try:
-            adata = adata[:, adata.var.feature_name.str.lower().isin(self.gene_filter)]
-        except:
-            adata.var['feature_name'] = adata.var.index.values
-            adata = adata[:, adata.var.feature_name.str.lower().isin(self.gene_filter)]
+        x_group.create_dataset('data', data=csr_matrix.data, compression="gzip")
+        x_group.create_dataset('indices', data=csr_matrix.indices, compression="gzip")
+        x_group.create_dataset('indptr', data=csr_matrix.indptr, compression="gzip")
 
-        emb_flt_shape = adata.shape
+        return num_cells, num_genes
 
-        log.info(f'{h5ad_file} Original size: {original_shape}.'
-                 f' After basic filter: {basic_flt_shape}.'
-                 f' After gene with embedding filter: {emb_flt_shape}.')
+    def _process(self, h5f):
+        log.info(f'Processing {h5f.filename}...')
 
-        adata.var.feature_name = adata.var.feature_name.str.lower()
+        attrs = dict(h5f['X'].attrs)
+        if attrs['encoding-type'] == 'csr_matrix':
+            num_cells = attrs['shape'][0]
+            num_genes = attrs['shape'][1]
+        elif attrs['encoding-type'] == 'array':
+            num_cells = h5f['X'].shape[0]
+            num_genes = h5f['X'].shape[1]
+        elif attrs['encoding-type'] == 'csc_matrix':
+            num_cells, num_genes = self._convert_to_csr(h5f, attrs)
+        else:
+            raise ValueError('Input file contains count mtx in non-csr matrix')
 
-        return adata, species
+        return num_cells, num_genes
 
     def update_dataset_emb_idx(self, adata, dataset):
         if 'feature_name' not in adata.var:
@@ -95,34 +105,35 @@ class Preprocessor:
         h5ad_files = [f.name for f in Path(self.source).iterdir() if f.is_file()]
         h5ad_files = sorted(h5ad_files)
 
+        os.makedirs(os.path.join(self.dest, self.species), exist_ok=True)
+
         for h5ad_file in h5ad_files:
-            path = Path(h5ad_file)
-            dataset = path.stem
-            path = path.name
-            adata_path = os.path.join(self.dest, f'{dataset}.h5ad')
-            adata_tmp_path = os.path.join(self.dest, f'{dataset}_tmp.h5ad')
-
-            if os.path.exists(adata_path):
-                log.info(f'{h5ad_file} already processed...')
+            h5ad_file = Path(os.path.join(self.source, h5ad_file))
+            if h5ad_file.suffix != '.h5ad':
                 continue
 
-            if os.path.getsize(os.path.join(self.source, h5ad_file)) > (10 * (1024 ** 3)):
-                log.warning(f'{h5ad_file} is too big. Skipping for now.')
+            # Copy the file to the destination with temporary name
+            dataset = h5ad_file.stem
+            processed_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}_tmp.h5ad')
+            dest_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}.h5ad')
+
+            if os.path.exists(dest_h5ad_file):
+                log.info(f'{dest_h5ad_file} already exists. Skipping...')
                 continue
 
-            if not os.path.exists(adata_tmp_path):
+            shutil.copyfile(str(h5ad_file), processed_h5ad_file)
+            with h5.File(processed_h5ad_file, mode='r+') as h5f:
                 try:
-                    adata, species = \
-                        self._process(os.path.join(self.source, h5ad_file))
+                    logging.info(f'Processing file {h5ad_file}...')
+                    num_cells, num_genes = self._process(h5f)
 
-                    del adata.uns
-                    adata.write(adata_tmp_path)
+                    with open(self.summary_file, 'a') as f:
+                        f.write(f'{self.species},{dest_h5ad_file},{dataset},{num_cells},{num_genes}\n')
 
-                    self.update_dataset_emb_idx(adata, dataset)
-                    self._update_summary(adata, species, path, dataset)
-                    del adata
+                    # self.update_dataset_emb_idx(adata_path, dataset)
+                    # del adata
                 except Exception as ex:
                     log.exception(ex)
                     continue
 
-            os.rename(adata_tmp_path, adata_path)
+            os.rename(processed_h5ad_file, dest_h5ad_file)
