@@ -91,7 +91,7 @@ exclude_kingdom = ["plantae"]
 summary_file = '/home/rajesh.ilango/scBasecamp_all.csv'
 embedding_file = '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'
-gene_emb_mapping_file = '/large_storage/ctc/ML/data/cell/emb/ESM/genename_sequence_mapping.tsv'
+gene_emb_mapping_file = '/large_storage/ctc/ML/data/cell/emb/ESM/gene_chrom_sequence_mapping.tsv'
 emb_idx_file = '/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch'
 
 
@@ -102,6 +102,7 @@ def download_ref_genome():
         if not os.path.exists(download_file):
             logging.info(f"Downloading {url} to {download_file}...")
             urllib.request.urlretrieve(url, download_file)
+
 
 def generate_gene_sequence_mapping():
     ref_genomes = [f.name for f in Path(geneome_loc).iterdir() if f.is_file()]
