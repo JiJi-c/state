@@ -3,11 +3,12 @@ import fire
 import logging
 import shutil
 
+import torch
 import pandas as pd
-from pathlib import Path
 import urllib.request
 
-import torch
+from pathlib import Path
+from ast import literal_eval
 from transformers import AutoTokenizer, AutoModel
 
 from vci.data.preprocess import Preprocessor
@@ -154,8 +155,9 @@ def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFu
 
 
 def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gene_chrom_sequence_mapping.tsv',
-          output_file="/large_storage/ctc/ML/data/cell/emb/ESM/scBasecamp.gene_symbol_to_embedding_ESM2.pt",
-          batch_size=32):
+          output_file="/large_storage/ctc/ML/data/cell/emb/ESM/scBasecamp.gene_symbol_to_embedding_ESM2.pt"):
+
+    batch_size=1 # PLEASE DO NOT CHANGE THIS VALUE. After changes for addressing splices, this is the only value that works
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Load the ESM2 model from Hugging Face
     model_name = "facebook/esm2_t33_650M_UR50D"  # You can also use other ESM2 variants like "facebook/esm2_t12_35M_UR50D"
@@ -174,20 +176,10 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
     for i in range(0, len(seq_df), batch_size):
         batch = seq_df.iloc[i:i+batch_size]
 
-        sequences = []
-        genes = []
-        for val1, val2 in zip(batch['gene'].tolist(),
-                              batch['sequence'].tolist()):
-            if val1 not in gene_emb_map:
-                # if len(val2) > 22168:
-                #     continue
-                logging.info(f"Processing {val1} = {len(val2)}")
-                genes.append(val1)
-                sequences.append(val2)
-            else:
-                logging.info(f"Skipping {val1}")
-
-        if len(sequences) == 0:
+        sequences = literal_eval(batch['sequence'].iloc[0])
+        gene = batch['gene'].iloc[0]
+        if gene in gene_emb_map:
+            logging.info(f"Skipping {gene}")
             continue
 
         # Tokenize the sequence
@@ -200,15 +192,7 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         # Get the embeddings (representations)
         # There are different ways to get embeddings from ESM2:
         # Using the last hidden state (token embeddings)
-        token_embeddings = outputs.last_hidden_state
-
-        # Using the mean pooling of the last hidden state (sequence embedding)
-        # Mask the padding tokens
-        attention_mask = inputs["attention_mask"]
-        sequence_embeddings = torch.sum(token_embeddings * attention_mask.unsqueeze(-1), dim=1) / torch.sum(attention_mask, dim=1, keepdim=True)
-        sequence_embeddings = sequence_embeddings.cpu().numpy()
-        for gene, emb in zip(genes, sequence_embeddings):
-            gene_emb_map[gene] = emb
+        gene_emb_map[gene] = outputs.last_hidden_state.mean(1).mean(0).cpu().numpy()
 
         if i % (10 * batch_size) == 0:
             logging.info(f'Saving after {i//batch_size} batches...')
@@ -219,7 +203,6 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
             checkpoint_file = output_file.replace('.pt', f'.{i}.pt')
             shutil.copyfile(output_file, checkpoint_file)
 
-        del token_embeddings
         del outputs
 
         # For per-residue embeddings (excluding special tokens)

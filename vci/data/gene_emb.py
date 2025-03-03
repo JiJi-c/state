@@ -5,7 +5,6 @@ from Bio import SeqIO
 
 def parse_genename_seq(fasta_file):
     gene_dict = {}
-    without_chromosome = 0
     with gzip.open(fasta_file, 'rt') as handle:
         for record in SeqIO.parse(handle, 'fasta'):
             header_parts = record.description.split()
@@ -21,17 +20,22 @@ def parse_genename_seq(fasta_file):
                 if gene_name and chromosome:
                     break
 
-            if gene_name is not None:
-                if chromosome is None:
-                    without_chromosome += 1
-                gene_dict[gene_name] = chromosome, str(record.translate().seq)
+            if gene_name:
+                if gene_name in gene_dict:
+                    chroms, prot_seqs = gene_dict[gene_name]
+                else:
+                    chroms, prot_seqs = [], []
 
-    return gene_dict, without_chromosome
+                chroms.append(chromosome)
+                prot_seqs.append(str(record.translate().seq))
+                gene_dict[gene_name] = chroms, prot_seqs
+
+    return gene_dict
 
 
 def create_genename_sequence_map(fasta_file, output_file=None):
-    gene_dict, without_chromosome = parse_genename_seq(fasta_file)
-    logging.info(f'{len(gene_dict)} genes found in {fasta_file}. {without_chromosome} genes without chromosome information.')
+    gene_dict = parse_genename_seq(fasta_file)
+    logging.info(f'{len(gene_dict)} genes in {fasta_file}')
     if output_file is not None:
         with open(output_file, 'a') as f:
             for gene, info in gene_dict.items():
