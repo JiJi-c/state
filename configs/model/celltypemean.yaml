@@ -1,0 +1,6 @@
+name: CellTypeMean
+checkpoint: null 
+device: cuda
+
+kwargs:
+  hidden_dim: 512

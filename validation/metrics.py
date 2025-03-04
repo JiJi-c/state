@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 def compute_metrics(
     adata_pred,  # predictions in uce space
     adata_real,  # true values in uce space
-    adata_real_exp=None,  # gene expression values
+    adata_pred_gene=None,  # predictions in gene space
+    adata_real_gene=None,  # true values in gene space
     embed_key=None,
     include_dist_metrics=False,
     control_pert="non-targeting",
@@ -44,11 +45,8 @@ def compute_metrics(
     celltype_col="celltype_name",
     batch_col="gem_group",
     model_loc=None,
-    num_de_genes=50,
     DE_metric_flag=True,
     class_score_flag=True,
-    checking_mapping_quality=False,
-    transform=None,  # transformation to apply to the data to go from gene expression to non-UCE embedding space
     output_space="gene",
     decoder=None,
     shared_perts=None,
@@ -56,8 +54,6 @@ def compute_metrics(
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
-    # TODO: Test this
-    # assert adata_pred.obs[pert_col].values.tolist() == adata_real.obs[pert_col].values.tolist(), "Pred and real adatas do not have identical perturbations"
     assert set(pred_celltype_pert_dict.keys()) == set(real_celltype_pert_dict.keys()), (
         "Pred and real adatas do not have identical celltypes"
     )
@@ -70,18 +66,11 @@ def compute_metrics(
     if type(adata_real.obs.index) != pd.core.indexes.range.RangeIndex:
         adata_real.obs = adata_real.obs.reset_index()
     adata_pred.obs = adata_pred.obs.reset_index()
-    should_use_exp = (adata_real_exp) and (
-        (output_space == "gene") or (output_space == "latent" and decoder is not None)
-    )
+
     metrics = {}
-    # for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
     for celltype in pred_celltype_pert_dict:
         with time_it(f"compute_metrics_cell_type_{celltype}"):
             metrics[celltype] = defaultdict(list)
-
-            if checking_mapping_quality:
-                metrics[celltype]["true_mean_corr"] = []
-                metrics[celltype]["pred_mean_corr"] = []
 
             adata_pred_control = get_samples_by_pert_and_celltype(
                 adata_pred,
@@ -92,7 +81,7 @@ def compute_metrics(
             )
 
             adata_real_control = get_samples_by_pert_and_celltype(
-                adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
+                adata_real,
                 pert=control_pert,
                 celltype=celltype,
                 pert_col=pert_col,
@@ -118,7 +107,7 @@ def compute_metrics(
                         )
 
                         adata_real_pert = get_samples_by_pert_and_celltype(
-                            adata_real if adata_pred.X.shape == adata_real.X.shape else adata_real_exp,
+                            adata_real,
                             pert=pert,
                             celltype=celltype,
                             pert_col=pert_col,
@@ -157,11 +146,6 @@ def compute_metrics(
                             include_dist_metrics=include_dist_metrics,
                         )
 
-                        ## Compute metrics at the level of mapped controls for each sample
-                        # nn_metrics = _compute_metrics_nearest(pert_preds,
-                        #                                     pert_true,
-                        #                                     nn_ctrls)
-
                         ## Compute metrics across all batches for a specific perturbation
                         curr_metrics = _compute_metrics_dict(
                             pert_preds,
@@ -172,43 +156,13 @@ def compute_metrics(
                             include_dist_metrics=include_dist_metrics,
                         )
 
-                        ## Softmap metrics
-                        # softmap_metrics = _compute_metrics_dict(pert_preds,
-                        #                                         pert_true,
-                        #                                         control_true_softmap,
-                        #                                         control_pred_softmap,
-                        #                                         suffix="softmap",
-                        #                         include_dist_metrics=include_dist_metrics)
-
-                        ## Compute alignment across samples
-                        if checking_mapping_quality:
-                            mapped_controls = adata_pred_pert.layers["mapped_control"]
-
-                            true_corr_matrix = np.corrcoef(pert_true - mapped_controls)
-                            upper_tri = np.triu(true_corr_matrix, k=1)
-                            corr_values = upper_tri[upper_tri != 0]
-                            true_mean_corr = np.mean(corr_values)
-                            metrics[celltype]["true_mean_corr"].append(true_mean_corr)
-
-                            pred_corr_matrix = np.corrcoef(pert_preds - mapped_controls)
-                            upper_tri = np.triu(pred_corr_matrix, k=1)
-                            corr_values = upper_tri[upper_tri != 0]
-                            pred_mean_corr = np.mean(corr_values)
-                            metrics[celltype]["pred_mean_corr"].append(pred_mean_corr)
-
-                            ## Also measure the magnitude of predicted and true
-                            # perturbation effects
-                            true_norm = np.linalg.norm(pert_true - mapped_controls, axis=1)
-                            pred_norm = np.linalg.norm(pert_preds - mapped_controls, axis=1)
-                            metrics[celltype]["true_effect_norm"] = np.mean(true_norm)
-                            metrics[celltype]["pred_effect_norm"] = np.mean(pred_norm)
-
                         metrics[celltype]["pert"].append(pert)
                         for k, v in curr_metrics.items():
                             metrics[celltype][k].append(v)
 
                         for k, v in batched_metrics.items():
                             metrics[celltype][k].append(v)
+                        
                 except:
                     print(f"Failed for {celltype} {pert}")
                     pass
@@ -216,25 +170,22 @@ def compute_metrics(
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
 
-            if should_use_exp:
+            adata_real_gene_ct = None
+            adata_pred_gene_ct = None
+            if adata_real_gene is not None and adata_pred_gene is not None:
                 logger.info(f"Using gene expression data for {celltype}")
-                adata_real_exp_ct = adata_real_exp[adata_real_exp.obs[celltype_col] == celltype]
-            else:
-                adata_real_exp_ct = None
-
-            if adata_real_exp_ct and output_space == "gene":
-                adata_pred_ct.var.index = adata_real_exp_ct.var.index
+                adata_real_gene_ct = adata_real_gene[adata_real_gene.obs[celltype_col] == celltype]
+                adata_pred_gene_ct = adata_pred_gene[adata_pred_gene.obs[celltype_col] == celltype]
 
             if DE_metric_flag:
                 ## Compute differential expression at the full adata level for speed
 
                 # 2) Actually compute DE for both truth & pred
-                # for num_de in [10, 50, 100, 150, 200]:
                 for num_de in [50]:
                     logger.info(f"Computing DE for {num_de} genes")
                     DE_true, DE_pred = compute_DE_for_truth_and_pred(
-                        adata_real_exp_ct or adata_real_ct,
-                        adata_pred_ct,
+                        adata_real_gene_ct or adata_real_ct,
+                        adata_pred_gene_ct or adata_pred_ct,
                         control_pert=control_pert,
                         pert_col=pert_col,
                         n_top_genes=2000,  # default HVG
@@ -244,8 +195,8 @@ def compute_metrics(
                     )
 
                     DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred)
-                    metrics[celltype][f"DE_{num_de}"] = [DE_metrics[k] for k in DE_metrics]
-                    # metrics[celltype]['DE'] = [DE_metrics[k] for k in metrics[celltype]['pert']]
+                    metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
+
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
@@ -280,7 +231,7 @@ def compute_metrics(
                 ## Compute classification score
                 class_score = compute_perturbation_ranking_score(
                     adata_pred_ct,
-                    adata_real_ct if adata_pred_ct.X.shape == adata_real_ct.X.shape else adata_real_exp_ct,
+                    adata_real_ct,
                     pert_col=pert_col,
                     ctrl_pert=control_pert,
                 )
@@ -290,8 +241,9 @@ def compute_metrics(
         for celltype, stats in metrics.items():
             metrics[celltype] = pd.DataFrame(stats).set_index("pert")
         return metrics
-    except:
-        return
+    except Exception as e:
+        print(e)
+        return metrics
 
 
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):
@@ -302,12 +254,6 @@ def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="",
         pert_pred, pert_true, ctrl_true, ctrl_pred
     )
     metrics["cosine_" + suffix] = compute_cosine_similarity(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    metrics["cosine_v2_" + suffix] = compute_cosine_similarity_v2(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    if include_dist_metrics:
-        with time_it("compute_wasserstein"):
-            metrics["wasserstein_" + suffix] = compute_wasserstein(pert_pred, pert_true, ctrl_true, ctrl_pred)
-        with time_it("compute_mmd"):
-            metrics["mmd_" + suffix] = compute_mmd(pert_pred, pert_true, ctrl_true, ctrl_pred)
     return metrics
 
 
@@ -321,7 +267,6 @@ def _compute_metrics_dict_batched(
     include_dist_metrics=False,
 ):
     batched_means = {}
-    # pd.DataFrame(np.append(np.delete(pert_pred, 9193, 1), np.array([pred_batches]).T, axis=1), columns=([str(x) for x in range(0, 9193)] + ['batch']))
 
     if pert_pred.shape[1] == pert_true.shape[1] + 1:
         pert_pred = np.delete(pert_pred, pert_pred.shape[1] - 1, 1)
@@ -335,22 +280,6 @@ def _compute_metrics_dict_batched(
     metrics = {}
     metrics["pearson_delta_batched_controls"] = compute_pearson_delta_batched(batched_means, weightings)
     return metrics
-
-
-##TODO implementation
-# def _compute_metrics_nearest(pert_pred, pert_true, mapped_controls):
-
-
-#     res = pearsonr((pert_pred - mapped_controls).mean(0), \
-#                             (pert_true - mapped_controls).mean(0))[0]
-#     metrics = {}
-#     metrics["pearson_delta_nearest"] = res
-#     return metrics
-
-# def _compute_cross_pert_metrics_dict(adata_real, adata_pred):
-#     metrics = {}
-#     metrics['gene_overlap'] = compute_gene_overlap(adata_pred.X, adata_real.X)
-
 
 def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_col):
     pert_idx = (adata.obs[pert_col] == pert).to_numpy()

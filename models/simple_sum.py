@@ -198,7 +198,7 @@ class SimpleSumPerturbationModel(PerturbationModel):
     def training_step(self, batch, batch_idx):
         """Override to handle parameter-free case."""
         pred = self(batch)
-        target = batch["X_gene"] if self.output_space == "gene" else batch["X"]
+        target = batch["X_hvg"] if self.output_space == "gene" else batch["X"]
         loss = self.loss_fn(pred, target)
 
         # Only log the loss if we're actually training parameters

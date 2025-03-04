@@ -6,6 +6,8 @@ import torch
 import anndata as ad
 import numpy as np
 import scanpy as sc
+import warnings
+# import rapids_singlecell as rsc
 import pandas as pd
 
 from typing import Optional
@@ -18,7 +20,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics.pairwise import cosine_similarity
 
 from models.base import DecoderInterface
-
 
 def to_dense(X):
     if scipy.sparse.issparse(X):
@@ -118,17 +119,13 @@ def compute_pearson_delta_batched(batched_means, weightings):
 
 
 def compute_cosine_similarity(pred, true, ctrl, pred_ctrl):
-    """Computes cosine similarity between x and y."""
-
-    centroid_true = np.mean(true, axis=0, keepdims=True)
-    cos_sim_scores = []
-    for i in range(pred.shape[0]):
-        pred_i = pred[i]
-        true = centroid_true.flatten()
-        cos_sim_calc = np.dot(pred_i, true) / (np.linalg.norm(pred_i) * np.linalg.norm(true))
-        cos_sim_scores.append(cos_sim_calc)
-
-    # return cos_sim_scores, max(cos_sim_scores)
+    """Computes cosine similarity between predictions and the true centroid in a vectorized manner."""
+    centroid_true = np.mean(true, axis=0, keepdims=True)  # shape (1, n_features)
+    pred_norms = np.linalg.norm(pred, axis=1)             # shape (n_samples,)
+    true_norm = np.linalg.norm(centroid_true)
+    # Compute dot products in one go
+    dot_products = np.dot(pred, centroid_true.T).flatten() # shape (n_samples,)
+    cos_sim_scores = dot_products / (pred_norms * true_norm)
     return np.mean(cos_sim_scores)
 
 
@@ -232,6 +229,7 @@ def compute_DE_for_truth_and_pred(
     sc.pp.highly_variable_genes(adata_real_ct, n_top_genes=n_top_genes)
     hvg_mask = adata_real_ct.var["highly_variable"].values
     adata_real_hvg = adata_real_ct[:, hvg_mask].copy()
+    adata_real_hvg.obs["pert_name"] = adata_real_hvg.obs["pert_name"].astype('category')
     DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
 
     # 3) Possibly decode predictions if in latent space
@@ -251,10 +249,10 @@ def compute_DE_for_truth_and_pred(
             sc.pp.log1p(adata_pred_gene)
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
         adata_pred_hvg = adata_pred_gene[:, hvg_mask].copy()
+        adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
         DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
 
     return DE_true, DE_pred
-
 
 def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
     """
@@ -262,7 +260,14 @@ def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
     returns a DataFrame: row=pert_name, columns=top genes in descending order
     """
 
+    import time
+
     # rank Genes
+    start_time = time.time()
+    group_counts = adata_gene.obs[pert_col].value_counts()
+    valid_groups = group_counts[group_counts > 1].index.tolist()
+    adata_gene = adata_gene[adata_gene.obs[pert_col].isin(valid_groups)]
+
     sc.tl.rank_genes_groups(
         adata_gene,
         groupby=pert_col,
@@ -271,9 +276,10 @@ def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
         n_genes=k,
         method="wilcoxon",
     )
-
+    print("Time taken for rank_genes_groups: ", time.time() - start_time)
     # Extract results to DataFrame
     de_genes = pd.DataFrame(adata_gene.uns["rank_genes_groups"]["names"])
+    
     # transpose so each row=pert, columns=the top K genes
     return de_genes.T
 
@@ -368,58 +374,3 @@ def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", 
     mean_rank = np.mean(ranks) / len(all_perts)
 
     return mean_rank
-
-
-def compute_GI_score(pred_adata, true_adata, pert_col="gene", celltype_col="cell_type"):
-    """Compute the Spearman correlation between the
-    predicted and true GI scores"""
-    pass
-
-
-def get_GI_params(preds, combo):
-    """
-    Get GI parameters
-
-    Args:
-        preds (dict): dictionary of predictions
-        combo (list): list of perturbations
-
-    """
-    singles_expr = np.array([preds[combo[0]], preds[combo[1]]]).T
-    first_expr = np.array(preds[combo[0]]).T
-    second_expr = np.array(preds[combo[1]]).T
-    double_expr = np.array(preds[combo[0] + "_" + combo[1]]).T
-
-    return get_GI_coeffs(singles_expr, first_expr, second_expr, double_expr)
-
-
-def get_GI_coeffs(singles_expr, first_expr, second_expr, double_expr):
-    """
-    Get coefficients for GI calculation
-
-    Args:
-        singles_expr (np.array): single perturbation expression
-        first_expr (np.array): first perturbation expression
-        second_expr (np.array): second perturbation expression
-        double_expr (np.array): double perturbation expression
-
-    """
-    results = {}
-    results["ts"] = TheilSenRegressor(fit_intercept=False, max_subpopulation=1e5, max_iter=1000, random_state=1000)
-    X = singles_expr
-    y = double_expr
-    results["ts"].fit(X, y.ravel())
-    Zts = results["ts"].predict(X)
-    results["c1"] = results["ts"].coef_[0]
-    results["c2"] = results["ts"].coef_[1]
-    results["mag"] = np.sqrt((results["c1"] ** 2 + results["c2"] ** 2))
-
-    results["dcor"] = distance_correlation(singles_expr, double_expr)
-    results["dcor_singles"] = distance_correlation(first_expr, second_expr)
-    results["dcor_first"] = distance_correlation(first_expr, double_expr)
-    results["dcor_second"] = distance_correlation(second_expr, double_expr)
-    results["corr_fit"] = np.corrcoef(Zts.flatten(), double_expr.flatten())[0, 1]
-    results["dominance"] = np.abs(np.log10(results["c1"] / results["c2"]))
-    results["eq_contr"] = np.min([results["dcor_first"], results["dcor_second"]]) / np.max(
-        [results["dcor_first"], results["dcor_second"]]
-    )

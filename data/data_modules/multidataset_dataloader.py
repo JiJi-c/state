@@ -2,10 +2,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Literal, Set, Tuple
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from data.utils.data_utils import generate_onehot_map, safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
+from data.utils.data_utils import generate_onehot_map, safe_decode_array, GlobalH5MetadataCache
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
-from data.data_modules.perturbation_tracker import PerturbationTracker
 from data.data_modules.samplers import PerturbationBatchSampler
 from data.data_modules.tasks import TaskSpec, TaskType
 from data.mapping_strategies import (
@@ -16,7 +15,6 @@ from data.mapping_strategies import (
     NearestNeighborMappingStrategy,
     PseudoBulkMappingStrategy,
 )
-from data.transforms.pca import PCATransform  # if needed
 
 import h5py
 import numpy as np
@@ -45,8 +43,6 @@ class MetadataConcatDataset(ConcatDataset):
         self.soft_mapped_nn_ctrl_indices = None
         self.mapped_nn_ctrl_indices = None
 
-        self.pert_tracker = getattr(first_dataset, "pert_tracker", None)
-
         # Validate all datasets have same metadata
         for dataset in datasets:
             base_dataset = dataset.dataset
@@ -58,11 +54,6 @@ class MetadataConcatDataset(ConcatDataset):
                 raise ValueError("All datasets must have same pert_col")
             if base_dataset.batch_col != self.batch_col:
                 raise ValueError("All datasets must have same batch_col")
-
-        # TODO-Abhi: Aggregate individual dataset nearest neighbor maps, based on
-        # per-dataset indices, to create a unified mapping across all datasets
-        # for evals.
-
 
 class MultiDatasetPerturbationDataModule(LightningDataModule):
     """
@@ -93,7 +84,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         k_neighbors: int = 10, # this should be removed as it's only part of mapping strategy logic now
         eval_pert: Optional[str] = None, # what is this... needs to go
         should_yield_control_cells: bool = True, # this should just always be true, remove it
-        preload_data: bool = False, # this can maybe stay... 
         cell_sentence_len: int = 512,
         **kwargs,
     ):
@@ -135,7 +125,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.n_basal_samples = n_basal_samples
         self.k_neighbors = k_neighbors
         self.should_yield_control_cells = should_yield_control_cells
-        self.preload_data = preload_data
         self.cell_sentence_len = cell_sentence_len
         logger.info(f"Using cell_sentence_len={cell_sentence_len}")
 
@@ -163,9 +152,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "neighborhood_fraction", 0.0
         )  # move this to a mapping strategy specific config
 
-        # Use the chosen data transform if applicable
-        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # self.transform = PCATransform(n_components=200, device=device) if embed_key == "X_pca" else None
+        self.store_raw_expression = False
+        if self.embed_key != "X_hvg" and self.output_space == "gene":
+            self.store_raw_expression = True
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = True if embed_key == "X_hvg" and self.pert_col == 'drug' else False
@@ -187,8 +176,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # track shared perts for evaluation
         self.eval_pert = eval_pert
-        self.pert_tracker = PerturbationTracker() if eval_pert else None
-
         self._setup_global_maps()
 
     def _find_dataset_files(self, dataset_name: str) -> List[Path]:
@@ -267,9 +254,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             files = self._find_dataset_files(spec.dataset)
             for fname, fpath in files.items():
                 cache = metadata_caches[fpath]
-                ct_code = np.where(cache.cell_type_categories == ct)[0][0]
-                mask = cache.cell_type_codes == ct_code
-                if not np.any(mask):
+                try:
+                    ct_code = np.where(cache.cell_type_categories == ct)[0][0]
+                    mask = cache.cell_type_codes == ct_code
+                except:
+                    # Skip cell type if not found in this file
                     continue
                     
                 pert_codes = cache.pert_codes[mask]
@@ -319,6 +308,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         np.random.seed(self.random_seed)
         val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
 
+        # if we only have val_cts, just set it to empty set
+        if len(val_cts) == len(self.fewshot_splits):
+            val_cts = set()
+
         # Get zeroshot cell types
         zeroshot_cts = {
             spec.cell_type
@@ -363,6 +356,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     control_pert=self.control_pert,
                     random_state=self.random_seed,
                     should_yield_control_cells=self.should_yield_control_cells,
+                    store_raw_expression=self.store_raw_expression,
                 )
 
                 train_sum = 0
@@ -441,19 +435,32 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         # Create test subset. 40% of the specified fewshot cell types (and a minimum of at least 1)
                         # is used as validation data
                         if len(test_pert_indices) > 0:
-                            if ct in val_cts:
-                                # If this cell type is in the val set, create a val subset
-                                val_subset = ds.to_subset_dataset(
-                                    "val", test_pert_indices, test_controls
-                                )
-                                self.val_datasets.append(val_subset)
-                                val_sum += len(val_subset)
-                            else:
+                            if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
                                 test_subset = ds.to_subset_dataset(
                                     "test", test_pert_indices, test_controls
                                 )
                                 self.test_datasets.append(test_subset)
                                 test_sum += len(test_subset)
+
+                                val_subset = ds.to_subset_dataset(
+                                    "val", test_pert_indices, test_controls
+                                )
+                                self.val_datasets.append(val_subset)
+                                val_sum += len(val_subset)
+                            else: # otherwise we can split
+                                if ct in val_cts:
+                                    # If this cell type is in the val set, create a val subset
+                                    val_subset = ds.to_subset_dataset(
+                                        "val", test_pert_indices, test_controls
+                                    )
+                                    self.val_datasets.append(val_subset)
+                                    val_sum += len(val_subset)
+                                else:
+                                    test_subset = ds.to_subset_dataset(
+                                        "test", test_pert_indices, test_controls
+                                    )
+                                    self.test_datasets.append(test_subset)
+                                    test_sum += len(test_subset)
 
                     else:
                         # Regular training cell type - no perturbation-based splitting needed
@@ -509,7 +516,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def train_eval_dataloader(self):
@@ -517,7 +524,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.train_eval_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def val_dataloader(self):
@@ -525,7 +532,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
@@ -533,7 +540,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, cell_sentence_len=self.cell_sentence_len)
         ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):
@@ -570,15 +577,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         else:
             input_dim = underlying_ds.n_genes
 
-        if self.output_space == "gene":
-            output_dim = underlying_ds.n_genes
-        else:
-            output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
+        gene_dim = underlying_ds.n_genes
+        output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
 
         gene_names = underlying_ds.get_gene_names()
 
         return {
             "input_dim": input_dim,
+            "gene_dim": gene_dim,
             "output_dim": output_dim,
             "pert_dim": len(self.pert_onehot_map),
             "gene_names": gene_names,

@@ -52,7 +52,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             lr: Learning rate if there's anything to optimize. We only keep a dummy param.
             loss_fn: The chosen PyTorch loss function for training (default MSE).
             embed_key: Possibly an embedding key from the datamodule (unused).
-            output_space: 'gene' or 'latent' (we handle either; just read from batch["X_gene"] or batch["X"]).
+            output_space: 'gene' or 'latent' (we handle either; just read from batch["X_hvg"] or batch["X"]).
             decoder: Possibly a separate decoder if output_space='latent' for final evaluation.
             gene_names: Names of genes if needed for logging.
             kwargs: Catch-all for extra arguments from config.
@@ -79,6 +79,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
 
         # A dummy parameter so that Lightning sees something to "optimize"
         self.dummy_param = nn.Parameter(torch.zeros(1, requires_grad=True))
+        self.pert_mean_offsets = {}
     
     def on_fit_start(self):
         """Called by Lightning before training."""
@@ -101,7 +102,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         with torch.no_grad():
             for batch in train_loader:
                 if self.output_space == "gene":
-                    X_vals = batch["X_gene"]
+                    X_vals = batch["X_hvg"]
                 else:
                     X_vals = batch["X"]
                 
@@ -121,7 +122,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             all_ctrl_means = []  # For computing global basal 
             for ct_name, pert_dict in celltype_sums.items():
                 # Get control mean for this cell type
-                ctrl_stats = pert_dict.get("non-targeting")
+                ctrl_stats = pert_dict.get(self.control_pert)
                 if ctrl_stats is None or ctrl_stats["count"] == 0:
                     logger.warning(f"No control cells found for cell type {ct_name}")
                     continue
@@ -132,7 +133,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
                 
                 # Compute perturbation means and deltas for this cell type
                 for p_name, stats in pert_dict.items():
-                    if p_name == "non-targeting":
+                    if p_name == self.control_pert:
                         continue
                         
                     if stats["count"] == 0:
@@ -158,7 +159,7 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
                 self.pert_mean_offsets[p_name] = torch.stack(pert_deltas).mean(0)
 
             # Add zero offset for control
-            self.pert_mean_offsets["non-targeting"] = torch.zeros(self.output_dim)
+            self.pert_mean_offsets[self.control_pert] = torch.zeros(self.output_dim)
             
             # Compute global basal as mean of cell-type means
             if not all_ctrl_means:
@@ -186,7 +187,6 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             if offset_vec is None:
                 offset_vec = torch.zeros(self.output_dim, device=device)
 
-            # we add to the global_basal
             pred_out[i] = batch["basal"][i] + offset_vec.to(device)
 
         return pred_out
@@ -205,12 +205,12 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         """
         pred = self(batch)
         if self.output_space == "gene":
-            target = batch["X_gene"]
+            target = batch["X_hvg"]
         else:
             target = batch["X"]
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, prog_bar=True)
-        return None
+        return {"loss": None, "predictions": pred}
 
     def on_save_checkpoint(self, checkpoint):
         """

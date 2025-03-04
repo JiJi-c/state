@@ -19,13 +19,19 @@ class PerturbationBatchSampler(Sampler):
     and `pert_codes` in the H5MetadataCache). This avoids repeated string operations.
     """
     
-    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 512):
+    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 512, test: bool = False):
         logger.info("Creating perturbation batch sampler with metadata caching (using codes)...")
         start_time = time.time()
 
         # If the provided dataset has a `.data_source` attribute, use that.
         self.dataset = dataset.data_source if hasattr(dataset, "data_source") else dataset
         self.batch_size = batch_size
+        self.test = test
+
+        if self.test and self.batch_size != 1:
+            logger.warning('Batch size should be 1 for test mode. Setting batch size to 1.')
+            self.batch_size = 1
+
         self.cell_sentence_len = cell_sentence_len
         self.drop_last = drop_last
         
@@ -61,14 +67,20 @@ class PerturbationBatchSampler(Sampler):
         num_partial = 0
         for sentence in self.sentences:
             # If batch is smaller than cell_sentence_len, sample with replacement
-            if len(sentence) < self.cell_sentence_len:
+            if len(sentence) < self.cell_sentence_len and not self.test:
+                # during inference, don't sample by replacement
                 sentence = list(np.random.choice(sentence, size=self.cell_sentence_len, replace=True))
                 num_partial += 1
             else:
-                assert len(sentence) == self.cell_sentence_len
+                assert len(sentence) == self.cell_sentence_len or self.test
                 num_full += 1
 
-            if len(current_batch) + len(sentence) <= self.batch_size * self.cell_sentence_len:
+            if self.test:
+                sentence_len = len(sentence)
+            else:
+                sentence_len = self.cell_sentence_len
+
+            if len(current_batch) + len(sentence) <= self.batch_size * sentence_len:
                 current_batch.extend(sentence)
             else:
                 if current_batch:  # Add the completed meta-batch

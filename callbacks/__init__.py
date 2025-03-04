@@ -18,15 +18,18 @@ class TestMetricsCallback(Callback):
             
             # Only compute metrics if we have a test dataloader
             if test_dataloader is not None:
-                # Compute metrics using our consolidated method
-                metrics = pl_module.compute_test_metrics(test_dataloader)
-                
-                # Log all metrics
-                for name, value in metrics.items():
-                    # Ensure value is a tensor on the correct device
-                    if not isinstance(value, torch.Tensor):
-                        value = torch.tensor(value, device=pl_module.device)
-                    pl_module.log(name, value, sync_dist=True)
+                try:
+                    # Compute metrics using our consolidated method
+                    metrics = pl_module.compute_test_metrics(test_dataloader)
+                    
+                    # Log all metrics
+                    for name, value in metrics.items():
+                        # Ensure value is a tensor on the correct device
+                        if not isinstance(value, torch.Tensor):
+                            value = torch.tensor(value, device=pl_module.device)
+                        pl_module.log(name, value, sync_dist=True)
+                except:
+                    print('compute_test_metrics failed')
                 
                 self.last_test_global_step = trainer.global_step
 

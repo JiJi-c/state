@@ -60,12 +60,10 @@ class H5MetadataCache:
             # Then load codes
             self.pert_codes = f[f"obs/{pert_col}/codes"][:].astype(np.int32)
             self.cell_type_codes = f[f"obs/{cell_type_key}/codes"][:].astype(np.int32)
-            self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
-            
-            # Pre-compute names
-            # self.pert_names = self.pert_categories[self.pert_codes]
-            # self.cell_type_names = self.cell_type_categories[self.cell_type_codes]
-            # self.batch_names = self.batch_categories[self.batch_codes]
+            try:
+                self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
+            except:
+                self.batch_codes = f[f"obs/{batch_col}"][:].astype(np.int32) # if batch is stored directly as numbers
             
             # Create mask for control perturbations
             self.control_pert_code = np.where(self.pert_categories == control_pert)[0][0]

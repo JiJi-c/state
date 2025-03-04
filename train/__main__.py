@@ -18,6 +18,7 @@ from models.decoders import UCELogProbDecoder
 from models import (
     SimpleSumPerturbationModel,
     GlobalSimpleSumPerturbationModel,
+    CellTypeMeanModel,
     EmbedSumPerturbationModel,
     NeuralOTPerturbationModel,
 )
@@ -36,22 +37,24 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["output_space"] = data_config["output_space"]
     module_config["gene_names"] = var_dims["gene_names"]
     module_config["batch_size"] = training_config["batch_size"]
+    module_config["control_pert"] = data_config.get("control_pert", "non-targeting")
 
-    if data_config["output_space"] == "gene":
-        # the model outputs will be in gene space, so no decoder is needed
-        module_config["decoder"] = None
-    else:
-        # the model outputs will be in latent space, so a decoder is needed
-        if module_config["embed_key"] == "X_uce":
-            # UCE log prob decoder requires gene names
-            module_config["decoder"] = UCELogProbDecoder()  # TODO-Abhi: try out new decoders here
-        else:
-            # Add more decoders here as needed
-            module_config["decoder"] = None
+    # if data_config["output_space"] == "gene" and data_config["embed_key"] == "X_uce":
+    #     # the model outputs will be in gene space, so no decoder is needed
+    #     module_config["decoder"] = None
+    # else:
+    #     # the model outputs will be in latent space, so a decoder is needed
+    #     if module_config["embed_key"] == "X_uce":
+    #         # UCE log prob decoder requires gene names
+    #         module_config["decoder"] = UCELogProbDecoder()  # TODO-Abhi: try out new decoders here
+    #     else:
+    #         # Add more decoders here as needed
+    #         module_config["decoder"] = None
 
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -59,6 +62,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "neuralot":
         return NeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -66,6 +70,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "simplesum":
         return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -73,6 +78,15 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "globalsimplesum":
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "celltypemean":
+        return CellTypeMeanModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -156,7 +170,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, test_fre
         dirpath=checkpoint_dir,
         filename="{step}",
         save_last=False,  # Don't create/update symlink
-        every_n_train_steps=val_freq,
+        every_n_train_steps=4000,
         save_top_k=-1,  # Keep all periodic checkpoints
     )
     callbacks.append(periodic_ckpt)
@@ -187,14 +201,14 @@ def train(cfg: DictConfig) -> None:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
     # if this already exists for a run, then just read it in
-    if exists(join(run_output_dir, "config.yaml")):
-        with open(join(run_output_dir, "config.yaml"), "r") as f:
-            cfg_yaml = f.read()
-        cfg = OmegaConf.load(cfg_yaml)
-        logger.info(f"Config loaded from file.")
-    else:
-        with open(join(run_output_dir, "config.yaml"), "w") as f:
-            f.write(cfg_yaml)
+    # if exists(join(run_output_dir, "config.yaml")):
+    #     with open(join(run_output_dir, "config.yaml"), "r") as f:
+    #         cfg = OmegaConf.load(f)
+    #     logger.info(f"Config loaded from file.")
+    # else:
+    with open(join(run_output_dir, "config.yaml"), "w") as f:
+        f.write(cfg_yaml)
+    logger.info(f"Config saved to file.")
 
     # Set random seeds
     if "train_seed" in cfg["training"]:
@@ -216,11 +230,16 @@ def train(cfg: DictConfig) -> None:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module
+    try:
+        sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+    except KeyError:
+        sentence_len = 512
+        
     data_module = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
         batch_size=cfg["training"]["batch_size"],
-        cell_sentence_len=cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"],
+        cell_sentence_len=sentence_len,
     )
 
     # Special handling for multi-dataset case - TODO-now: revisit this.
@@ -289,7 +308,7 @@ def train(cfg: DictConfig) -> None:
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
-    if (cfg["model"]["name"].lower() == "simplesum" or cfg["model"]["name"].lower() == "globalsimplesum") and cfg[
+    if (cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum") and cfg[
         "data"
     ]["kwargs"]["output_space"] == "latent":
         trainer_kwargs["max_epochs"] = 1  # do exactly one epoch
@@ -318,12 +337,10 @@ def train(cfg: DictConfig) -> None:
         ckpt_path=checkpoint_path,
     )
 
-    # Generate and save predictions
-    trainer.predict(
-        model,
-        datamodule=data_module,
-        ckpt_path=checkpoint_path,
-    )
+    # at this point if checkpoint_path does not exist, manually create one
+    checkpoint_path = join(ckpt_callbacks[0].dirpath, "final.ckpt")
+    if not exists(checkpoint_path):
+        trainer.save_checkpoint(checkpoint_path)
 
 if __name__ == "__main__":
     train()
