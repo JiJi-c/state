@@ -341,19 +341,23 @@ class LitUCEModel(L.LightningModule):
         if self.global_rank != 0:
             return
 
+        self.eval()
+
         current_step = self.global_step
+        try:
+            if self.cfg.validations.diff_exp.enable:
+                interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
+                current_step = current_step - (current_step % 10)
+                if current_step >= interval and current_step % interval == 0:
+                    self._compute_val_de()
 
-        if self.cfg.validations.diff_exp.enable:
-            interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            current_step = current_step - (current_step % 10)
-            if current_step >= interval and current_step % interval == 0:
-                self._compute_val_de()
-
-        if self.cfg.validations.perturbation.enable:
-            interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-            current_step = current_step - (current_step % 10)
-            if current_step >= interval and current_step % interval == 0:
-                self._compute_val_perturbation(current_step)
+            if self.cfg.validations.perturbation.enable:
+                interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
+                current_step = current_step - (current_step % 10)
+                if current_step >= interval and current_step % interval == 0:
+                    self._compute_val_perturbation(current_step)
+        finally:
+            self.train()
 
     def _compute_val_perturbation(self, current_step):
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)

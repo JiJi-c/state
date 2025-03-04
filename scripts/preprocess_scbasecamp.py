@@ -185,7 +185,7 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         else:
             logging.info(f"Processing {gene} {seq_len}...")
 
-        if seq_len >= 33068:
+        if seq_len >= 13084:
             logging.info(f"Too large sequence {gene} {seq_len}")
             continue
 
