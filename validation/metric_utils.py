@@ -264,6 +264,10 @@ def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
 
     # rank Genes
     start_time = time.time()
+    group_counts = adata_gene.obs[pert_col].value_counts()
+    valid_groups = group_counts[group_counts > 1].index.tolist()
+    adata_gene = adata_gene[adata_gene.obs[pert_col].isin(valid_groups)]
+
     sc.tl.rank_genes_groups(
         adata_gene,
         groupby=pert_col,

@@ -241,16 +241,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
 
         return out_pred.reshape(-1, self.output_dim)
 
-    # def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-    #     """Training step logic."""
-    #     pred = self(batch)
-    #     pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
-    #     target = batch["X"]
-    #     target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
-    #     loss = self.loss_fn(pred, target).mean()
-    #     self.log("train_loss", loss)
-    #     return {"loss": loss, "predictions": pred}
-
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic for both main model and decoder."""
         # Get model predictions (in latent space)
@@ -282,37 +272,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         
         
         return total_loss
-
-    # def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-    #     """
-    #     Train the gene decoder after the main model training step.
-        
-    #     This ensures that gradients don't flow back to the main model.
-    #     """
-    #     if self.gene_decoder is not None and "X_hvg" in batch:
-    #         # Get model predictions from the training step outputs
-    #         latent_preds = outputs["predictions"]
-            
-    #         # Train decoder to map latent predictions to gene space
-    #         gene_preds = self.gene_decoder(latent_preds) # verify this is automatically detached
-    #         gene_targets = batch["X_hvg"]
-            
-    #         gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.output_dim)
-    #         gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.output_dim)
-    #         decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
-            
-    #         # Update decoder weights
-    #         opt = self.optimizers()
-    #         if isinstance(opt, list):
-    #             decoder_opt = opt[1]  # Assuming decoder optimizer is second
-    #         else:
-    #             decoder_opt = opt
-            
-    #         decoder_opt.zero_grad()
-    #         self.manual_backward(decoder_loss)
-    #         decoder_opt.step()
-            
-    #         self.log("decoder_train_loss", decoder_loss)
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
@@ -374,31 +333,24 @@ class NeuralOTPerturbationModel(PerturbationModel):
                 current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
                 self._update_test_cache(current_batch, current_pred)
 
-        # if "pred" not in self.test_cache:
-        #     self.test_cache["pred"] = []
-
-        # latent_pred = pred.detach().cpu().numpy()
-        # self.test_cache["pred"].append(latent_pred)
-
-        # if self.gene_decoder is not None: # finish off this - need to make sure the caches are being updated accordingly. you should set the threshold super low for testing
-        #     gene_pred = self.gene_decoder(latent_pred)
-        #     if "gene_pred" not in self.test_cache:
-        #         self.test_cache["gene_pred"] = []
-
-        #     self.test_cache["gene_pred"].append(gene_pred.detach().cpu().numpy())
-
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """
         Typically used for final inference. We'll replicate old logic:
          returning 'preds', 'X', 'pert_name', etc.
         """
-        output_samples = self.forward(batch, padded=padded)  # shape [B, ...]
-        return {
-            "preds": output_samples,  # The distribution's sample
-            "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
+        latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
+        output_dict = {
+            "preds": latent_output,
+            "X": batch.get("X", None),
+            "X_hvg": batch.get("X_hvg", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
             "gem_group": batch.get("gem_group", None),
             "basal": batch.get("basal", None),
         }
+
+        if self.gene_decoder is not None:
+            gene_preds = self.gene_decoder(latent_output)
+            output_dict["gene_preds"] = gene_preds
+
+        return output_dict

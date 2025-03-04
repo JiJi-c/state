@@ -342,7 +342,7 @@ class PerturbationDataset(Dataset):
             batch_dict["X_hvg"] = torch.log1p(batch_dict["X_hvg"])
 
         # Apply transform if provided
-        if transform is not None:
+        if transform:
             batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])
 

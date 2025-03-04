@@ -68,7 +68,6 @@ def compute_metrics(
     adata_pred.obs = adata_pred.obs.reset_index()
 
     metrics = {}
-    # for celltype in tqdm(pred_celltype_pert_dict, desc="celltypes"):
     for celltype in pred_celltype_pert_dict:
         with time_it(f"compute_metrics_cell_type_{celltype}"):
             metrics[celltype] = defaultdict(list)
@@ -196,8 +195,8 @@ def compute_metrics(
                     )
 
                     DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred)
-                    # metrics[celltype][f"DE_{num_de}"] = [DE_metrics[k] for k in DE_metrics]
-                    metrics[celltype]['DE'] = [DE_metrics[k] for k in metrics[celltype]['pert']]
+                    metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
+
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
@@ -242,8 +241,9 @@ def compute_metrics(
         for celltype, stats in metrics.items():
             metrics[celltype] = pd.DataFrame(stats).set_index("pert")
         return metrics
-    except:
-        return
+    except Exception as e:
+        print(e)
+        return metrics
 
 
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):
@@ -254,12 +254,6 @@ def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="",
         pert_pred, pert_true, ctrl_true, ctrl_pred
     )
     metrics["cosine_" + suffix] = compute_cosine_similarity(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    # metrics["cosine_v2_" + suffix] = compute_cosine_similarity_v2(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    # if include_dist_metrics:
-    #     with time_it("compute_wasserstein"):
-    #         metrics["wasserstein_" + suffix] = compute_wasserstein(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    #     with time_it("compute_mmd"):
-    #         metrics["mmd_" + suffix] = compute_mmd(pert_pred, pert_true, ctrl_true, ctrl_pred)
     return metrics
 
 
@@ -273,7 +267,6 @@ def _compute_metrics_dict_batched(
     include_dist_metrics=False,
 ):
     batched_means = {}
-    # pd.DataFrame(np.append(np.delete(pert_pred, 9193, 1), np.array([pred_batches]).T, axis=1), columns=([str(x) for x in range(0, 9193)] + ['batch']))
 
     if pert_pred.shape[1] == pert_true.shape[1] + 1:
         pert_pred = np.delete(pert_pred, pert_pred.shape[1] - 1, 1)
@@ -287,22 +280,6 @@ def _compute_metrics_dict_batched(
     metrics = {}
     metrics["pearson_delta_batched_controls"] = compute_pearson_delta_batched(batched_means, weightings)
     return metrics
-
-
-##TODO implementation
-# def _compute_metrics_nearest(pert_pred, pert_true, mapped_controls):
-
-
-#     res = pearsonr((pert_pred - mapped_controls).mean(0), \
-#                             (pert_true - mapped_controls).mean(0))[0]
-#     metrics = {}
-#     metrics["pearson_delta_nearest"] = res
-#     return metrics
-
-# def _compute_cross_pert_metrics_dict(adata_real, adata_pred):
-#     metrics = {}
-#     metrics['gene_overlap'] = compute_gene_overlap(adata_pred.X, adata_real.X)
-
 
 def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_col):
     pert_idx = (adata.obs[pert_col] == pert).to_numpy()

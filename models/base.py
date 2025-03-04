@@ -126,10 +126,15 @@ class PerturbationModel(ABC, LightningModule):
 
         self.gene_decoder = None
         if embed_key != "X_hvg" and output_space == "gene":
+            if embed_key == "X_scfound":
+                hidden_dims = [512, 1024]
+            else:
+                hidden_dims = [hidden_dim * 2, hidden_dim * 4]
+
             self.gene_decoder = LatentToGeneDecoder(
                 latent_dim=self.output_dim,
                 gene_dim=gene_dim,
-                hidden_dims=[hidden_dim * 2, hidden_dim * 4],
+                hidden_dims=hidden_dims,
                 dropout=dropout
             )
             logger.info(f"Initialized gene decoder for embedding {embed_key} to gene space")
@@ -191,42 +196,6 @@ class PerturbationModel(ABC, LightningModule):
             total_loss = main_loss
         
         return total_loss
-
-    # def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-    #     """Training step logic."""
-    #     pred = self(batch)
-    #     loss = self.loss_fn(pred, batch["X"])
-    #     self.log("train_loss", loss)
-    #     return {"loss": loss, "predictions": pred}
-
-    # def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-    #     """
-    #     Train the gene decoder after the main model training step.
-        
-    #     This ensures that gradients don't flow back to the main model.
-    #     """
-    #     if self.gene_decoder is not None and "X_hvg" in batch:
-    #         # Get model predictions from the training step outputs
-    #         latent_preds = outputs["predictions"]
-            
-    #         # Train decoder to map latent predictions to gene space
-    #         gene_preds = self.gene_decoder(latent_preds) # verify this is automatically detached
-    #         gene_targets = batch["X_hvg"]
-            
-    #         decoder_loss = self.loss_fn(gene_preds, gene_targets)
-            
-    #         # Update decoder weights
-    #         opt = self.optimizers()
-    #         if isinstance(opt, list):
-    #             decoder_opt = opt[1]  # Assuming decoder optimizer is second
-    #         else:
-    #             decoder_opt = opt
-            
-    #         decoder_opt.zero_grad()
-    #         self.manual_backward(decoder_loss)
-    #         decoder_opt.step()
-            
-    #         self.log("decoder_train_loss", decoder_loss)
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
@@ -452,7 +421,7 @@ class PerturbationModel(ABC, LightningModule):
 
         self.test_cache["pred"].append(pred.detach().cpu().numpy())
 
-        if self.gene_decoder is not None: # finish off this - need to make sure the caches are being updated accordingly. you should set the threshold super low for testing
+        if self.gene_decoder is not None:
             gene_pred = self.gene_decoder(pred)
             if "gene_pred" not in self.test_cache:
                 self.test_cache["gene_pred"] = []
