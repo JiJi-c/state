@@ -11,7 +11,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, FilteredGenesCounts
+from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, FilteredGenesCounts, NpzMultiDataset
 from vci.train.callbacks import LogLR, ProfilerCallback
 from vci.utils import get_latest_checkpoint
 
@@ -19,11 +19,14 @@ from vci.utils import get_latest_checkpoint
 def get_ESM2_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
     all_pe = torch.load(cfg.embeddings.esm2.embedding_file)
-    all_pe = torch.vstack(list(all_pe.values()))
+    if isinstance(all_pe, dict):
+        all_pe = torch.vstack(list(all_pe.values()))
+
     all_pe.requires_grad = False
     return all_pe
 
 def main(cfg):
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
@@ -34,7 +37,14 @@ def main(cfg):
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
 
-    DatasetClass = FilteredGenesCounts if cfg.dataset.filter else H5adDatasetSentences
+    if cfg.dataset.ds_type == 'h5ad':
+        DatasetClass = H5adSentenceDataset
+    elif cfg.dataset.ds_type == 'filtered_h5ad':
+        DatasetClass = FilteredGenesCounts
+    elif cfg.dataset.ds_type == 'npz':
+        DatasetClass = NpzMultiDataset
+    else:
+        raise ValueError(f'Unknown dataset type: {cfg.dataset.ds_type}')
 
     # Training dataloader
     train_dataset = DatasetClass(cfg)

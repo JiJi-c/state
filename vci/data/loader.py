@@ -35,7 +35,7 @@ def create_dataloader(cfg,
         if data_dir:
             cfg.dataset.data_dir = data_dir
 
-        dataset = H5adDatasetSentences(cfg,
+        dataset = H5adSentenceDataset(cfg,
                                        datasets=datasets,
                                        shape_dict=shape_dict,
                                        adata=adata,
@@ -51,7 +51,61 @@ def create_dataloader(cfg,
         return dataloader
 
 
-class H5adDatasetSentences(data.Dataset):
+class NpzMultiDataset(data.Dataset):
+    def __init__(self, cfg, test=False) -> None:
+        super(NpzMultiDataset, self).__init__()
+
+        self.cfg = cfg
+        ds_path = cfg.dataset.train
+        if test:
+            ds_path = cfg.dataset.val
+
+        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(ds_path)
+
+        self.num_cells = {}
+        self.num_genes = {}
+
+        self.total_num_cells = 0
+        for name in self.datasets:
+            num_cells, num_genes = self.shapes_dict[name]
+            self.num_cells[name] = num_cells
+            self.num_genes[name] = num_genes
+
+            self.total_num_cells += num_cells
+
+        self.datasets_to_num = {k: v for k, v in zip(self.datasets, range(len(self.datasets)))}
+
+
+    @functools.lru_cache
+    def dataset_file(self, dataset):
+        cts = np.memmap(f"/large_experiments/ctc/ML/data/cell/observational/" + f"{dataset}_counts.npz",
+                            dtype='int64', mode='r', shape=self.shapes_dict[dataset])
+        return cts
+
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            for dataset in sorted(self.datasets):
+                if idx < self.num_cells[dataset]:
+                    cts = self.dataset_file(dataset)
+                    counts = cts[idx]
+                    counts = np.ascontiguousarray(counts)
+                    counts = torch.tensor(counts).unsqueeze(0)
+                    dataset_num = self.datasets_to_num[dataset]
+                    return counts, idx, dataset, dataset_num,  None, None
+                else:
+                    idx -= self.num_cells[dataset]
+            raise IndexError
+        else:
+            raise NotImplementedError
+
+    def __len__(self) -> int:
+        return self.total_num_cells
+
+    def get_dim(self) -> Dict[str, int]:
+        return self.num_genes
+
+
+class H5adSentenceDataset(data.Dataset):
     def __init__(self,
                  cfg,
                  test=False,
@@ -59,7 +113,7 @@ class H5adDatasetSentences(data.Dataset):
                  shape_dict=None,
                  adata=None,
                  adata_name=None) -> None:
-        super(H5adDatasetSentences, self).__init__()
+        super(H5adSentenceDataset, self).__init__()
 
         self.adata = None
         self.adata_name = adata_name
@@ -187,7 +241,8 @@ class H5adDatasetSentences(data.Dataset):
     def get_dim(self) -> Dict[str, int]:
         return self.num_genes
 
-class FilteredGenesCounts(H5adDatasetSentences):
+
+class FilteredGenesCounts(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
         super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
@@ -208,6 +263,7 @@ class FilteredGenesCounts(H5adDatasetSentences):
             valid_mask = self.valid_gene_index[dataset]
             counts = counts[:, valid_mask]
         return counts, idx, dataset, dataset_num, gene_indices, gene_scores
+
 
 class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):

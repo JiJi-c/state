@@ -40,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--emb_idx_file",
         type=str,
-        default='/large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch',
+        default='/scratch/ctc/ML/uce/reduced_datasets_to_pe_chrom_5120_new.torch',
         help="Path to save the output summary file",
     )
     parser.add_argument(

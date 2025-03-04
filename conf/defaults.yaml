@@ -25,7 +25,8 @@ wandb:
 
 embeddings:
   esm2:
-    embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    # embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    embedding_file: /scratch/ctc/ML/uce/all_species_pe_tokens.torch
     cnt: 19790
     size: 5120
     # embedding_file: /large_storage/ctc/ML/data/cell/embs/Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_mean.pt
@@ -54,13 +55,23 @@ validations:
 dataset:
   name: "vci"
   seed: 42
-  num_train_workers: 8
+  num_train_workers: 16
   num_val_workers: 4
-  train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
-  val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
-  data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+
+  ds_type: npz # npz, h5ad, or filtered_h5ad
+  train: /scratch/ctc/ML/uce/npz_train_datasets.csv
+  val: /scratch/ctc/ML/uce/npz_val_datasets.csv
+  data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
   # this is a map for each dataset's columns mapping them to a global gene ordering
-  protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
+  protein_emb_file_format: /scratch/ctc/ML/uce/reduced_datasets_to_pe_chrom_5120_new.torch
+
+  # ds_type: h5ad # npz, h5ad, or filtered_h5ad
+  # train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
+  # val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
+  # data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+  # # this is a map for each dataset's columns mapping them to a global gene ordering
+  # protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
+
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3
@@ -68,7 +79,6 @@ dataset:
   P: 512
   N: 512
   num_cells:  36238464 # TODO: Is this required
-  filter: false
 
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
