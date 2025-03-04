@@ -177,9 +177,16 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         batch = seq_df.iloc[i:i+batch_size]
 
         sequences = literal_eval(batch['sequence'].iloc[0])
+        seq_len = sum([len(s) for s in sequences])
         gene = batch['gene'].iloc[0]
         if gene in gene_emb_map:
-            logging.info(f"Skipping {gene}")
+            logging.info(f"Skipping {gene} {seq_len}")
+            continue
+        else:
+            logging.info(f"Processing {gene} {seq_len}...")
+
+        if seq_len >= 33068:
+            logging.info(f"Too large sequence {gene} {seq_len}")
             continue
 
         # Tokenize the sequence
