@@ -21,6 +21,7 @@ from models import (
     CellTypeMeanModel,
     EmbedSumPerturbationModel,
     NeuralOTPerturbationModel,
+    OldNeuralOTPerturbationModel,
 )
 from callbacks import GradNormCallback, PerturbationMagnitudeCallback, TestMetricsCallback
 
@@ -53,6 +54,14 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
 
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "old_neuralot":
+        return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],

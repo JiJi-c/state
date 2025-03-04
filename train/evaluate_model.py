@@ -165,6 +165,10 @@ def main():
         from models.embed_sum import EmbedSumPerturbationModel
 
         ModelClass = EmbedSumPerturbationModel
+    elif model_class_name.lower() == "old_neuralot":
+        from models.old_neural_ot import OldNeuralOTPerturbationModel
+
+        ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() == "neuralot":
         from models.neural_ot import NeuralOTPerturbationModel
 
