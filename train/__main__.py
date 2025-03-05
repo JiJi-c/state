@@ -21,6 +21,7 @@ from models import (
     CellTypeMeanModel,
     EmbedSumPerturbationModel,
     NeuralOTPerturbationModel,
+    OldNeuralOTPerturbationModel,
 )
 from callbacks import GradNormCallback, PerturbationMagnitudeCallback, TestMetricsCallback
 
@@ -39,20 +40,16 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["batch_size"] = training_config["batch_size"]
     module_config["control_pert"] = data_config.get("control_pert", "non-targeting")
 
-    # if data_config["output_space"] == "gene" and data_config["embed_key"] == "X_uce":
-    #     # the model outputs will be in gene space, so no decoder is needed
-    #     module_config["decoder"] = None
-    # else:
-    #     # the model outputs will be in latent space, so a decoder is needed
-    #     if module_config["embed_key"] == "X_uce":
-    #         # UCE log prob decoder requires gene names
-    #         module_config["decoder"] = UCELogProbDecoder()  # TODO-Abhi: try out new decoders here
-    #     else:
-    #         # Add more decoders here as needed
-    #         module_config["decoder"] = None
-
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["gene_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "old_neuralot":
+        return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
@@ -200,12 +197,6 @@ def train(cfg: DictConfig) -> None:
     if cfg["use_wandb"]:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
-    # if this already exists for a run, then just read it in
-    # if exists(join(run_output_dir, "config.yaml")):
-    #     with open(join(run_output_dir, "config.yaml"), "r") as f:
-    #         cfg = OmegaConf.load(f)
-    #     logger.info(f"Config loaded from file.")
-    # else:
     with open(join(run_output_dir, "config.yaml"), "w") as f:
         f.write(cfg_yaml)
     logger.info(f"Config saved to file.")
@@ -213,6 +204,10 @@ def train(cfg: DictConfig) -> None:
     # Set random seeds
     if "train_seed" in cfg["training"]:
         pl.seed_everything(cfg["training"]["train_seed"])
+
+    # if the provided pert_col is drugname_drugconc, hard code the value of control pert
+    if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
+        cfg["data"]["kwargs"]["control_pert"] = "[('DMSO_TF', 0.0, 'uM')]"
 
     # Use the multi dataset perturbation data module for training perturbation models
     # that involve mapping strageties (e.g., connecting perturbed cells to control cells.)

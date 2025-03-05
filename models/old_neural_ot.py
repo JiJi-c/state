@@ -63,7 +63,7 @@ def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
     # Cache if control or random sample
     return is_control or np.random.rand() < cache_prob
 
-class NeuralOTPerturbationModel(PerturbationModel):
+class OldNeuralOTPerturbationModel(PerturbationModel):
     """
     This model:
       1) Projects basal expression and perturbation encodings into a shared latent space.
@@ -204,42 +204,14 @@ class NeuralOTPerturbationModel(PerturbationModel):
     # to pad, forward passing, and taking only the original indices to avoid repeated samples in 
     # our test set.
 
-    def forward(self, batch: dict, padded=True) -> torch.Tensor:
+    def forward(self, batch: dict) -> torch.Tensor:
         """
-        The main forward call. Batch is a flattened sequence of cell sentences,
-        which we reshape into sequences of length cell_sentence_len.
-        
-        Expects input tensors of shape (B, S, N) where:
-        B = batch size
-        S = sequence length (cell_sentence_len)
-        N = feature dimension
+        The main forward call.
         """
-        if padded:
-            pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)
-            basal = batch["basal"].reshape(-1, self.cell_sentence_len, self.input_dim)
-        else:
-            # we are inferencing on a single batch, so accept variable length sentences
-            pert = batch["pert"].reshape(1, -1, self.pert_dim)
-            basal = batch["basal"].reshape(1, -1, self.input_dim)
-
-        # Shape: [B, S, hidden_dim]
-        pert_embedding = self.encode_perturbation(pert)
-        control_cells = self.encode_basal_expression(basal)
-
-        seq_input = torch.cat([pert_embedding, control_cells], dim=2) # Shape: [B, S, 2 * hidden_dim]
-        seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
-        
-        # forward pass + extract CLS last hidden state
-        res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state
-
-        # add to basal if predicting residual
-        if self.predict_residual:
-            # treat the actual prediction as a residual sum to basal
-            out_pred = self.project_out(res_pred + control_cells)
-        else:
-            out_pred = self.project_out(res_pred)
-
-        return out_pred.reshape(-1, self.output_dim)
+        prediction = self.perturb(batch["pert"], batch["basal"])
+        output = self.project_out(prediction)
+       
+        return output
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic for both main model and decoder."""
@@ -282,18 +254,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
 
-        # pred = pred.reshape(-1, self.output_dim)
-        # target = target.reshape(-1, self.output_dim)
-        
-        # # Split batch into sentences
-        # uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
-        
-        # # Process each sentence
-        # for idx, current_batch in enumerate(uncollated_batches):
-        #     if should_cache_batch(current_batch["pert_name"]):
-        #         current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
-        #         self._update_val_cache(current_batch, current_pred)
-
         return {"loss": loss, "predictions": pred}
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
@@ -321,17 +281,17 @@ class NeuralOTPerturbationModel(PerturbationModel):
         target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
         self.log("test_loss", loss)
-        # pred = pred.reshape(-1, self.output_dim)
-        # target = target.reshape(-1, self.output_dim)
+        pred = pred.reshape(-1, self.output_dim)
+        target = target.reshape(-1, self.output_dim)
         
-        # # Split batch into sentences
-        # uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
+        # Split batch into sentences
+        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
         
-        # # Process each sentence
-        # for idx, current_batch in enumerate(uncollated_batches):
-        #     if should_cache_batch(current_batch["pert_name"]):
-        #         current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
-        #         self._update_test_cache(current_batch, current_pred)
+        # Process each sentence
+        for idx, current_batch in enumerate(uncollated_batches):
+            if should_cache_batch(current_batch["pert_name"]):
+                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
+                self._update_test_cache(current_batch, current_pred)
 
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """

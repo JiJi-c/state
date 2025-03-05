@@ -4,5 +4,6 @@ from .cell_type_mean import CellTypeMeanModel
 from .simple_sum import SimpleSumPerturbationModel
 from .embed_sum import EmbedSumPerturbationModel
 from .neural_ot import NeuralOTPerturbationModel
+from .old_neural_ot import OldNeuralOTPerturbationModel
 
 import decoders
