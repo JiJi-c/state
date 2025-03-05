@@ -58,7 +58,7 @@ def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
         Boolean indicating if batch should be cached
     """
     # Check if this is a control batch
-    is_control = pert_names[0] in ["DMSO_TF", "non-targeting"]
+    is_control = pert_names[0] in ["DMSO_TF", "non-targeting", "[('DMSO_TF', 0.0, 'uM')]"]
     
     # Cache if control or random sample
     return is_control or np.random.rand() < cache_prob

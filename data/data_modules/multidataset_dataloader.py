@@ -157,7 +157,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             self.store_raw_expression = True
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
-        self.transform = True if embed_key == "X_hvg" and self.pert_col == 'drug' else False
+        self.transform = False
+        if embed_key == "X_hvg":
+            # basically, make sure we do this for tahoe because I forgot to 
+            # log transform the hvg's... but don't do this for replogle
+            # TODO: fix this before we ship
+            if self.pert_col == "drug" or self.pert_col == "drugname_drugconc":
+                self.transform = True
 
         # Few-shot store: (dataset_name, cell_type) -> dict of splits
         self.fewshot_splits: Dict[(str, str), Dict[str, np.ndarray]] = {}
