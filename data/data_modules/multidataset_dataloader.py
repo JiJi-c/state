@@ -133,6 +133,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.batch_col = batch_col
         self.cell_type_key = cell_type_key
 
+        self.map_controls = kwargs.get("map_controls", False)
+
         self.train_datasets: List[Dataset] = []
         self.train_eval_datasets: List[Dataset] = []
         self.val_datasets: List[Dataset] = []
@@ -345,13 +347,18 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     self.batch_col,
                 )
 
+                mapping_kwargs = {
+                    "map_controls": self.map_controls,
+                }
+
                 # Create base dataset
                 ds = PerturbationDataset(
                     name=ds_name,
                     h5_path=fpath,
                     mapping_strategy=self.mapping_strategy_cls(
                         random_state=self.random_seed, 
-                        n_basal_samples=self.n_basal_samples
+                        n_basal_samples=self.n_basal_samples,
+                        **mapping_kwargs
                     ),
                     embed_key=self.embed_key,
                     pert_onehot_map=self.pert_onehot_map,
@@ -783,3 +790,17 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 else:
                     train_cts.add(s.cell_type)
         return train_cts
+
+    def __setstate__(self, state):
+        """
+        Restore the object's state after unpickling, ensuring backward compatibility
+        with older pickled versions that don't have the new map_controls attribute.
+        """
+        # First restore the basic state
+        self.__dict__.update(state)
+        
+        # Then handle missing attributes for backward compatibility
+        if not hasattr(self, 'map_controls'):
+            self.map_controls = False
+            logger.info("Adding missing 'map_controls' attribute to MultiDatasetPerturbationDataModule (default: False)")
+        
