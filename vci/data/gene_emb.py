@@ -1,6 +1,33 @@
 import gzip
 import logging
-from Bio import SeqIO
+
+from Bio import SeqIO, Entrez
+
+
+def protein_sequence_from_gene_symbol(gene_name):
+    Entrez.email = "rilango@gmail.com"
+    # Find the gene ID
+    if gene_name.startswith('ENSG') or '.' in gene_name:
+        handle = Entrez.efetch(db="nucleotide", id="AC002064.1", rettype="fasta", retmode="text")
+        for record in SeqIO.parse(handle, 'fasta'):
+            return record.translate().seq
+
+    gene_search = Entrez.esearch(db="gene", term=f"{gene_name}[GENE]")
+    gene_record = Entrez.read(gene_search)
+    if len(gene_record["IdList"]) == 0:
+        return None
+    gene_id = gene_record["IdList"][0]
+
+    # Link to nucleotide database
+    link_results = Entrez.read(Entrez.elink(dbfrom="gene", db="nuccore", id=gene_id))
+    nuccore_ids = [link["LinkSetDb"][0]["Link"][0]["Id"] for link in link_results if link["LinkSetDb"]]
+
+    # Fetch the sequence
+    if nuccore_ids:
+        handle = Entrez.efetch(db="nuccore", id=nuccore_ids[0], rettype="fasta", retmode="text")
+        for record in SeqIO.parse(handle, 'fasta'):
+            return record.translate().seq
+    return None
 
 
 def parse_genename_seq(fasta_file):

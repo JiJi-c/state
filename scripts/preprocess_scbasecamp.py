@@ -4,6 +4,7 @@ import logging
 import shutil
 
 import torch
+import h5py as h5
 import pandas as pd
 import urllib.request
 
@@ -12,7 +13,7 @@ from ast import literal_eval
 from transformers import AutoTokenizer, AutoModel
 
 from vci.data.preprocess import Preprocessor
-from vci.data.gene_emb import create_genename_sequence_map
+from vci.data.gene_emb import create_genename_sequence_map, protein_sequence_from_gene_symbol
 
 
 logging.basicConfig(
@@ -155,7 +156,7 @@ def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFu
 
 
 def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gene_chrom_sequence_mapping.tsv',
-          output_file="/large_storage/ctc/ML/data/cell/emb/ESM/scBasecamp.gene_symbol_to_embedding_ESM2.pt"):
+              output_file="/large_storage/ctc/ML/data/cell/emb/ESM/scBasecamp.gene_symbol_to_embedding_ESM2.pt"):
 
     batch_size=1 # PLEASE DO NOT CHANGE THIS VALUE. After changes for addressing splices, this is the only value that works
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -182,13 +183,16 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         if gene in gene_emb_map:
             logging.info(f"Skipping {gene} {seq_len}")
             continue
-        else:
-            logging.info(f"Processing {gene} {seq_len}...")
 
-        if seq_len >= 33068:
-            logging.info(f"Too large sequence {gene} {seq_len}")
-            continue
+        while seq_len > 16559:
+            logging.info(f"Too large sequence {gene} {seq_len} Len: {len(sequences)}")
+            sequences = sequences[:len(sequences) - 1]
+            seq_len = sum([len(s) for s in sequences])
+            if len(sequences) == 1:
+                sequences[0] = sequences[0][:16559]
+                seq_len = sum([len(s) for s in sequences])
 
+        logging.info(f"Processing {gene} {seq_len}...")
         # Tokenize the sequence
         inputs = tokenizer(sequences, return_tensors="pt", padding=True).to(device)
 
@@ -199,7 +203,7 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         # Get the embeddings (representations)
         # There are different ways to get embeddings from ESM2:
         # Using the last hidden state (token embeddings)
-        gene_emb_map[gene] = outputs.last_hidden_state.mean(1).mean(0).cpu().numpy()
+        gene_emb_map[gene] = outputs.last_hidden_state.mean(1).mean(0).cpu()
 
         if i % (10 * batch_size) == 0:
             logging.info(f'Saving after {i//batch_size} batches...')
@@ -217,6 +221,90 @@ def inferESM2(gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/emb/ESM/gen
         # per_residue_embeddings = token_embeddings[0, 1:-1, :]
         torch.cuda.empty_cache()
     torch.save(gene_emb_map, output_file)
+
+
+def fix_numpy_to_tensor_issue(
+        gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2.pt',
+        fixed_gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2_fixed.pt'):
+    gene_emb_mapping = torch.load(gene_emb_mapping_file)
+    for k, v in gene_emb_mapping.items():
+        if isinstance(v, torch.Tensor):
+            continue
+        gene_emb_mapping[k] = torch.tensor(v, dtype=torch.float64)
+    torch.save(gene_emb_mapping, fixed_gene_emb_mapping_file)
+
+def resolve_genes(
+        feature_field='gene_symbols',
+        datasets='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv',
+        gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2.pt'):
+    gene_emb_mapping = torch.load(gene_emb_mapping_file)
+
+    df = pd.read_csv(datasets)
+
+    batch_size=1 # PLEASE DO NOT CHANGE THIS VALUE. After changes for addressing splices, this is the only value that works
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Load the ESM2 model from Hugging Face
+    model_name = "facebook/esm2_t33_650M_UR50D"  # You can also use other ESM2 variants like "facebook/esm2_t12_35M_UR50D"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    model = model.to(device)
+    model.eval()
+
+    ctr = 0
+    for i, rec in df.iterrows():
+        with h5.File(rec['path'], mode='r') as h5f:
+            for gene_symbol in h5f[f'var/{feature_field}/categories'][:]:
+                gene_symbol = gene_symbol.decode('utf-8')
+                orginal = gene_symbol
+                # if '-' in gene_symbol:
+                #     gene_symbol = gene_symbol.split('-')[0]
+                # if '.' in gene_symbol:
+                #     gene_symbol = gene_symbol.split('.')[0]
+
+                if gene_symbol in gene_emb_mapping:
+                    logging.info(f"Skipping {gene_symbol}...")
+                    continue
+
+                ctr += 1
+                logging.info(f"Processing {gene_symbol} from {rec['path']}...")
+                sequences = protein_sequence_from_gene_symbol(gene_symbol)
+                if sequences is None:
+                    logging.warning(f"{orginal} - {gene_symbol} could not be resolved")
+                    continue
+                sequences = str(sequences)
+                if len(sequences) > 16559:
+                    sequences = [sequences[0:16559]]
+                else:
+                    sequences = [sequences]
+
+                # Tokenize the sequence
+                inputs = tokenizer(sequences, return_tensors="pt", padding=True).to(device)
+
+                # Generate embeddings
+                with torch.no_grad():
+                    outputs = model(**inputs)
+
+                # Get the embeddings (representations)
+                # There are different ways to get embeddings from ESM2:
+                # Using the last hidden state (token embeddings)
+                gene_emb_mapping[gene_symbol] = outputs.last_hidden_state.mean(1).mean(0).cpu()
+
+                if ctr % 10 == 0:
+                    logging.info(f'Saving after {ctr} batches...')
+                    torch.save(gene_emb_mapping, gene_emb_mapping_file)
+
+                if ctr % 100 == 0:
+                    logging.info(f'creating checkpoint {ctr}...')
+                    checkpoint_file = gene_emb_mapping_file.replace('.pt', f'fr_api.{ctr}.pt')
+                    shutil.copyfile(gene_emb_mapping_file, checkpoint_file)
+
+                del outputs
+
+    torch.save(gene_emb_mapping, gene_emb_mapping_file)
+
+
+protein_sequence_from_gene_symbol
+
 
 if __name__ == '__main__':
     fire.Fire()
