@@ -163,28 +163,25 @@ def main():
     # Build the correct class
     if model_class_name.lower() == "embedsum":
         from models.embed_sum import EmbedSumPerturbationModel
-
         ModelClass = EmbedSumPerturbationModel
     elif model_class_name.lower() == "old_neuralot":
         from models.old_neural_ot import OldNeuralOTPerturbationModel
-
         ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() == "neuralot":
         from models.neural_ot import NeuralOTPerturbationModel
-
         ModelClass = NeuralOTPerturbationModel
     elif model_class_name.lower() == "simplesum":
         from models.simple_sum import SimpleSumPerturbationModel
-
         ModelClass = SimpleSumPerturbationModel  # it would be great if this was automatically kept in sync with the model.__init__
     elif model_class_name.lower() == "globalsimplesum":
         from models.global_simple_sum import GlobalSimpleSumPerturbationModel
-
         ModelClass = GlobalSimpleSumPerturbationModel
     elif model_class_name.lower() == "celltypemean":
         from models.cell_type_mean import CellTypeMeanModel
-
         ModelClass = CellTypeMeanModel
+    elif model_class_name.lower() == "decoder_only":
+        from models.decoder_only import DecoderOnlyPerturbationModel
+        ModelClass = DecoderOnlyPerturbationModel
     else:
         raise ValueError(f"Unknown model class: {model_class_name}")
 

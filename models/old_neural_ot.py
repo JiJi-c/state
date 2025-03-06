@@ -218,6 +218,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         # Get model predictions (in latent space)
         pred = self(batch)
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+        # TODO: please improve this, do not assume self.cell_sentence_len for this model
         target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
         main_loss = self.loss_fn(pred, target).mean()
