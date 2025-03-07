@@ -51,22 +51,14 @@ def sequence_from_gene_symbol(gene_name:str,
         return None, None
 
 
-async def async_seq_fr_gene_symbol(gene_name:str,
-                                   return_type = 'dna',
-                                   email="rajesh.ilango@arcinstitute.org"):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, partial(sequence_from_gene_symbol, gene_name, return_type=return_type, email=email)
-    )
-
-
-async def resolve_genes(gene_symbols:List[str],
-                        return_type = 'dna',
-                        email="rajesh.ilango@arcinstitute.org"):
-    resolve_gene_fn = partial(async_seq_fr_gene_symbol, return_type=return_type, email=email)
-    tasks = [resolve_gene_fn(gene_symbol) for gene_symbol in gene_symbols]
-    results = await asyncio.gather(*tasks)
-    return results
+def resolve_genes(gene_symbols:List[str],
+                  return_type = 'dna',
+                  email="rajesh.ilango@arcinstitute.org"):
+    resolve_gene_fn = partial(sequence_from_gene_symbol, return_type=return_type, email=email)
+    tasks = []
+    for gene_symbol in gene_symbols:
+        tasks.append(resolve_gene_fn(gene_symbol) )
+    return tasks
 
 
 def parse_genename_seq(fasta_file, return_type='dna'):
@@ -76,7 +68,10 @@ def parse_genename_seq(fasta_file, return_type='dna'):
             header_parts = record.description.split()
             gene_name = None
             chromosome = None
+            gene = None
             for part in header_parts:
+                if part.startswith('gene:'):
+                    gene = part.split(':')[1]
                 if part.startswith('gene_symbol:'):
                     gene_name = part.split(':')[1]
                 elif part.startswith('chromosome:'):
@@ -85,6 +80,9 @@ def parse_genename_seq(fasta_file, return_type='dna'):
                     chromosome = part.replace('chr:', '')
                 if gene_name and chromosome:
                     break
+
+            if gene_name is None and gene is not None:
+                gene_name = gene
 
             if gene_name:
                 if gene_name in gene_dict:

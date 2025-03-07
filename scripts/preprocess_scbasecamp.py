@@ -9,6 +9,7 @@ import pandas as pd
 import urllib.request
 
 from pathlib import Path
+from functools import partial
 from ast import literal_eval
 
 from vci.data.preprocess import Preprocessor
@@ -25,7 +26,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-ref_genome_file_type = 'cds' # 'cdna'
+ref_genome_file_type = 'cdna' # 'cdna'
 
 scBasecamp_dir_species = {
     "arabidopsis_thaliana":     {"name": "Arabidopsis_thaliana",
@@ -97,8 +98,8 @@ exclude_kingdom = ["plantae"]
 exclude_species = []
 # exclude_species = ["Homo_sapiens", 'Bos_taurus']
 
-# summary_file = '/scratch/ctc/ML/vci/scBasecamp_all.csv'
-summary_file = '/home/rajesh.ilango/scBasecamp_all.csv'
+summary_file = '/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv',
+data_file_loc = '/scratch/ctc/ML/uce/scBasecamp'
 embedding_file = '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'
 gene_seq_mapping_loc = '/large_storage/ctc/projects/vci/genes/'
@@ -117,7 +118,9 @@ def download_ref_genome():
             urllib.request.urlretrieve(url, download_file)
 
 
-def inferESM2(ref_genome=None):
+def inferESM2(ref_genome=None,
+              geneome_loc=geneome_loc,
+              gene_seq_mapping_loc=gene_seq_mapping_loc):
     if ref_genome is None:
         ref_genomes = [f.name for f in Path(geneome_loc).iterdir() if f.is_file()]
     else:
@@ -153,126 +156,9 @@ def fix_numpy_to_tensor_issue(
     torch.save(gene_emb_mapping, fixed_gene_emb_mapping_file)
 
 
-# def resolve_genes(
-#         feature_field='gene_symbols',
-#         datasets='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv',
-#         gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2.pt'):
-#     gene_emb_mapping = torch.load(gene_emb_mapping_file)
-
-#     df = pd.read_csv(datasets)
-
-#     batch_size=1 # PLEASE DO NOT CHANGE THIS VALUE. After changes for addressing splices, this is the only value that works
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     # Load the ESM2 model from Hugging Face
-#     model_name = "facebook/esm2_t33_650M_UR50D"  # You can also use other ESM2 variants like "facebook/esm2_t12_35M_UR50D"
-#     tokenizer = AutoTokenizer.from_pretrained(model_name)
-#     model = AutoModel.from_pretrained(model_name)
-#     model = model.to(device)
-#     model.eval()
-
-#     ctr = 0
-#     for i, rec in df.iterrows():
-#         with h5.File(rec['path'], mode='r') as h5f:
-#             for gene_symbol in h5f[f'var/{feature_field}/categories'][:]:
-#                 gene_symbol = gene_symbol.decode('utf-8')
-#                 orginal = gene_symbol
-#                 if gene_symbol in gene_emb_mapping:
-#                     logging.info(f"Skipping {gene_symbol}...")
-#                     continue
-
-#                 ctr += 1
-#                 logging.info(f"Processing {gene_symbol} from {rec['path']}...")
-#                 sequences = sequence_from_gene_symbol(gene_symbol)
-#                 if sequences is None:
-#                     logging.warning(f"{orginal} - {gene_symbol} could not be resolved")
-#                     continue
-#                 sequences = str(sequences)
-#                 if len(sequences) > 16559:
-#                     sequences = [sequences[0:16559]]
-#                 else:
-#                     sequences = [sequences]
-
-#                 # Tokenize the sequence
-#                 inputs = tokenizer(sequences, return_tensors="pt", padding=True).to(device)
-
-#                 # Generate embeddings
-#                 with torch.no_grad():
-#                     outputs = model(**inputs)
-
-#                 # Get the embeddings (representations)
-#                 # There are different ways to get embeddings from ESM2:
-#                 # Using the last hidden state (token embeddings)
-#                 gene_emb_mapping[gene_symbol] = outputs.last_hidden_state.mean(1).mean(0).cpu()
-
-#                 if ctr % 10 == 0:
-#                     logging.info(f'Saving after {ctr} batches...')
-#                     torch.save(gene_emb_mapping, gene_emb_mapping_file)
-
-#                 if ctr % 100 == 0:
-#                     logging.info(f'creating checkpoint {ctr}...')
-#                     checkpoint_file = gene_emb_mapping_file.replace('.pt', f'_fr_api.{ctr}.pt')
-#                     shutil.copyfile(gene_emb_mapping_file, checkpoint_file)
-
-#                 del outputs
-
-#     torch.save(gene_emb_mapping, gene_emb_mapping_file)
-
-
-async def _resolve_gene_symbols(
-        feature_field='gene_symbols',
-        datasets='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv',
-        gene_seq_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/gene_symbol_dna_seq.pt'):
-
-    if os.path.exists(gene_seq_mapping_file):
-        gene_emb_mapping = torch.load(gene_seq_mapping_file)
-    else:
-        gene_emb_mapping = {}
-
-    df = pd.read_csv(datasets)
-    ctr = 0
-    for _, rec in df.iterrows():
-        with h5.File(rec['path'], mode='r') as h5f:
-            gene_symbols = h5f[f'var/{feature_field}/categories'][:]
-            total_genes = len(gene_symbols)
-            chunk_size = 3
-            for i in range(0, total_genes, chunk_size):
-                gene_symbols_chunk = gene_symbols[i:i+chunk_size]
-                gene_symbols_chunk = [gene_symbol.decode('utf-8') for gene_symbol in gene_symbols_chunk]
-
-                filtered_genens = []
-                for gene_symbol in gene_symbols_chunk:
-                    if gene_symbol in gene_emb_mapping:
-                        logging.info(f"Skipping {gene_symbol}...")
-                    else:
-                        filtered_genens.append(gene_symbol)
-                if len(filtered_genens) == 0:
-                    continue
-
-                logging.info(f"Processing {i} of {filtered_genens}...")
-                sequences = await resolve_genes(filtered_genens, return_type = 'dna')
-                if sequences is None:
-                    logging.warning(f"Could not resolve {filtered_genens}")
-                    continue
-
-                ctr += 1
-                for gene_symbol, sequence in sequences:
-                    gene_emb_mapping[gene_symbol] = str(sequence)
-
-                if ctr % 10 == 0:
-                    logging.info(f'Saving after {ctr} batches...')
-                    torch.save(gene_emb_mapping, gene_seq_mapping_file)
-                if ctr % 100 == 0:
-                    torch.save(gene_emb_mapping, gene_seq_mapping_file)
-
-    torch.save(gene_emb_mapping, gene_seq_mapping_file)
-
-
-def resolve_gene_symbols():
-    asyncio.run(_resolve_gene_symbols())
-
-
 def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/GeneFull_Ex50pAS',
-                          dest_path='/scratch/ctc/ML/uce/scBasecamp',
+                          dest_path=data_file_loc,
+                          summary_file = summary_file,
                           species_dirs=None):
     if species_dirs is None:
         species_dirs = [item.name for item in Path(data_path).iterdir() if item.is_dir()]
@@ -300,6 +186,97 @@ def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFu
                                   embedding_file,
                                   emb_idx_file)
         preprocess.process()
+
+
+def _dataset_gene_iter(emb_type='ESM2',
+                       species=None,
+                       h5ad_file=None,
+                       data_path=None,
+                       feature_field=None,
+                       output_dir=None):
+    h5ad_file = Path(os.path.join(data_path, species, h5ad_file))
+    with h5.File(h5ad_file, mode='r') as h5f:
+        gene_symbols = h5f[f'var/{feature_field}/categories'][:]
+        total_genes = len(gene_symbols)
+        chunk_size = 3
+
+        output_file = os.path.join(output_dir, f'{emb_type}_emb_{species.lower()}.torch')
+        gene_emb_mapping = {}
+        if os.path.exists(output_file):
+            gene_emb_mapping = torch.load(output_file)
+
+        for i in range(0, total_genes, chunk_size):
+            gene_symbols_chunk = gene_symbols[i:i+chunk_size]
+            gene_symbols_chunk = [gene_symbol.decode('utf-8') for gene_symbol in gene_symbols_chunk]
+
+            filtered_gene_symbols = []
+            for gene_symbol in gene_symbols_chunk:
+                if gene_symbol in gene_emb_mapping:
+                    logging.info(f"Skipping {gene_symbol}...")
+                    continue
+                filtered_gene_symbols.append(gene_symbol)
+            if len(filtered_gene_symbols) == 0:
+                continue
+
+            logging.info(f"Processing {i} of {total_genes}: {filtered_gene_symbols}...")
+            sequences = resolve_genes(filtered_gene_symbols, return_type = 'dna')
+            if sequences is None:
+                logging.warning(f"Could not resolve {filtered_gene_symbols}")
+                continue
+
+            for gene_symbol, sequence in sequences:
+                if sequence is None:
+                    logging.warning(f"Could not resolve {gene_symbol}")
+                    continue
+                with open(f'/large_storage/ctc/projects/vci/ncbi/{species}.cvs', 'a') as file:
+                    file.write(f'{gene_symbol},{str(sequence)}\n')
+
+                gene_emb_mapping[gene_symbol] = sequence
+                if emb_type == 'ESM2':
+                    sequence = sequence.translate()
+
+                sequence = str(sequence)
+                if emb_type == 'ESM2':
+                    if len(sequence) > 16559:
+                        sequence = sequence[:16559]
+
+                yield species, gene_symbol, [str(sequence)]
+
+
+def resolve_gene_symbols(
+        feature_field='gene_symbols',
+        species_dir=None,
+        data_path=data_file_loc,
+        gene_seq_mapping_loc=gene_seq_mapping_loc,
+        emb_type='ESM2'):
+
+    if species_dir is None:
+        species_dirs = [item.name for item in Path(data_path).iterdir() if item.is_dir()]
+        assert len(species_dirs) > 0, 'No species specific data found'
+    else:
+        species_dirs = [species_dir]
+
+    for species in species_dirs:
+        h5ad_files = [f.name for f in Path(os.path.join(data_path, species)).iterdir() if f.is_file()]
+        for h5ad_file in h5ad_files:
+            _dataset_gene_iter_fn = partial(_dataset_gene_iter,
+                                            emb_type='ESM2',
+                                            species=species,
+                                            h5ad_file=h5ad_file,
+                                            data_path=data_path,
+                                            feature_field=feature_field,
+                                            output_dir=gene_seq_mapping_loc)
+            logging.info(f'Generating {emb_type} embedding for {h5ad_file}')
+            if emb_type == 'ESM2':
+                emb_generator = ESMEmbedding(None,
+                                             geneome_loc=geneome_loc,
+                                             seq_generator_fn=_dataset_gene_iter_fn)
+            else:
+                emb_generator = Evo2Embedding(None,
+                                            geneome_loc=geneome_loc,
+                                            seq_generator_fn=_dataset_gene_iter_fn)
+            emb_generator.species = species
+            emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
 
 
 if __name__ == '__main__':

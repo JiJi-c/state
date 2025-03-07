@@ -131,15 +131,13 @@ class Preprocessor:
 
             # Copy the file to the destination with temporary name
             dataset = h5ad_file.stem
-            processed_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}_tmp.h5ad')
             dest_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}.h5ad')
 
-            if os.path.exists(dest_h5ad_file):
-                log.info(f'{dest_h5ad_file} already exists. Skipping...')
-                continue
+            if not os.path.exists(dest_h5ad_file):
+                log.info(f'{dest_h5ad_file} already exists')
+                shutil.copyfile(str(h5ad_file), dest_h5ad_file)
 
-            shutil.copyfile(str(h5ad_file), processed_h5ad_file)
-            with h5.File(processed_h5ad_file, mode='r+') as h5f:
+            with h5.File(dest_h5ad_file, mode='r+') as h5f:
                 try:
                     logging.info(f'Processing file {h5ad_file}...')
                     num_cells, num_genes = self._process(h5f)
@@ -152,5 +150,3 @@ class Preprocessor:
                 except Exception as ex:
                     log.exception(ex)
                     continue
-
-            os.rename(processed_h5ad_file, dest_h5ad_file)

@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 import torch
 import shutil
 import pandas as pd
@@ -149,35 +150,37 @@ class Evo2Embedding(object):
 
     def __init__(self,
                  ref_genome,
-                 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'):
+                 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome',
+                 seq_generator_fn=None,
+                 species=None):
         self.geneome_loc = geneome_loc
-        self.ref_genome = ref_genome
-        self.species = ref_genome.split('.')[0].lower()
+        if ref_genome is not None:
+            self.ref_genome = ref_genome
+            self.species = ref_genome.split('.')[0].lower()
+        else:
+            self.species = species
+
         self.seq_type = 'dna'
         self.gene_emb_mapping = {}
         self.name = 'Evo2'
 
-    def _generate_gene_emb_mapping(self,
-                                   ref_genome,
-                                   max_seq_len=16559):
-        ref_genome_file = Path(os.path.join(self.geneome_loc, ref_genome))
-        species = ref_genome.split('.')[0].lower()
-        gene_seq_mapping = parse_genome_for_gene_seq_map(species, ref_genome_file, return_type=self.seq_type)
+        if seq_generator_fn is None:
+            self.seq_generator_fn = self._generate_gene_emb_mapping
+        else:
+            self.seq_generator_fn = seq_generator_fn
 
+    def _generate_gene_emb_mapping(self):
+        ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
+        gene_seq_mapping = parse_genome_for_gene_seq_map(self.species,
+                                                         ref_genome_file,
+                                                         return_type=self.seq_type)
         for gene, (chroms, sequences) in gene_seq_mapping.items():
+            if '.' in gene:
+                gene = gene.split('.')[0]
             if gene in self.gene_emb_mapping:
                 logging.info(f"Skipping {gene}...")
                 continue
-
-            seq_len = sum([len(s) for s in sequences])
-            while seq_len > max_seq_len:
-                logging.info(f"Too large sequence {gene} {seq_len} Len: {len(sequences)}")
-                sequences = sequences[:len(sequences) - 1]
-                seq_len = sum([len(s) for s in sequences])
-                if len(sequences) == 1:
-                    sequences[0] = sequences[0][:16559]
-                    seq_len = sum([len(s) for s in sequences])
-            yield species, gene, sequences
+            yield self.species, gene, sequences
 
     def generate_gene_emb_mapping(self,
                                   output_dir):
@@ -187,13 +190,12 @@ class Evo2Embedding(object):
             self.gene_emb_mapping = torch.load(output_file)
 
         ctr = 0
-        for species, gene, sequences in self._generate_gene_emb_mapping(self.ref_genome):
+        for species, gene, sequences in self.seq_generator_fn():
             ctr += 1
             logging.info(f"Processing {species} {gene}...")
             sequences = sequences[0]
 
             octs = run_forward(sequences)
-
             dna_sequence = Seq(sequences)
             reverse_complement_seq = str(dna_sequence.reverse_complement())
             rev_octs = run_forward(reverse_complement_seq)
@@ -210,7 +212,12 @@ class Evo2Embedding(object):
 
             if ctr % (1000) == 0:
                 logging.info(f'creating checkpoint {ctr}...')
-                checkpoint_file = output_file.replace('.torch', f'.{ctr}.torch')
+                chk_dir = os.path.join(output_dir, 'chk')
+                if chk_dir:
+                    os.makedirs(os.path.join(output_dir, 'chk'), exist_ok=True)
+
+                checkpoint_file = os.path.join(chk_dir, f'{self.name}_emb_{self.species}.{time.time()}.torch')
+
                 shutil.copyfile(output_file, checkpoint_file)
             torch.cuda.empty_cache()
 
