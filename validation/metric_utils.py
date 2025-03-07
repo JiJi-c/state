@@ -218,12 +218,6 @@ def compute_DE_for_truth_and_pred(
     adata_real_ct = adata_real_ct.copy()
     adata_pred_ct = adata_pred_ct.copy()
 
-    # 1) Normalize the ground truth predictions if they are in gene space
-    using_gene_space = (output_space == "gene") or (model_decoder is not None)
-    if using_gene_space:
-        sc.pp.normalize_total(adata_real_ct)
-        sc.pp.log1p(adata_real_ct)
-
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.
     sc.pp.highly_variable_genes(adata_real_ct, n_top_genes=n_top_genes)
@@ -232,25 +226,12 @@ def compute_DE_for_truth_and_pred(
     adata_real_hvg.obs["pert_name"] = adata_real_hvg.obs["pert_name"].astype('category')
     DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
 
-    # 3) Possibly decode predictions if in latent space
-    if output_space == "latent" and model_decoder is not None:
-        # decode to gene space
-        DE_pred = model_decoder.compute_de_genes(
-            adata_pred_ct,
-            pert_col=pert_col,
-            control_pert=control_pert,
-            genes=adata_real_hvg.var.index.values,
-        )
-    else:
-        # assume adata_pred_ct is already in gene space
-        adata_pred_gene = adata_pred_ct
-        if output_space == "gene":
-            sc.pp.normalize_total(adata_pred_gene)
-            sc.pp.log1p(adata_pred_gene)
-        adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
-        adata_pred_hvg = adata_pred_gene[:, hvg_mask].copy()
-        adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
-        DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+    # assume adata_pred_ct is already in gene space
+    adata_pred_gene = adata_pred_ct
+    adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
+    adata_pred_hvg = adata_pred_gene[:, hvg_mask].copy()
+    adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
+    DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
 
     return DE_true, DE_pred
 
