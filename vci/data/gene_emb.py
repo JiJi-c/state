@@ -65,6 +65,13 @@ def parse_genename_seq(fasta_file, return_type='dna'):
     gene_dict = {}
     with gzip.open(fasta_file, 'rt') as handle:
         for record in SeqIO.parse(handle, 'fasta'):
+            if return_type == 'dna':
+                seq = str(record.seq)
+            else:
+                seq = str(record.translate().seq)
+            if len(seq) == 0:
+                continue
+
             header_parts = record.description.split()
             gene_name = None
             chromosome = None
@@ -91,10 +98,7 @@ def parse_genename_seq(fasta_file, return_type='dna'):
                     chroms, prot_seqs = [], []
 
                 chroms.append(chromosome)
-                if return_type == 'dna':
-                    prot_seqs.append(str(record.seq))
-                else:
-                    prot_seqs.append(str(record.translate().seq))
+                prot_seqs.append(seq)
                 gene_dict[gene_name] = chroms, prot_seqs
 
     return gene_dict

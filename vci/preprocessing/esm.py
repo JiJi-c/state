@@ -34,7 +34,7 @@ class ESMEmbedding(object):
             self.seq_generator_fn = seq_generator_fn
 
     def _generate_gene_emb_mapping(self,
-                                   max_seq_len=16559):
+                                   max_seq_len=9110):
         ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
         gene_seq_mapping = parse_genome_for_gene_seq_map(self.species, ref_genome_file, return_type=self.seq_type)
 
@@ -48,12 +48,14 @@ class ESMEmbedding(object):
 
             seq_len = sum([len(s) for s in sequences])
             while seq_len > max_seq_len:
-                logging.info(f"Too large sequence {gene} {seq_len} Len: {seq_len}")
-                sequences = sequences[:len(sequences) - 1]
-                seq_len = sum([len(s) for s in sequences])
-                if len(sequences) == 1:
-                    sequences[0] = sequences[0][:16559]
+                logging.info(f"Too large sequence {gene} Len: {seq_len}")
+                if len(sequences) > 1:
+                    sequences = sequences[:len(sequences) - 1]
                     seq_len = sum([len(s) for s in sequences])
+                if len(sequences) == 1:
+                    sequences[0] = sequences[0][:max_seq_len]
+                    seq_len = sum([len(s) for s in sequences])
+            logging.info(f"Processing {self.species} {gene} {seq_len}...")
             yield self.species, gene, sequences
 
     def generate_gene_emb_mapping(self, output_dir):
@@ -72,8 +74,6 @@ class ESMEmbedding(object):
         ctr = 0
         for species, gene, sequences in self.seq_generator_fn():
             ctr += 1
-            logging.info(f"Processing {species} {gene} {len(sequences)}...")
-
             # Tokenize the sequence
             inputs = tokenizer(sequences, return_tensors="pt", padding=True).to(device)
 
