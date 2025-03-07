@@ -1,0 +1,18 @@
+#!/bin/bash
+
+#SBATCH --job-name=esm2_emb
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-node=1
+##SBATCH --cpus-per-task=8
+#SBATCH --mem=200G
+#SBATCH --time=0-05:00:00
+#SBATCH --signal=B:SIGINT@300
+#SBATCH --output=outputs/emb/%x_%j.log
+#SBATCH --open-mode=append
+#SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible
+
+
+## ls /large_storage/ctc/projects/vci/ref_genome -1 | xargs -I{} sbatch scripts/emb/esm2/slurm.sh {}
+
+srun  python3 ./scripts/preprocess_scbasecamp.py inferESM2 $1

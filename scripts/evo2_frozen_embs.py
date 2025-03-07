@@ -15,16 +15,6 @@ from Bio.Seq import Seq
 
 from vci.data.gene_emb import create_genename_sequence_map
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-log = logging.getLogger(__name__)
-
 import torch
 import yaml
 
@@ -33,6 +23,7 @@ from functools import lru_cache
 from os import getenv
 
 import logging
+
 log = logging.getLogger(__name__)
 
 

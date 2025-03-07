@@ -1,0 +1,217 @@
+import os
+import logging
+import torch
+import shutil
+import pandas as pd
+
+from base64 import decodebytes
+from io import BytesIO
+from numpy import load
+from Bio.Seq import Seq
+
+import torch
+import yaml
+
+from dataclasses import dataclass
+from functools import lru_cache
+from os import getenv
+from pathlib import Path
+from transformers import AutoTokenizer, AutoModel
+
+from vci.data.gene_emb import parse_genome_for_gene_seq_map
+
+
+@lru_cache
+def is_fp8_supported():
+    from transformer_engine.pytorch.fp8 import check_fp8_support
+    logging.info(f"{check_fp8_support()=}")
+    return check_fp8_support()[0]
+
+
+@lru_cache
+def should_use_cached_generation():
+    mem_gb = torch.cuda.get_device_properties(0).total_memory // 1024 // 1024 // 1024
+    # So far cached generation is only practical on A100/H100 and above.
+    if mem_gb > 60:
+        logging.info(f"Will use cached generation, {mem_gb=}")
+        return True
+    gpus = torch.cuda.device_count()
+    if gpus >= 2:
+        logging.info(f"Will use cached generation, {gpus=}")
+        return True
+    logging.info(f"Will not use cached generation, {mem_gb=}")
+    return False
+
+
+@lru_cache
+def detect_force_prompt_threshold():
+    env = getenv("NIM_EVO2_FORCE_PROMPT_THRESHOLD")
+    if env is not None:
+        logging.info(f"Will use force_prompt_threshold from env variable: {env=}")
+        return int(env)
+
+    mem_gb = torch.cuda.get_device_properties(0).total_memory // 1024 // 1024 // 1024
+    gpus = torch.cuda.device_count()
+    if gpus >= 2 and mem_gb > 120: # e.g. h200-x2
+        ret = 8192
+    elif mem_gb > 120: # e.g. h200-x1
+        ret = 4096
+    elif gpus >= 2 and mem_gb > 60: # e.g. h100-x2
+        ret = 512
+    else: # e.g. l40-x2
+        ret = 128
+    logging.info(f"Will use force_prompt_threshold={ret}, {gpus=} {mem_gb=}")
+    return ret
+
+
+@lru_cache(maxsize=1)
+def get_model(*,
+    config_path,
+    checkpoint_path,
+):
+    get_model.cache_clear()
+    import gc
+    gc.collect()
+
+    from vortex.model.model import StripedHyena
+    from vortex.model.tokenizer import HFAutoTokenizer, CharLevelTokenizer
+    from vortex.model.utils import dotdict#, load_checkpoint
+
+    torch.set_printoptions(precision=2, threshold=5)
+
+    torch.manual_seed(1)
+    torch.cuda.manual_seed(1)
+
+    config = dotdict(yaml.load(open(config_path), Loader=yaml.FullLoader))
+
+    if config.use_fp8_input_projections and not is_fp8_supported():
+        logging.info("fp8 forced off as the support is not present")
+        config.use_fp8_input_projections = False
+
+    if config.tokenizer_type == "CharLevelTokenizer":
+        tokenizer = CharLevelTokenizer(config.vocab_size)
+    else:
+        tokenizer = HFAutoTokenizer(config.vocab_file)
+
+    m = StripedHyena(config)
+
+    state_dict = torch.load(checkpoint_path)#, map_location=device)
+    m.custom_load_state_dict(state_dict, strict=False)
+
+    print(f"Number of parameters: {sum(p.numel() for p in m.parameters())}")
+    m = m.to("cuda:0")
+    return m, tokenizer, "cuda:0"
+
+
+def run_forward(
+    input_string,
+    *,
+    layers=["embedding_layer", "unembed", "blocks.0.mlp.l1"],
+    config_path="/scratch/hielab/gbrixi/evo2/vortex_interleaved/7b_1m/shc-evo2-7b-8k-2T-1m.yml",
+    checkpoint_path='/scratch/hielab/gbrixi/evo2/vortex_interleaved/7b_1m/iter_12500.pt'
+):
+    m, tokenizer, device = get_model(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+    )
+    store = {}
+    hooks = []
+    try:
+        for l in layers:
+            hooks.append(
+                m.get_submodule(l).register_forward_hook(
+                    LayerHook(layer_name=l, store=store).hook_fn
+                )
+            )
+
+        with torch.no_grad():
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                x = tokenizer.tokenize(input_string)
+                x = torch.LongTensor(x).unsqueeze(0).to(device)
+                m(x)
+    finally:
+        for h in hooks:
+            h.remove()
+
+    return store
+
+
+class LayerHook:
+    def __init__(self, *, layer_name, store):
+        self.layer_name = layer_name
+        self.store = store
+
+    def hook_fn(self, module, input, output):
+        self.store[self.layer_name + ".output"] = output.cpu()
+
+
+class Evo2Embedding(object):
+
+    def __init__(self,
+                 ref_genome,
+                 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'):
+        self.geneome_loc = geneome_loc
+        self.ref_genome = ref_genome
+        self.species = ref_genome.split('.')[0].lower()
+        self.seq_type = 'dna'
+        self.gene_emb_mapping = {}
+        self.name = 'Evo2'
+
+    def _generate_gene_emb_mapping(self,
+                                   ref_genome,
+                                   max_seq_len=16559):
+        ref_genome_file = Path(os.path.join(self.geneome_loc, ref_genome))
+        species = ref_genome.split('.')[0].lower()
+        gene_seq_mapping = parse_genome_for_gene_seq_map(species, ref_genome_file, return_type=self.seq_type)
+
+        for gene, (chroms, sequences) in gene_seq_mapping.items():
+            if gene in self.gene_emb_mapping:
+                logging.info(f"Skipping {gene}...")
+                continue
+
+            seq_len = sum([len(s) for s in sequences])
+            while seq_len > max_seq_len:
+                logging.info(f"Too large sequence {gene} {seq_len} Len: {len(sequences)}")
+                sequences = sequences[:len(sequences) - 1]
+                seq_len = sum([len(s) for s in sequences])
+                if len(sequences) == 1:
+                    sequences[0] = sequences[0][:16559]
+                    seq_len = sum([len(s) for s in sequences])
+            yield species, gene, sequences
+
+    def generate_gene_emb_mapping(self,
+                                  output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species}.torch')
+        if os.path.exists(output_file):
+            self.gene_emb_mapping = torch.load(output_file)
+
+        ctr = 0
+        for species, gene, sequences in self._generate_gene_emb_mapping(self.ref_genome):
+            ctr += 1
+            logging.info(f"Processing {species} {gene}...")
+            sequences = sequences[0]
+
+            octs = run_forward(sequences)
+
+            dna_sequence = Seq(sequences)
+            reverse_complement_seq = str(dna_sequence.reverse_complement())
+            rev_octs = run_forward(reverse_complement_seq)
+
+            emb = octs['embedding_layer.output'].squeeze().mean(0)
+            rev_emb = rev_octs['embedding_layer.output'].squeeze().mean(0)
+
+            self.gene_emb_mapping[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
+            logging.debug(f'Embedding of {gene} is {emb}')
+
+            if ctr % (100) == 0:
+                logging.info(f'Saving after {ctr} batches...')
+                torch.save(self.gene_emb_mapping, output_file)
+
+            if ctr % (1000) == 0:
+                logging.info(f'creating checkpoint {ctr}...')
+                checkpoint_file = output_file.replace('.torch', f'.{ctr}.torch')
+                shutil.copyfile(output_file, checkpoint_file)
+            torch.cuda.empty_cache()
+
+        torch.save(self.gene_emb_mapping, output_file)
