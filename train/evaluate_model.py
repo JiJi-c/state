@@ -142,6 +142,7 @@ def main():
             "n_basal_samples": cfg["data"]["kwargs"]["n_basal_samples"],
             "k_neighbors": cfg["data"]["kwargs"].get("k_neighbors", 10),
             "neighborhood_fraction": cfg["data"]["kwargs"].get("neighborhood_fraction", 0.0),
+            "map_controls": cfg["data"]["kwargs"].get("map_controls", False),
         }
         data_module.set_inference_mapping_strategy(mapping_cls, **strategy_kwargs)
         logger.info("Inference mapping strategy set to %s", args.map_type)

@@ -312,9 +312,7 @@ def train(cfg: DictConfig) -> None:
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
-    if (cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum") and cfg[
-        "data"
-    ]["kwargs"]["output_space"] == "latent":
+    if cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum":
         trainer_kwargs["max_epochs"] = 1  # do exactly one epoch
         # delete max_steps to avoid conflicts
         del trainer_kwargs["max_steps"]

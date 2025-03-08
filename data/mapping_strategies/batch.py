@@ -14,7 +14,7 @@ class BatchMappingStrategy(BaseMappingStrategy):
     """
 
     def __init__(self, name="batch", random_state=42, n_basal_samples=1, **kwargs):
-        super().__init__(name, random_state, n_basal_samples)
+        super().__init__(name, random_state, n_basal_samples, **kwargs)
         # A dict for each split: { split_name: { batch_name: [ctrl_indices] } }
         self.split_control_maps = {"train": {}, "train_eval": {}, "val": {}, "test": {}}
 

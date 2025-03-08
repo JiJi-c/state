@@ -32,7 +32,21 @@ class BaseMappingStrategy(ABC):
         self.n_basal_samples = n_basal_samples
         self.name = name
         self.stage = stage
-        print(f"Using {self.name} mapping strategy.")
+        self.map_controls = kwargs.get("map_controls", False)
+        print(f"Using {self.name} mapping strategy with {self.map_controls} for map_controls.")
+
+    def __setstate__(self, state):
+        """
+        Custom unpickling behavior to handle backward compatibility.
+        This method is called when unpickling an object.
+        """
+        # First, restore all attributes that were pickled
+        self.__dict__.update(state)
+        
+        # If the new attribute doesn't exist in the pickled state, set it to a default value
+        if not hasattr(self, 'map_controls'):
+            self.map_controls = False
+            logger.info(f"Adding missing 'map_controls' attribute to {self.name} mapping strategy.")
 
     @abstractmethod
     def register_split_indices(
@@ -71,7 +85,7 @@ class BaseMappingStrategy(ABC):
 
         # Get expression(s) based on embed_key
         if dataset.embed_key:
-            if is_control:
+            if is_control and not self.map_controls:
                 expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
                 return expr, expr  # both X and basal are same control
             else:
@@ -83,7 +97,7 @@ class BaseMappingStrategy(ABC):
                     ctrl_expr = dataset.fetch_obsm_expression(control_indices[0], dataset.embed_key) 
                 return pert_expr, ctrl_expr
         else:
-            if is_control:
+            if is_control and not self.map_controls:
                 expr = dataset.fetch_gene_expression(perturbed_idx)
                 return expr, expr  # both X and basal are same control
             else:

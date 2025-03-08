@@ -321,7 +321,7 @@ class PerturbationDataset(Dataset):
     # Static methods
     ##############################
     @staticmethod
-    def collate_fn(batch, transform=None, cell_sentence_len=32):
+    def collate_fn(batch, transform=False, pert_col="drug"):
         """
         Custom collate that reshapes data into sequences.
         """
@@ -337,11 +337,16 @@ class PerturbationDataset(Dataset):
 
         # If the first sample has "X_hvg", assume the entire batch does
         # This should be log transformed always, since X_hvg is not log counts
-        if "X_hvg" in batch[0]:
+        if "X_hvg" in batch[0]: # this is only done if store_raw_expression is set in getitem
+            # 1. Replogle X_hvg is already log transformed.
+            # 2. Tahoe X_hvg is NOT already log transformed.
             batch_dict["X_hvg"] = torch.stack([item["X_hvg"] for item in batch])
-            batch_dict["X_hvg"] = torch.log1p(batch_dict["X_hvg"])
 
-        # Apply transform if provided
+            # if this is tahoe dataset then log
+            if pert_col == "drug" or pert_col == "drugname_drugconc":
+                batch_dict["X_hvg"] = torch.log1p(batch_dict["X_hvg"])
+
+        # Apply transform if provided, but only if X and basal are in counts space
         if transform:
             batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])

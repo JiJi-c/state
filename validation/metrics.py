@@ -181,22 +181,23 @@ def compute_metrics(
                 ## Compute differential expression at the full adata level for speed
 
                 # 2) Actually compute DE for both truth & pred
-                for num_de in [50]:
-                    logger.info(f"Computing DE for {num_de} genes")
-                    DE_true, DE_pred = compute_DE_for_truth_and_pred(
-                        adata_real_gene_ct or adata_real_ct,
-                        adata_pred_gene_ct or adata_pred_ct,
-                        control_pert=control_pert,
-                        pert_col=pert_col,
-                        n_top_genes=2000,  # default HVG
-                        k_de_genes=num_de,
-                        output_space=output_space,
-                        model_decoder=decoder,
-                    )
+                num_de = 50
+                logger.info(f"Computing DE for {num_de} genes")
+                DE_true, DE_pred = compute_DE_for_truth_and_pred(
+                    adata_real_gene_ct or adata_real_ct,
+                    adata_pred_gene_ct or adata_pred_ct,
+                    control_pert=control_pert,
+                    pert_col=pert_col,
+                    n_top_genes=2000,  # default HVG
+                    k_de_genes=num_de,
+                    output_space=output_space,
+                    model_decoder=decoder,
+                )
 
-                    DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred)
-                    metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
-
+                DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred)
+                # why does the above print 0.02 but the output prints 0.005?
+                metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
+                metrics[celltype]['DE_50'] = np.mean(list(DE_metrics.values()))
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
@@ -236,6 +237,7 @@ def compute_metrics(
                     ctrl_pert=control_pert,
                 )
                 metrics[celltype]["perturbation_id"] = class_score
+                metrics[celltype]["perturbation_score"] = 1 - class_score
 
     try:
         for celltype, stats in metrics.items():
