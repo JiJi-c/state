@@ -314,10 +314,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # choose 40% of the fewshot cell types for validation
         num_val_cts = max(int(len(self.fewshot_splits) * 0.4), 1)
         np.random.seed(self.random_seed)
-        val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
 
-        # if we only have val_cts, just set it to empty set
-        if len(val_cts) == len(self.fewshot_splits):
+        try:
+            val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
+
+            # if we only have val_cts, just set it to empty set
+            if len(val_cts) == len(self.fewshot_splits):
+                val_cts = set()
+        except:
             val_cts = set()
 
         # Get zeroshot cell types
@@ -400,10 +404,34 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         ctrl_indices = ct_indices[ctrl_mask]
                         pert_indices = ct_indices[~ctrl_mask]
 
-                        # For zeroshot, all cells go to test
-                        test_subset = ds.to_subset_dataset("test", pert_indices, ctrl_indices)
-                        self.test_datasets.append(test_subset)
-                        test_sum += len(test_subset)
+                        # For zeroshot, all cells go to val / test, and none go to train
+                        if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
+                            test_subset = ds.to_subset_dataset(
+                                "test", test_pert_indices, test_controls
+                            )
+                            self.test_datasets.append(test_subset)
+                            test_sum += len(test_subset)
+
+                            val_subset = ds.to_subset_dataset(
+                                "val", test_pert_indices, test_controls
+                            )
+                            self.val_datasets.append(val_subset)
+                            val_sum += len(val_subset)
+                        else: # otherwise we can split
+                            if ct in val_cts:
+                                # If this cell type is in the val set, create a val subset
+                                val_subset = ds.to_subset_dataset(
+                                    "val", test_pert_indices, test_controls
+                                )
+                                self.val_datasets.append(val_subset)
+                                val_sum += len(val_subset)
+                            else:
+                                test_subset = ds.to_subset_dataset(
+                                    "test", test_pert_indices, test_controls
+                                )
+                                self.test_datasets.append(test_subset)
+                                test_sum += len(test_subset)
+
 
                     elif ct in self.fewshot_splits:
                         # For fewshot, use pre-computed splits
