@@ -19,11 +19,8 @@ from tqdm import tqdm
 # Import the relevant modules from your repository
 from models.decoders import UCELogProbDecoder
 from data.mapping_strategies import (
-    CentroidMappingStrategy,
-    ClusteringMappingStrategy,
     BatchMappingStrategy,
     RandomMappingStrategy,
-    NearestNeighborMappingStrategy,
     PseudoBulkMappingStrategy,
 )
 from data.data_modules import MultiDatasetPerturbationDataModule
@@ -128,11 +125,8 @@ def main():
     if args.map_type is not None:
         # Build new mapping strategy
         mapping_cls = {
-            "centroid": CentroidMappingStrategy,
-            "clustering": ClusteringMappingStrategy,
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
-            "nearest": NearestNeighborMappingStrategy,
             "pseudobulk": PseudoBulkMappingStrategy,
         }[args.map_type]
 

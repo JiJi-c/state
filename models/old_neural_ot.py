@@ -299,7 +299,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         Typically used for final inference. We'll replicate old logic:
          returning 'preds', 'X', 'pert_name', etc.
         """
-        latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
+        latent_output = self.forward(batch)  # shape [B, ...]
         output_dict = {
             "preds": latent_output,
             "X": batch.get("X", None),

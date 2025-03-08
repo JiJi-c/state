@@ -8,11 +8,8 @@ from data.dataset.perturbation_dataset import PerturbationDataset
 from data.data_modules.samplers import PerturbationBatchSampler
 from data.data_modules.tasks import TaskSpec, TaskType
 from data.mapping_strategies import (
-    CentroidMappingStrategy,
-    ClusteringMappingStrategy,
     BatchMappingStrategy,
     RandomMappingStrategy,
-    NearestNeighborMappingStrategy,
     PseudoBulkMappingStrategy,
 )
 
@@ -142,11 +139,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # Build the chosen mapping strategy
         self.mapping_strategy_cls = {
-            "centroid": CentroidMappingStrategy,
-            "clustering": ClusteringMappingStrategy,
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
-            "nearest": NearestNeighborMappingStrategy,
             "pseudobulk": PseudoBulkMappingStrategy,
         }[basal_mapping_strategy]
 
