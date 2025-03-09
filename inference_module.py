@@ -134,7 +134,6 @@ class InferenceModule:
             adata: Input AnnData.
             pert_key: Column name for perturbation labels.
             celltype_key: Column name for cell type labels.
-            output_filename: File path to save the output AnnData.
             
         Returns:
             AnnData with new obsm entries: {embed_key}_pert and X_hvg_pert (if gene decoder exists).
