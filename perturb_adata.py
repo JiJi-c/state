@@ -33,8 +33,8 @@ def main():
         adata,
         pert_key=args.pert_key,
         celltype_key=args.celltype_key,
-        output_filename=args.output_anndata
     )
+    adata_out.write_h5ad(args.output_anndata)
     print("Inference complete. Output saved to:", args.output_anndata)
 
 if __name__ == "__main__":
