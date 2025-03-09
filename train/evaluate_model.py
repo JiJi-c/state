@@ -214,6 +214,7 @@ def main():
             # Move each tensor in the batch to the model's device
             batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
                      for k, v in batch.items()}
+            # assert the model is receiving a batch size of 1
             batch_preds = model.predict_step(batch, batch_idx, padded=False)
             # Move each tensor in the returned dict to CPU to free GPU memory
             batch_preds = {k: (v.cpu() if isinstance(v, torch.Tensor) else v) for k, v in batch_preds.items()}

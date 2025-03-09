@@ -575,6 +575,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             return None
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col)
         ds = MetadataConcatDataset(self.test_datasets)
+        # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
