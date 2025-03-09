@@ -114,7 +114,7 @@ class InferenceModule:
         
         return model_classes[model_type]
 
-    def perturb(self, adata: ad.AnnData, pert_key: str, celltype_key: str, output_filename: str) -> ad.AnnData:
+    def perturb(self, adata: ad.AnnData, pert_key: str, celltype_key: str) -> ad.AnnData:
         """
         Run inference on an input AnnData and append predictions to .obsm.
         
@@ -206,7 +206,4 @@ class InferenceModule:
         adata_out.obsm[self.embed_key + "_pert"] = latent_array
         if gene_array is not None:
             adata_out.obsm["X_hvg_pert"] = gene_array
-        
-        adata_out.write(output_filename)
-        logger.info(f"Saved output AnnData with predictions to {output_filename}")
         return adata_out

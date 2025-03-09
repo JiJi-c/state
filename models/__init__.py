@@ -6,5 +6,3 @@ from .embed_sum import EmbedSumPerturbationModel
 from .neural_ot import NeuralOTPerturbationModel
 from .old_neural_ot import OldNeuralOTPerturbationModel
 from .decoder_only import DecoderOnlyPerturbationModel
-
-import decoders
