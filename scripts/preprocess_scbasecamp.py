@@ -151,8 +151,8 @@ def inferEvo2(ref_genome=None,
 
 # TODO: This is meant to fix a bug without having to reprocess the entire dataset. Remove it after the bug is fixed
 def fix_numpy_to_tensor_issue(
-        gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2.pt',
-        fixed_gene_emb_mapping_file='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2_fixed.pt'):
+        gene_emb_mapping_file='/large_storage/ctc/projects/vci/genes/dataset_emb_idx_Evo2.torch',
+        fixed_gene_emb_mapping_file='/large_storage/ctc/projects/vci/genes/dataset_emb_idx_Evo2.torch'):
     gene_emb_mapping = torch.load(gene_emb_mapping_file)
     for k, v in gene_emb_mapping.items():
         if isinstance(v, torch.Tensor):
