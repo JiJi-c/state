@@ -10,7 +10,7 @@
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/esm2/%x_%j.log
 #SBATCH --open-mode=append
-#SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible
+#SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem
 #SBATCH --exclude=GPU115A
 
 unset SLURM_CPUS_PER_TASK

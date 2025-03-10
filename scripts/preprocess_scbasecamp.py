@@ -1,16 +1,19 @@
 import os
 import fire
+import gzip
 import asyncio
 import logging
 
 import torch
 import h5py as h5
+import numpy as np
 import pandas as pd
 import urllib.request
 
 from pathlib import Path
 from functools import partial
 from ast import literal_eval
+from Bio import SeqIO
 
 from vci.data.preprocess import Preprocessor
 from vci.preprocessing import ESMEmbedding, Evo2Embedding
@@ -98,11 +101,11 @@ exclude_kingdom = ["plantae"]
 exclude_species = []
 # exclude_species = ["Homo_sapiens", 'Bos_taurus']
 
-summary_file = '/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv',
+summary_file = '/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv'
 data_file_loc = '/scratch/ctc/ML/uce/scBasecamp'
 embedding_file = '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'
-gene_seq_mapping_loc = '/large_storage/ctc/projects/vci/genes/'
+gene_seq_mapping_loc = '/large_storage/ctc/projects/vci/genes'
 emb_idx_file = '/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch'
 
 
@@ -129,10 +132,12 @@ def inferESM2(ref_genome=None,
     for genome in ref_genomes:
         logging.info(f'Generating ESM2 embedding for {genome}')
         emb_generator = ESMEmbedding(genome, geneome_loc=geneome_loc)
-        emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
+        emb_generator.generate_gene_emb_mapping(os.path.join(gene_seq_mapping_loc, 'ESM2'))
 
 
-def inferEvo2(ref_genome=None):
+def inferEvo2(ref_genome=None,
+              geneome_loc=geneome_loc,
+              gene_seq_mapping_loc=gene_seq_mapping_loc):
     if ref_genome is None:
         ref_genomes = [f.name for f in Path(geneome_loc).iterdir() if f.is_file()]
     else:
@@ -141,7 +146,7 @@ def inferEvo2(ref_genome=None):
     for genome in ref_genomes:
         logging.info(f'Generating Evo2 embedding for {genome}')
         emb_generator = Evo2Embedding(genome, geneome_loc=geneome_loc)
-        emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
+        emb_generator.generate_gene_emb_mapping(os.path.join(gene_seq_mapping_loc, 'Evo2'))
 
 
 # TODO: This is meant to fix a bug without having to reprocess the entire dataset. Remove it after the bug is fixed
@@ -277,6 +282,209 @@ def resolve_gene_symbols(
                                             seq_generator_fn=_dataset_gene_iter_fn)
             emb_generator.species = species
             emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
+
+def gene_ensemble_mapping(
+        geneome_loc=geneome_loc,
+        model_type='Evo2',
+        gene_seq_mapping_loc=gene_seq_mapping_loc,
+        output_dir=gene_seq_mapping_loc):
+
+    output_dir = os.path.join(output_dir, f'{model_type}_ensemble')
+    os.makedirs(output_dir, exist_ok=True)
+    species_dirs = [item.name for item in Path(geneome_loc).iterdir() if item.is_file()]
+
+    for species in species_dirs:
+        ref_genome = os.path.join(geneome_loc, species)
+        gene_dict = {}
+
+        with gzip.open(ref_genome, 'rt') as handle:
+            for record in SeqIO.parse(handle, 'fasta'):
+                header_parts = record.description.split()
+                gene_name = None
+                gene = None
+                for part in header_parts:
+                    if part.startswith('gene:'):
+                        gene = part.split(':')[1]
+                        gene = gene.split('.')[0]
+                    if part.startswith('gene_symbol:'):
+                        gene_name = part.split(':')[1]
+                    if gene_name and gene:
+                        break
+                if gene_name and gene:
+                    gene_dict[gene_name] = gene
+                elif gene:
+                    gene_dict[gene] = gene
+                else:
+                    logging.warning(f"Could not resolve gene for {record.description}")
+
+        species = species.split('.')[0].lower()
+        embedding_file = os.path.join(gene_seq_mapping_loc, model_type, f'{model_type}_emb_{species}.torch')
+        species_emb = torch.load(embedding_file)
+
+        species_emb_with_ensemble = {}
+        for gene_name, gene in gene_dict.items():
+            gene_name = gene_name.split('.')[0]
+            species_emb_with_ensemble[gene] = species_emb[gene_name]
+
+        torch.save(species_emb_with_ensemble, os.path.join(output_dir,
+                                                           f'{model_type}_emb_{species}.torch'))
+        logging.info(f'{species} has {len(species_emb_with_ensemble)} and updated with {len(species_emb)}. Gene dict has {len(gene_dict)}')
+
+
+def merge_all_species(embedding_dirs=gene_seq_mapping_loc,
+                      model='Evo2',
+                      output_path=gene_seq_mapping_loc):
+    gene_seq_mapping = {}
+    embedding_files = [f.name for f in Path(os.path.join(embedding_dirs, f'{model}_ensemble')).iterdir() if f.is_file()]
+
+    total_genes = 0
+    for embedding_file in embedding_files:
+        logging.info(f'Processing {embedding_file}...')
+        gene_seq_mapping_file = os.path.join(embedding_dirs, f'{model}_ensemble', embedding_file)
+        emb_map = torch.load(gene_seq_mapping_file)
+        total_genes = len(emb_map) + total_genes
+        logging.info(f'Loaded {len(emb_map)} entries...')
+        gene_seq_mapping.update(emb_map)
+
+    logging.info(f'Total genes: {total_genes}')
+    logging.info(f'After update: {len(gene_seq_mapping)}')
+
+    torch.save(gene_seq_mapping, os.path.join(output_path, f'all_species_{model}.torch'))
+
+
+def dataset_embedding_mapping(
+        emb_model='Evo2',
+        dataset_path=summary_file,
+        embedding_paths=gene_seq_mapping_loc,
+        start: int = 0,
+        end: int = None):
+    logging.info(f'Loading embeddings from {start} to {end}...')
+    gene_embs = torch.load(os.path.join(embedding_paths, f'all_species_{emb_model}.torch'))
+    valid_genes_list = list(gene_embs.keys())
+    logging.info(f'Loaded datasets from {dataset_path}...')
+    datasets_df = pd.read_csv(dataset_path)
+
+    if end is None:
+        end = datasets_df.shape[0]
+
+    valid_gene_index = {}
+    dataset_emb_idx = {}
+
+    # os.makedirs(os.path.join(embedding_paths, 'partial_emb_idx_map'), exist_ok=True)
+    valid_gene_index_path = os.path.join(embedding_paths,
+                                         f'valid_gene_index_{emb_model}_{start}.torch')
+    dataset_emb_idx_path = os.path.join(embedding_paths,
+                                        f'dataset_emb_idx_{emb_model}_{start}.torch')
+
+    logging.info(f'Loading paritally saved valid genes from {valid_gene_index_path}...')
+    if os.path.exists(valid_gene_index_path):
+        valid_gene_index = torch.load(valid_gene_index_path)
+
+    logging.info(f'Loading paritally saved ds emb mapping from {dataset_emb_idx_path}...')
+    if os.path.exists(dataset_emb_idx_path):
+        dataset_emb_idx = torch.load(dataset_emb_idx_path)
+
+    ctr = 0
+    for i, row in datasets_df.iloc[start:end].iterrows():
+        name = row["names"]
+        if name in valid_gene_index and name in dataset_emb_idx:
+            logging.info(f'Skipping {name}...')
+            continue
+
+        h5f_path = row["path"]
+        logging.info(f'Processing {name}...')
+        with h5.File(h5f_path) as h5f:
+            gene_names = np.array([g.decode('utf-8') for g in h5f['var/_index'][:]])
+            valid_mask = np.isin(gene_names, valid_genes_list)
+            valid_gene_index[name] = valid_mask
+
+            gene_names = gene_names[valid_mask]
+            ds_gene_idx_mapping = [valid_genes_list.index(g) for g in gene_names]
+            dataset_emb_idx[name] = ds_gene_idx_mapping
+
+        ctr += 1
+        if ctr % 100 == 0:
+            logging.info(f'Saving after {ctr} datasets {valid_gene_index_path} and {dataset_emb_idx_path}...')
+            torch.save(valid_gene_index, valid_gene_index_path)
+            torch.save(dataset_emb_idx, dataset_emb_idx_path)
+
+    logging.info(f'Final after {ctr} datasets to {valid_gene_index_path}...')
+    torch.save(valid_gene_index, valid_gene_index_path)
+    logging.info(f'Final after {ctr} datasets to {dataset_emb_idx_path}...')
+    torch.save(dataset_emb_idx, dataset_emb_idx_path)
+
+
+def dataset_embedding_mapping_by_species(
+        emb_model='Evo2',
+        species_dirs=None,
+        dataset_path=summary_file,
+        embedding_paths=gene_seq_mapping_loc,
+        data_file_loc=data_file_loc):
+    if species_dirs is None:
+        species_dirs = [f.name for f in Path(data_file_loc).iterdir() if f.is_dir()]
+    else:
+        species_dirs = [species_dirs]
+
+    logging.info(f'Loading embeddings for {data_file_loc}...')
+    gene_embs = torch.load(os.path.join(embedding_paths, f'all_species_{emb_model}.torch'))
+    valid_genes_list = list(gene_embs.keys())
+
+    embedding_paths = os.path.join(embedding_paths, f'{emb_model}_partial_maps')
+    os.makedirs(os.path.join(embedding_paths), exist_ok=True)
+    for species in species_dirs:
+        logging.info(f'Populating for {species}...')
+        valid_gene_index = {}
+        dataset_emb_idx = {}
+
+        species_dir = os.path.join(data_file_loc, species)
+        h5ad_files = [f.name for f in Path(species_dir).iterdir() if f.is_file()]
+        with h5.File(os.path.join(species_dir, h5ad_files[0]), mode='r') as h5f:
+            gene_names = np.array([g.decode('utf-8') for g in h5f['var/_index'][:]])
+            valid_mask = np.isin(gene_names, valid_genes_list)
+            valid_mask = np.where(valid_mask == True)[0]
+
+            gene_names = gene_names[valid_mask]
+            ds_gene_idx_mapping = [valid_genes_list.index(g) for g in gene_names]
+            ds_gene_idx_mapping = np.asarray(ds_gene_idx_mapping)
+
+        for h5ad_file in h5ad_files:
+            dataset_name = h5ad_file.split('.')[0]
+            valid_gene_index[dataset_name] = valid_mask.copy()
+            dataset_emb_idx[dataset_name] = ds_gene_idx_mapping.copy()
+
+        valid_gene_index_path = os.path.join(embedding_paths, f'valid_gene_index_{species}.torch')
+        dataset_emb_idx_path = os.path.join(embedding_paths, f'dataset_emb_idx_{species}.torch')
+
+        torch.save(valid_gene_index, valid_gene_index_path)
+        logging.info(f'Done {valid_gene_index_path}')
+        torch.save(dataset_emb_idx, dataset_emb_idx_path)
+        logging.info(f'Done {dataset_emb_idx_path}')
+
+def consolidate(gene_seq_mapping_loc=gene_seq_mapping_loc,
+                emb_model='Evo2'):
+    logging.info(f'Loading embeddings for {data_file_loc}...')
+    partial_maps_loc = os.path.join(gene_seq_mapping_loc, f'{emb_model}_partial_maps')
+
+    dataset_emb_idx_files = [f.name for f in Path(partial_maps_loc).iterdir() if f.is_file() and f.name.startswith('dataset_emb_idx_')]
+    valid_gene_index_files = [f.name for f in Path(partial_maps_loc).iterdir() if f.is_file() and f.name.startswith('valid_gene_index_')]
+
+    valid_gene_index = {}
+    for valid_gene_index_file in valid_gene_index_files:
+        logging.info(f'Processing {valid_gene_index_file}...')
+        valid_gene_index.update(torch.load(os.path.join(partial_maps_loc, valid_gene_index_file)))
+
+    dataset_emb_idx = {}
+    for dataset_emb_idx_file in dataset_emb_idx_files:
+        logging.info(f'Processing {dataset_emb_idx_file}...')
+        dataset_emb_idx.update(torch.load(os.path.join(partial_maps_loc, dataset_emb_idx_file)))
+
+    valid_gene_index_path = os.path.join(gene_seq_mapping_loc, f'valid_gene_index_{emb_model}.torch')
+    dataset_emb_idx_path = os.path.join(gene_seq_mapping_loc, f'dataset_emb_idx_{emb_model}.torch')
+
+    torch.save(valid_gene_index, valid_gene_index_path)
+    logging.info(f'Done {valid_gene_index_path}')
+    torch.save(dataset_emb_idx, dataset_emb_idx_path)
+    logging.info(f'Done {dataset_emb_idx_path}')
 
 
 if __name__ == '__main__':

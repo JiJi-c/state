@@ -192,8 +192,11 @@ class Evo2Embedding(object):
         ctr = 0
         for species, gene, sequences in self.seq_generator_fn():
             ctr += 1
-            logging.info(f"Processing {species} {gene}...")
+            logging.info(f"Processing {species} {gene}  {len(sequences[0])}...")
             sequences = sequences[0]
+
+            if len(sequences) > 100000:
+                sequences = sequences[:100000]
 
             octs = run_forward(sequences)
             dna_sequence = Seq(sequences)
