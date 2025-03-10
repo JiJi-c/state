@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class InferenceModule:
-    def __init__(self, model_folder: str):
+    def __init__(self, model_folder: str, cell_set_len: int):
         """
         Initialize the inference module.
         
@@ -34,10 +34,17 @@ class InferenceModule:
         # Obtain embed key and perturbation one-hot map from the loaded data module.
         self.embed_key = self.data_module.embed_key  # e.g. "X_uce"
         self.pert_onehot_map = self.data_module.pert_onehot_map  # dictionary: pert_name -> one-hot tensor
-        print(f"Loaded perturbation map with {len(self.pert_onehot_map)} perturbations")
+        logger.info(f"Loaded perturbation map with {len(self.pert_onehot_map)} perturbations")
 
         # Load the model checkpoint.
-        self.model: NeuralOTPerturbationModel = self._load_model()
+        self.model: PertSetsPerturbationModel = self._load_model()
+
+        if cell_set_len > self.data_module.cell_sentence_len:
+            logger.info(f"Requested cell set length {cell_set_len} is greater than the maximum cell sentence length "
+                        f"({self.data_module.cell_sentence_len}). Setting cell_set_len to {self.data_module.cell_sentence_len}")
+            self.cell_set_len = self.data_module.cell_sentence_len
+        else:
+            self.cell_set_len = cell_set_len
         
     def _load_model(self):
         """
@@ -61,7 +68,7 @@ class InferenceModule:
             # Get the highest step (last item after sorting)
             checkpoint_path = checkpoint_files[-1]
         
-        print(f"Loading model from checkpoint: {checkpoint_path}")
+        logger.info(f"Loading model from checkpoint: {checkpoint_path}")
         
         # Get model dimensions from the data module
         var_dims = self.data_module.get_var_dims()
@@ -104,7 +111,8 @@ class InferenceModule:
             "globalsimplesum": GlobalSimpleSumPerturbationModel,
             "celltypemean": CellTypeMeanModel,
             "embedsum": EmbedSumPerturbationModel,
-            "neuralot": NeuralOTPerturbationModel,
+            "neuralot": PertSetsPerturbationModel, # added as legacy for now for current ckpts. TODO: Remove before release
+            "pertsets": PertSetsPerturbationModel,
             "old_neuralot": OldNeuralOTPerturbationModel,
             "decoder_only": DecoderOnlyPerturbationModel,
         }
@@ -122,7 +130,7 @@ class InferenceModule:
         1. Verify that required columns exist.
         2. Remove cells with unknown perturbation labels.
         3. Group cells by (cell_type, perturbation) and split each group into chunks
-            (each chunk contains at most cell_sentence_len cells).
+            (each chunk contains at most cell_set_len cells).
         4. For each chunk, create a batch with:
                 - "basal": embeddings from adata.obsm[self.embed_key]
                 - "pert": repeated one-hot vector for the perturbation.
@@ -177,9 +185,9 @@ class InferenceModule:
             onehot = self.pert_onehot_map[p].to(device)
             n = len(idx_list)
             # Process each group in chunks (cell sentences).
-            for start in tqdm(range(0, n, self.data_module.cell_sentence_len), 
+            for start in tqdm(range(0, n, self.cell_set_len), 
                             desc=f"Group {ct}-{p}", leave=False):
-                chunk_indices = idx_list[start : start + self.data_module.cell_sentence_len]
+                chunk_indices = idx_list[start : start + self.cell_set_len]
                 basal = X_embed[chunk_indices, :]  # (chunk_size, embed_dim)
                 pert_tensor = onehot.unsqueeze(0).repeat(len(chunk_indices), 1)
                 batch = {"basal": basal, "pert": pert_tensor}

@@ -10,60 +10,7 @@ from models.base import PerturbationModel, LearnableSoftplus
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
-def uncollate_batch(batch: Dict[str, torch.Tensor], sentence_len: int) -> List[Dict[str, torch.Tensor]]:
-    """
-    Uncollates a batch dictionary where each tensor has shape [B*S, ...] into
-    a list of S dictionaries with shape [B, ...], where:
-    B = batch size (e.g. 512)
-    S = sentence length (e.g. 32)
-    
-    Args:
-        batch: Dictionary of tensors, each with first dimension B*S
-        sentence_len: The length S to split into
-        
-    Returns:
-        List of S dictionaries, each containing tensors of first dimension B
-    """
-    total_size = batch['X'].shape[0]
-    batch_size = total_size // sentence_len
-    
-    uncollated_batches = []
-    
-    for i in range(batch_size):
-        start_idx = i * sentence_len
-        end_idx = (i + 1) * sentence_len
-
-        current_batch = {}
-        for key, tensor in batch.items():
-            if isinstance(tensor, torch.Tensor):
-                current_batch[key] = tensor[start_idx:end_idx]
-            else:
-                # Handle non-tensor data (e.g. lists)
-                current_batch[key] = tensor[start_idx:end_idx]
-                
-        uncollated_batches.append(current_batch)
-        
-    return uncollated_batches
-
-def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
-    """
-    Determines if a batch should be cached based on perturbation names
-    and random sampling probability.
-    
-    Args:
-        pert_names: List of perturbation names for the batch
-        cache_prob: Probability of caching non-control batches
-        
-    Returns:
-        Boolean indicating if batch should be cached
-    """
-    # Check if this is a control batch
-    is_control = pert_names[0] in ["DMSO_TF", "non-targeting", "[('DMSO_TF', 0.0, 'uM')]"]
-    
-    # Cache if control or random sample
-    return is_control or np.random.rand() < cache_prob
-
-class NeuralOTPerturbationModel(PerturbationModel):
+class PertSetsPerturbationModel(PerturbationModel):
     """
     This model:
       1) Projects basal expression and perturbation encodings into a shared latent space.
@@ -123,7 +70,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
 
         # Build the distributional loss from geomloss
         self.loss_fn = SamplesLoss(loss=self.distributional_loss)
-        # self.loss_fn = LearnableAlignmentLoss()
 
         # Build the underlying neural OT network
         self._build_networks()
@@ -132,9 +78,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         # otherwise its in embedding space and we don't want to
         if 'softplus' in kwargs and kwargs['softplus'] and kwargs['embed_key'] == 'X_hvg':
             self.softplus = LearnableSoftplus()
-
-        # For caching validation data across steps, if desired
-        self.val_cache = defaultdict(list)
 
     def _build_networks(self):
         """
@@ -186,25 +129,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         """Define how we embed basal state input, if needed."""
         return self.basal_encoder(expr)
 
-    def perturb(self, pert: torch.Tensor, basal: torch.Tensor) -> torch.Tensor:
-        """
-        Return the latent perturbed state given the perturbation and basal state.
-        """
-        pert_embedding = self.encode_perturbation(pert).unsqueeze(1)  # shape: [batch_size, 1, hidden_dim]
-        control_cells = self.encode_basal_expression(basal).unsqueeze(1)  # shape: [batch_size, 1, hidden_dim]
-        cls_input = torch.zeros_like(pert_embedding)  # shape: [batch_size, 1, hidden_dim]
-        seq_input = torch.cat([pert_embedding, control_cells, cls_input], dim=1)  # shape: [batch_size, 3, hidden_dim]
-
-        # forward pass + extract CLS last hidden state
-        prediction = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state[:, -1]
-
-        # add to basal if predicting residual
-        if self.predict_residual:
-            # treat the actual prediction as a residual sum to basal
-            return prediction + control_cells.squeeze(1)
-        else:
-            return prediction
-
     def forward(self, batch: dict, padded=True) -> torch.Tensor:
         """
         The main forward call. Batch is a flattened sequence of cell sentences,
@@ -214,6 +138,9 @@ class NeuralOTPerturbationModel(PerturbationModel):
         B = batch size
         S = sequence length (cell_sentence_len)
         N = feature dimension
+
+        The `padded` argument here is set to True if the batch is padded. Otherwise, we
+        expect a single batch, so that sentences can vary in length across batches.
         """
         if padded:
             pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)

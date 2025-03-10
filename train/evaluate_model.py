@@ -162,9 +162,9 @@ def main():
     elif model_class_name.lower() == "old_neuralot":
         from models.old_neural_ot import OldNeuralOTPerturbationModel
         ModelClass = OldNeuralOTPerturbationModel
-    elif model_class_name.lower() == "neuralot":
-        from models.neural_ot import NeuralOTPerturbationModel
-        ModelClass = NeuralOTPerturbationModel
+    elif model_class_name.lower() == "neuralot" or model_class_name.lower() == "pertsets":
+        from models.pert_sets import PertSetsPerturbationModel
+        ModelClass = PertSetsPerturbationModel
     elif model_class_name.lower() == "simplesum":
         from models.simple_sum import SimpleSumPerturbationModel
         ModelClass = SimpleSumPerturbationModel  # it would be great if this was automatically kept in sync with the model.__init__
