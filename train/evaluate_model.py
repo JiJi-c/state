@@ -344,7 +344,6 @@ def main():
         class_score_flag=True,
         embed_key=data_module.embed_key,
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
-        decoder=model.decoder,
         shared_perts=data_module.get_shared_perturbations(),
     )
 

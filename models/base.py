@@ -21,6 +21,16 @@ from validation.metrics import compute_metrics
 
 logger = logging.getLogger(__name__)
 
+class LearnableSoftplus(torch.nn.Module):
+    def __init__(self, initial_beta=1.0):
+        super(LearnableSoftplus, self).__init__()
+        # Create a learnable parameter with initial value
+        self.beta = torch.nn.Parameter(torch.tensor(initial_beta, dtype=torch.float))
+        
+    def forward(self, x):
+        # Apply softplus with the learnable beta
+        return (1.0 / self.beta) * torch.log(1.0 + torch.exp(self.beta * x))
+
 class LatentToGeneDecoder(nn.Module):
     """
     A decoder module to transform latent embeddings back to gene expression space.
@@ -38,7 +48,8 @@ class LatentToGeneDecoder(nn.Module):
         latent_dim: int,
         gene_dim: int,
         hidden_dims: List[int] = [512, 1024],
-        dropout: float = 0.1
+        dropout: float = 0.0,
+        softplus: bool = False,
     ):
         super().__init__()
         
@@ -55,6 +66,10 @@ class LatentToGeneDecoder(nn.Module):
         
         # Final output layer
         layers.append(nn.Linear(input_dim, gene_dim))
+
+        # Add a learnable softplus activation
+        if softplus:
+            layers.append(LearnableSoftplus())
         
         self.decoder = nn.Sequential(*layers)
     
@@ -118,13 +133,13 @@ class PerturbationModel(ABC, LightningModule):
         self.control_pert = control_pert
 
         # Training settings
-        self.decoder = decoder if output_space == "latent" else None
         self.gene_names = gene_names  # store the gene names that this model output for gene expression space
         self.dropout = dropout
         self.lr = lr
         self.loss_fn = get_loss_fn(loss_fn)
 
         self.gene_decoder = None
+        self.gene_decoder_relu = None
         if embed_key != "X_hvg" and output_space == "gene":
             if embed_key == "X_scfound":
                 hidden_dims = [512, 1024]
@@ -135,7 +150,8 @@ class PerturbationModel(ABC, LightningModule):
                 latent_dim=self.output_dim,
                 gene_dim=gene_dim,
                 hidden_dims=hidden_dims,
-                dropout=dropout
+                dropout=dropout,
+                softplus=self.hparams.get('softplus', False),
             )
             logger.info(f"Initialized gene decoder for embedding {embed_key} to gene space")
         

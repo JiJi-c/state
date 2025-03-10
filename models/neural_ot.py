@@ -6,7 +6,7 @@ from collections import defaultdict
 from geomloss import SamplesLoss
 from typing import Optional, Dict, List
 
-from models.base import PerturbationModel
+from models.base import PerturbationModel, LearnableSoftplus
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
@@ -128,6 +128,11 @@ class NeuralOTPerturbationModel(PerturbationModel):
         # Build the underlying neural OT network
         self._build_networks()
 
+        # if the model is outputting to counts space, apply softplus
+        # otherwise its in embedding space and we don't want to
+        if 'softplus' in kwargs and kwargs['softplus'] and kwargs['embed_key'] == 'X_hvg':
+            self.softplus = LearnableSoftplus()
+
         # For caching validation data across steps, if desired
         self.val_cache = defaultdict(list)
 
@@ -200,10 +205,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         else:
             return prediction
 
-    # TODO - add a flexible forward method that can take ragged tensors by sampling by replacement
-    # to pad, forward passing, and taking only the original indices to avoid repeated samples in 
-    # our test set.
-
     def forward(self, batch: dict, padded=True) -> torch.Tensor:
         """
         The main forward call. Batch is a flattened sequence of cell sentences,
@@ -238,6 +239,10 @@ class NeuralOTPerturbationModel(PerturbationModel):
             out_pred = self.project_out(res_pred + control_cells)
         else:
             out_pred = self.project_out(res_pred)
+
+        # apply softplus if specified and we output to HVG space
+        if 'softplus' in self.hparams and self.hparams['softplus'] and self.hparams['embed_key'] == 'X_hvg':
+            out_pred = self.softplus(out_pred)
 
         return out_pred.reshape(-1, self.output_dim)
 
@@ -282,18 +287,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
 
-        # pred = pred.reshape(-1, self.output_dim)
-        # target = target.reshape(-1, self.output_dim)
-        
-        # # Split batch into sentences
-        # uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
-        
-        # # Process each sentence
-        # for idx, current_batch in enumerate(uncollated_batches):
-        #     if should_cache_batch(current_batch["pert_name"]):
-        #         current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
-        #         self._update_val_cache(current_batch, current_pred)
-
         return {"loss": loss, "predictions": pred}
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
@@ -321,17 +314,6 @@ class NeuralOTPerturbationModel(PerturbationModel):
         target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
         self.log("test_loss", loss)
-        # pred = pred.reshape(-1, self.output_dim)
-        # target = target.reshape(-1, self.output_dim)
-        
-        # # Split batch into sentences
-        # uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
-        
-        # # Process each sentence
-        # for idx, current_batch in enumerate(uncollated_batches):
-        #     if should_cache_batch(current_batch["pert_name"]):
-        #         current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
-        #         self._update_test_cache(current_batch, current_pred)
 
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """

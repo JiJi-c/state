@@ -401,13 +401,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         # For zeroshot, all cells go to val / test, and none go to train
                         if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
                             test_subset = ds.to_subset_dataset(
-                                "test", test_pert_indices, test_controls
+                                "test", pert_indices, ctrl_indices
                             )
                             self.test_datasets.append(test_subset)
                             test_sum += len(test_subset)
 
                             val_subset = ds.to_subset_dataset(
-                                "val", test_pert_indices, test_controls
+                                "val", pert_indices, ctrl_indices
                             )
                             self.val_datasets.append(val_subset)
                             val_sum += len(val_subset)
@@ -415,13 +415,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                             if ct in val_cts:
                                 # If this cell type is in the val set, create a val subset
                                 val_subset = ds.to_subset_dataset(
-                                    "val", test_pert_indices, test_controls
+                                    "val", pert_indices, ctrl_indices
                                 )
                                 self.val_datasets.append(val_subset)
                                 val_sum += len(val_subset)
                             else:
                                 test_subset = ds.to_subset_dataset(
-                                    "test", test_pert_indices, test_controls
+                                    "test", pert_indices, ctrl_indices
                                 )
                                 self.test_datasets.append(test_subset)
                                 test_sum += len(test_subset)
