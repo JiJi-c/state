@@ -3,16 +3,18 @@ checkpoint: null
 device: cuda
 
 kwargs:
+  cell_set_len: 512
   hidden_dim: 512
   cell_sentence_len: 512
   loss: energy
   n_encoder_layers: 4
   n_decoder_layers: 4
   predict_residual: True
+  softplus: False
   distributional_loss: energy
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
-      n_positions: 512 # just needs to be bigger than number of conditioning variables
+      n_positions: ${model.kwargs.cell_set_len}
       n_embd: 512
       d_inner: 1024
       n_layer: 8

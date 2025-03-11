@@ -19,11 +19,8 @@ from tqdm import tqdm
 # Import the relevant modules from your repository
 from models.decoders import UCELogProbDecoder
 from data.mapping_strategies import (
-    CentroidMappingStrategy,
-    ClusteringMappingStrategy,
     BatchMappingStrategy,
     RandomMappingStrategy,
-    NearestNeighborMappingStrategy,
     PseudoBulkMappingStrategy,
 )
 from data.data_modules import MultiDatasetPerturbationDataModule
@@ -128,11 +125,8 @@ def main():
     if args.map_type is not None:
         # Build new mapping strategy
         mapping_cls = {
-            "centroid": CentroidMappingStrategy,
-            "clustering": ClusteringMappingStrategy,
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
-            "nearest": NearestNeighborMappingStrategy,
             "pseudobulk": PseudoBulkMappingStrategy,
         }[args.map_type]
 
@@ -168,9 +162,9 @@ def main():
     elif model_class_name.lower() == "old_neuralot":
         from models.old_neural_ot import OldNeuralOTPerturbationModel
         ModelClass = OldNeuralOTPerturbationModel
-    elif model_class_name.lower() == "neuralot":
-        from models.neural_ot import NeuralOTPerturbationModel
-        ModelClass = NeuralOTPerturbationModel
+    elif model_class_name.lower() == "neuralot" or model_class_name.lower() == "pertsets":
+        from models.pert_sets import PertSetsPerturbationModel
+        ModelClass = PertSetsPerturbationModel
     elif model_class_name.lower() == "simplesum":
         from models.simple_sum import SimpleSumPerturbationModel
         ModelClass = SimpleSumPerturbationModel  # it would be great if this was automatically kept in sync with the model.__init__
@@ -220,6 +214,7 @@ def main():
             # Move each tensor in the batch to the model's device
             batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
                      for k, v in batch.items()}
+            # assert the model is receiving a batch size of 1
             batch_preds = model.predict_step(batch, batch_idx, padded=False)
             # Move each tensor in the returned dict to CPU to free GPU memory
             batch_preds = {k: (v.cpu() if isinstance(v, torch.Tensor) else v) for k, v in batch_preds.items()}
@@ -349,7 +344,6 @@ def main():
         class_score_flag=True,
         embed_key=data_module.embed_key,
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
-        decoder=model.decoder,
         shared_perts=data_module.get_shared_perturbations(),
     )
 

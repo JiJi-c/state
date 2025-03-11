@@ -20,11 +20,11 @@ from models import (
     GlobalSimpleSumPerturbationModel,
     CellTypeMeanModel,
     EmbedSumPerturbationModel,
-    NeuralOTPerturbationModel,
+    PertSetsPerturbationModel,
     OldNeuralOTPerturbationModel,
     DecoderOnlyPerturbationModel,
 )
-from callbacks import GradNormCallback, PerturbationMagnitudeCallback, TestMetricsCallback
+from callbacks import GradNormCallback
 
 import logging
 
@@ -57,8 +57,8 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             pert_dim=var_dims["pert_dim"],
             **module_config,
         )
-    elif model_type.lower() == "neuralot":
-        return NeuralOTPerturbationModel(
+    elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
+        return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=var_dims["gene_dim"],
             output_dim=var_dims["output_dim"],
@@ -154,7 +154,7 @@ def get_loggers(
     return loggers
 
 
-def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, test_freq: int) -> List[ModelCheckpoint]:
+def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_every_n_steps: int) -> List[ModelCheckpoint]:
     """Create checkpoint callbacks based on validation frequency."""
     checkpoint_dir = join(output_dir, name, "checkpoints")
     callbacks = []
@@ -176,13 +176,10 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, test_fre
         dirpath=checkpoint_dir,
         filename="{step}",
         save_last=False,  # Don't create/update symlink
-        every_n_train_steps=4000,
+        every_n_train_steps=ckpt_every_n_steps,
         save_top_k=-1,  # Keep all periodic checkpoints
     )
     callbacks.append(periodic_ckpt)
-
-    test_metrics_cb = TestMetricsCallback(test_freq=test_freq)
-    callbacks.append(test_metrics_cb)
 
     return callbacks
 
@@ -215,6 +212,7 @@ def train(cfg: DictConfig) -> None:
         pl.seed_everything(cfg["training"]["train_seed"])
 
     # if the provided pert_col is drugname_drugconc, hard code the value of control pert
+    # this is because it's surprisingly hard to specify a list of tuples in the config as a string
     if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
         cfg["data"]["kwargs"]["control_pert"] = "[('DMSO_TF', 0.0, 'uM')]"
 
@@ -233,11 +231,11 @@ def train(cfg: DictConfig) -> None:
         else:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
-    # Initialize data module
+    # Initialize data module. this is backwards compatible with previous configs
     try:
-        sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+        sentence_len = cfg["model"]["cell_set_len"]
     except KeyError:
-        sentence_len = 512
+        sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
         
     data_module = get_datamodule(
         cfg["data"]["name"],
@@ -294,8 +292,13 @@ def train(cfg: DictConfig) -> None:
             break
 
     # Set up callbacks
-    ckpt_callbacks = get_checkpoint_callbacks(cfg["output_dir"], cfg["name"], cfg["training"]["val_freq"], cfg["training"]["test_freq"])
-    callbacks = ckpt_callbacks + [GradNormCallback(), PerturbationMagnitudeCallback()]
+    ckpt_callbacks = get_checkpoint_callbacks(
+        cfg["output_dir"],
+        cfg["name"],
+        cfg["training"]["val_freq"],
+        cfg["training"].get("ckpt_every_n_steps", 4000),
+    )
+    callbacks = ckpt_callbacks + [GradNormCallback()]
 
     logger.info('Loggers and callbacks set up.')
 
@@ -322,11 +325,8 @@ def train(cfg: DictConfig) -> None:
 
     # Load checkpoint if exists
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "last.ckpt")
-    # checkpoint_path = get_latest_step_checkpoint(ckpt_callbacks[0].dirpath)
     if not exists(checkpoint_path):
         checkpoint_path = None
-        # logging.info('!! No checkpoint found, killing myself !!')
-        # return
     else:
         logging.info(f"!! Resuming training from {checkpoint_path} !!")
 

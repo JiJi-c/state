@@ -10,59 +10,6 @@ from models.base import PerturbationModel
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
-def uncollate_batch(batch: Dict[str, torch.Tensor], sentence_len: int) -> List[Dict[str, torch.Tensor]]:
-    """
-    Uncollates a batch dictionary where each tensor has shape [B*S, ...] into
-    a list of S dictionaries with shape [B, ...], where:
-    B = batch size (e.g. 512)
-    S = sentence length (e.g. 32)
-    
-    Args:
-        batch: Dictionary of tensors, each with first dimension B*S
-        sentence_len: The length S to split into
-        
-    Returns:
-        List of S dictionaries, each containing tensors of first dimension B
-    """
-    total_size = batch['X'].shape[0]
-    batch_size = total_size // sentence_len
-    
-    uncollated_batches = []
-    
-    for i in range(batch_size):
-        start_idx = i * sentence_len
-        end_idx = (i + 1) * sentence_len
-
-        current_batch = {}
-        for key, tensor in batch.items():
-            if isinstance(tensor, torch.Tensor):
-                current_batch[key] = tensor[start_idx:end_idx]
-            else:
-                # Handle non-tensor data (e.g. lists)
-                current_batch[key] = tensor[start_idx:end_idx]
-                
-        uncollated_batches.append(current_batch)
-        
-    return uncollated_batches
-
-def should_cache_batch(pert_names: List[str], cache_prob: float = 0.01) -> bool:
-    """
-    Determines if a batch should be cached based on perturbation names
-    and random sampling probability.
-    
-    Args:
-        pert_names: List of perturbation names for the batch
-        cache_prob: Probability of caching non-control batches
-        
-    Returns:
-        Boolean indicating if batch should be cached
-    """
-    # Check if this is a control batch
-    is_control = pert_names[0] in ["DMSO_TF", "non-targeting", "[('DMSO_TF', 0.0, 'uM')]"]
-    
-    # Cache if control or random sample
-    return is_control or np.random.rand() < cache_prob
-
 class OldNeuralOTPerturbationModel(PerturbationModel):
     """
     This model:
@@ -127,9 +74,6 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
 
         # Build the underlying neural OT network
         self._build_networks()
-
-        # For caching validation data across steps, if desired
-        self.val_cache = defaultdict(list)
 
     def _build_networks(self):
         """
@@ -199,10 +143,6 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
             return prediction + control_cells.squeeze(1)
         else:
             return prediction
-
-    # TODO - add a flexible forward method that can take ragged tensors by sampling by replacement
-    # to pad, forward passing, and taking only the original indices to avoid repeated samples in 
-    # our test set.
 
     def forward(self, batch: dict) -> torch.Tensor:
         """
@@ -284,22 +224,13 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         self.log("test_loss", loss)
         pred = pred.reshape(-1, self.output_dim)
         target = target.reshape(-1, self.output_dim)
-        
-        # Split batch into sentences
-        uncollated_batches = uncollate_batch(batch, self.cell_sentence_len)
-        
-        # Process each sentence
-        for idx, current_batch in enumerate(uncollated_batches):
-            if should_cache_batch(current_batch["pert_name"]):
-                current_pred = pred[idx*self.cell_sentence_len:(idx+1)*self.cell_sentence_len]
-                self._update_test_cache(current_batch, current_pred)
 
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """
         Typically used for final inference. We'll replicate old logic:
          returning 'preds', 'X', 'pert_name', etc.
         """
-        latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
+        latent_output = self.forward(batch)  # shape [B, ...]
         output_dict = {
             "preds": latent_output,
             "X": batch.get("X", None),
