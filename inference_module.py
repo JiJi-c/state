@@ -45,6 +45,12 @@ class InferenceModule:
             self.cell_set_len = self.data_module.cell_sentence_len
         else:
             self.cell_set_len = cell_set_len
+
+    def get_control_pert(self):
+        return self.data_module.control_pert
+
+    def available_perturbations(self):
+        return list(self.pert_onehot_map.keys())
         
     def _load_model(self):
         """

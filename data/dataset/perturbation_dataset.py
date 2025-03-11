@@ -176,7 +176,6 @@ class PerturbationDataset(Dataset):
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
         if self.embed_key:
             # For example, get the embedding from obsm/X_uce
-            # pert_expr = torch.tensor(self.h5_file[f"obsm/{self.embed_key}"][underlying_idx])
             pert_expr = self.fetch_obsm_expression(underlying_idx, self.embed_key)
         else:
             # Otherwise, fetch from X directly
@@ -321,7 +320,7 @@ class PerturbationDataset(Dataset):
     # Static methods
     ##############################
     @staticmethod
-    def collate_fn(batch, transform=False, pert_col="drug"):
+    def collate_fn(batch, transform=False, pert_col="drug", normalize=False):
         """
         Custom collate that reshapes data into sequences.
         """
@@ -340,16 +339,34 @@ class PerturbationDataset(Dataset):
         if "X_hvg" in batch[0]: # this is only done if store_raw_expression is set in getitem
             # 1. Replogle X_hvg is already log transformed.
             # 2. Tahoe X_hvg is NOT already log transformed.
-            batch_dict["X_hvg"] = torch.stack([item["X_hvg"] for item in batch])
-
+            X_hvg = torch.stack([item["X_hvg"] for item in batch])
+            batch_dict["X_hvg"] = X_hvg
+            
             # if this is tahoe dataset then log
             if pert_col == "drug" or pert_col == "drugname_drugconc":
-                batch_dict["X_hvg"] = torch.log1p(batch_dict["X_hvg"])
-
+                if normalize:
+                    library_sizes = X_hvg.sum(dim=1, keepdim=True)
+                    X_hvg_norm = X_hvg * 10000 / library_sizes
+                    batch_dict["X_hvg"] = torch.log1p(X_hvg_norm)
+                else:
+                    batch_dict["X_hvg"] = torch.log1p(X_hvg)
+        
         # Apply transform if provided, but only if X and basal are in counts space
         if transform:
-            batch_dict["X"] = torch.log1p(batch_dict["X"])
-            batch_dict["basal"] = torch.log1p(batch_dict["basal"])
+            if normalize:
+                # Normalize X by library size before log transform
+                X_library_sizes = batch_dict["X"].sum(dim=1, keepdim=True)
+                X_norm = batch_dict["X"] * 10000 / X_library_sizes
+                batch_dict["X"] = torch.log1p(X_norm)
+                
+                # Normalize basal by library size before log transform
+                basal_library_sizes = batch_dict["basal"].sum(dim=1, keepdim=True)
+                basal_norm = batch_dict["basal"] * 10000 / basal_library_sizes
+                batch_dict["basal"] = torch.log1p(basal_norm)
+            else:
+                # Original behavior: just log transform without normalization
+                batch_dict["X"] = torch.log1p(batch_dict["X"])
+                batch_dict["basal"] = torch.log1p(batch_dict["basal"])
 
         return batch_dict
 
