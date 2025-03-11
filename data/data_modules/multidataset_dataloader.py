@@ -549,7 +549,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def train_dataloader(self):
         if len(self.train_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=self.normalize_counts)
+        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.train_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
@@ -557,7 +558,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def val_dataloader(self):
         if len(self.val_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=self.normalize_counts)
+        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.val_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
@@ -565,7 +567,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def test_dataloader(self):
         if len(self.test_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=self.normalize_counts)
+        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
@@ -574,7 +577,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def predict_dataloader(self):
         if len(self.test_datasets) == 0:
             return None
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=self.normalize_counts)
+        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
