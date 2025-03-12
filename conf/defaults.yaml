@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrain_inference_${loss.name}_${model.nhead}_${model.nlayers}"
+  name: "vci_pretrain_${loss.name}_${model.nhead}_${model.nlayers}"
   local: "local"
   compiled: false
   deaware: false
@@ -24,9 +24,9 @@ wandb:
   project: "vci"
 
 embeddings:
-  current: esm2
+  current: evo2
   esm2:
-    all_embeddings: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
+    all_embeddings: /large_storage/ctc/ML/data/cell/misc/all_tokens.torch
     ds_emb_mapping: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     size: 5120
   evo2:
@@ -47,7 +47,7 @@ validations:
 
   perturbation:
     enable: true
-    eval_interval_multiple: 1
+    eval_interval_multiple: 10
     pert_col: gene
     ctrl_label: non-targeting
     dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad

@@ -67,6 +67,7 @@ def main(cfg):
                         compiled=False,
                         max_lr=cfg.optimizer.max_lr,
                         emb_size=get_embedding_cfg(cfg).size,
+                        collater=dataset_sentence_collator,
                         cfg=cfg).cuda()
     all_pe = get_embeddings(cfg)
     all_pe.requires_grad = False

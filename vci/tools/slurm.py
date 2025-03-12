@@ -22,11 +22,13 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --gres=gpu:{{ num_gpus_per_node }}
 #SBATCH --ntasks-per-node={{ num_gpus_per_node }}
 ##SBATCH --cpus-per-task=8
-#SBATCH --mem=200G
+#SBATCH --mem=400G
 #SBATCH --time={{ duration }}
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/{{ exp_name }}/training.log
 #SBATCH --open-mode=append
+#SBATCH --exclude=GPU115A
+#SBATCH --account=ctc
 #SBATCH --partition={{ partition }}
 {{ sbatch_overrides }}
 
@@ -104,7 +106,7 @@ if __name__ == '__main__':
         "-p", "--partition",
         dest='partition',
         type=str,
-        default='gpu_batch',
+        default='gpu_batch,gpu_high_mem,gpu_batch_high_mem',
         help="Slurm partition to use.",
     )
     parser.add_argument(

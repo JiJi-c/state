@@ -23,7 +23,7 @@ def create_dataloader(cfg,
                       shape_dict=None,
                       adata=None,
                       adata_name=None,
-                      shuffle=True,
+                      shuffle=False,
                       sentence_collator=None):
         '''
         Expected to be used for inference
@@ -78,6 +78,7 @@ class H5adDatasetSentences(data.Dataset):
             assert len(datasets) == len(shape_dict)
             self.datasets = datasets
             self.shapes_dict = shape_dict
+            self.dataset_path_map = {dataset: dataset for dataset in datasets}
 
         self.datasets = sorted(self.datasets)
         self.cfg = cfg

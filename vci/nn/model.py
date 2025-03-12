@@ -87,7 +87,8 @@ class LitUCEModel(L.LightningModule):
                  warmup_steps: int = 0,
                  compiled: bool = False,
                  max_lr=4e-4,
-                 emb_cnt=145469, emb_size=5120, cfg=None):
+                 emb_cnt=145469, emb_size=5120, cfg=None,
+                 collater=None):
         super().__init__()
         self.save_hyperparameters()
         self.cfg = cfg
@@ -99,6 +100,7 @@ class LitUCEModel(L.LightningModule):
         self.warmup_steps = warmup_steps
         self.dropout = dropout
         self.max_lr = max_lr
+        self.collater = collater
         # Encodes Tokens
         self.encoder = nn.Sequential(nn.Linear(token_dim, d_model, bias=True),
                                      nn.LayerNorm(d_model), # Moved before activation
@@ -223,7 +225,9 @@ class LitUCEModel(L.LightningModule):
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
-                                       adata_name=dataset_name)
+                                       adata_name=dataset_name,
+                                       shuffle=False,
+                                       sentence_collator=self.collater,)
         gene_embeds = self.get_gene_embedding(adata.var.index)
         logprobs_batchs = []
         for batch in tqdm(dataloader,
@@ -364,7 +368,9 @@ class LitUCEModel(L.LightningModule):
         adata.X = np.log1p(adata.X)
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
-                                       adata_name=self.cfg.validations.perturbation.dataset_name,)
+                                       adata_name=self.cfg.validations.perturbation.dataset_name,
+                                       shuffle=False,
+                                       sentence_collator=self.collater)
         all_embs = []
         for batch in tqdm(dataloader,
                           position=0,
