@@ -15,6 +15,10 @@ def is_valid_uuid(val):
     except ValueError:
         return False
 
+def get_embedding_cfg(cfg):
+    return cfg.embeddings[cfg.embeddings.current]
+
+
 def compute_pearson_delta(pred, true, ctrl, ctrl_true):
     """
     pred, true, ctrl, ctrl_true are numpy arrays of shape [n_cells, n_genes],
@@ -115,19 +119,21 @@ def get_shapes_dict(dataset_path):
     sorted_dataset_names = sorted(datasets_df["names"])
     datasets_df = datasets_df.drop_duplicates() ## TODO: there should be no duplicates
 
+    de_data_available = "groupid_for_de" in datasets_df.columns
+
     shapes_dict = {}
     dataset_path_map = {}
     dataset_group_map = {} # Name of the obs column to be used for retrieing DE scrores
 
-    for name in sorted_dataset_names:
-        shapes_dict[name] = (int(datasets_df.set_index("names").loc[name]["num_cells"]), 8000)
-        dataset_path_map[name] = datasets_df.set_index("names").loc[name]["path"]
+    # for name in sorted_dataset_names:
+    #     shapes_dict[name] = (int(datasets_df.set_index("names").loc[name]["num_cells"]), 8000)
+    #     dataset_path_map[name] = datasets_df.set_index("names").loc[name]["path"]
 
-        if "groupid_for_de" in datasets_df.columns:
-            dataset_group_map[name] = datasets_df.set_index("names").loc[name]["groupid_for_de"]
-        else:
-            # This is for backward compatibility with old datasets CSV
-            dataset_group_map[name] = 'leiden'
+    #     if de_data_available:
+    #         dataset_group_map[name] = datasets_df.set_index("names").loc[name]["groupid_for_de"]
+    #     else:
+    #         # This is for backward compatibility with old datasets CSV
+    #         dataset_group_map[name] = 'leiden'
 
     shapes_dict["dev_immune_mouse"] = (443697, 4786)
     shapes_dict["dev_immune_human"] = (34009, 5566)
@@ -172,6 +178,13 @@ def get_shapes_dict(dataset_path):
         ngenes = row[1].num_genes
         ncells = row[1].num_cells
         name = row[1].names
+        dataset_path_map[name] = row[1].path
+        if de_data_available:
+            dataset_group_map[name] = datasets_df.set_index("names").loc[name]["groupid_for_de"]
+        else:
+            # This is for backward compatibility with old datasets CSV
+            dataset_group_map[name] = 'leiden'
+
         if not np.isnan(ngenes):
             shapes_dict[name] = (int(ncells), int(ngenes))
 

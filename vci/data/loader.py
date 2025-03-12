@@ -23,7 +23,7 @@ def create_dataloader(cfg,
                       shape_dict=None,
                       adata=None,
                       adata_name=None,
-                      shuffle=True,
+                      shuffle=False,
                       sentence_collator=None):
         '''
         Expected to be used for inference
@@ -132,6 +132,7 @@ class H5adSentenceDataset(data.Dataset):
             assert len(datasets) == len(shape_dict)
             self.datasets = datasets
             self.shapes_dict = shape_dict
+            self.dataset_path_map = {dataset: dataset for dataset in datasets}
 
         self.datasets = sorted(self.datasets)
         self.cfg = cfg
@@ -242,12 +243,14 @@ class H5adSentenceDataset(data.Dataset):
         return self.num_genes
 
 
-class FilteredGenesCounts(H5adSentenceDataset):
+class GeneFilterDataset(H5adDatasetSentences):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
-        super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
+        super(GeneFilterDataset, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
-        if cfg.embeddings.esm2.embedding_file is not None:
-            esm_data = torch.load(cfg.embeddings.esm2.embedding_file)
+        if cfg.dataset.valid_genes_masks is not None:
+            self.valid_gene_index = torch.load(cfg.dataset.valid_genes_masks)
+        elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
+            esm_data = torch.load(utils.get_embedding_cfg(self.cfg))
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
                 if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
@@ -255,11 +258,10 @@ class FilteredGenesCounts(H5adSentenceDataset):
                     gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
                     valid_mask = np.isin(gene_names, valid_genes_list)
                     self.valid_gene_index[name] = valid_mask
-                    num_valid_genes = np.sum(valid_mask)
 
     def __getitem__(self, idx):
         counts, idx, dataset, dataset_num, gene_indices, gene_scores = super().__getitem__(idx)
-        if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
+        if dataset in self.valid_gene_index:
             valid_mask = self.valid_gene_index[dataset]
             counts = counts[:, valid_mask]
         return counts, idx, dataset, dataset_num, gene_indices, gene_scores
@@ -273,8 +275,8 @@ class VCIDatasetSentenceCollator(object):
         self.cfg = cfg
 
         self.dataset_to_protein_embeddings = torch.load(
-            self.cfg.dataset.protein_emb_file_format.format(
-                self.cfg.tokenizer.token_dim
+            utils.get_embedding_cfg(self.cfg).ds_emb_mapping.format(
+                utils.get_embedding_cfg(self.cfg).size
             )
         )
 
@@ -341,7 +343,8 @@ class VCIDatasetSentenceCollator(object):
         # if the data has not already been log transformed
         if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
-        expression_weights = (counts / torch.sum(counts))
+        # expression_weights = (counts / torch.sum(counts))
+        expression_weights = F.softmax(counts, dim=0)
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
@@ -388,7 +391,7 @@ class VCIDatasetSentenceCollator(object):
                 if len(exp_genes) > self.cfg.dataset.P - de_budget:
                     task_sentence[c, de_budget:self.cfg.dataset.P] = \
                         exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P - de_budget]]
-                else:
+                elif len(exp_genes) > 0:
                     # sample with replacement
                     task_sentence[c, de_budget:self.cfg.dataset.P] = \
                         exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
@@ -397,7 +400,7 @@ class VCIDatasetSentenceCollator(object):
                 exp_genes = torch.where(cell > 0)[0]
                 if len(exp_genes) > self.cfg.dataset.P:
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P]]
-                else:
+                elif len(exp_genes) > 0:
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
             # DE AWARE FOR UNEXPRESSED GENES???

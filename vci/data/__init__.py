@@ -1,5 +1,5 @@
 from .loader import (H5adSentenceDataset,
                      VCIDatasetSentenceCollator,
-                     FilteredGenesCounts,
+                     GeneFilterDataset,
                      NpzMultiDataset,
                      create_dataloader)

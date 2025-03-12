@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import math
+import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -24,7 +25,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
-from vci.utils import compute_gene_overlap_cross_pert
+from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
 
@@ -86,7 +87,8 @@ class LitUCEModel(L.LightningModule):
                  warmup_steps: int = 0,
                  compiled: bool = False,
                  max_lr=4e-4,
-                 emb_cnt=145469, emb_size=5120, cfg=None):
+                 emb_cnt=145469, emb_size=5120, cfg=None,
+                 collater=None):
         super().__init__()
         self.save_hyperparameters()
         self.cfg = cfg
@@ -98,6 +100,7 @@ class LitUCEModel(L.LightningModule):
         self.warmup_steps = warmup_steps
         self.dropout = dropout
         self.max_lr = max_lr
+        self.collater = collater
         # Encodes Tokens
         self.encoder = nn.Sequential(nn.Linear(token_dim, d_model, bias=True),
                                      nn.LayerNorm(d_model), # Moved before activation
@@ -198,9 +201,9 @@ class LitUCEModel(L.LightningModule):
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
-            self.protein_embeds = torch.load(self.cfg.embeddings.esm2.embedding_file)
+            self.protein_embeds = torch.load(get_embedding_cfg(self.cfg))
         protein_embeds = [self.protein_embeds[x] \
-                          if x in self.protein_embeds else torch.zeros(self.cfg.embeddings.esm2.size) for x in genes]
+                          if x in self.protein_embeds else torch.zeros(get_embedding_cfg(self.cfg).size) for x in genes]
         protein_embeds = torch.stack(protein_embeds).to(self.device)
         return self.gene_embedding_layer(protein_embeds)
 
@@ -222,7 +225,9 @@ class LitUCEModel(L.LightningModule):
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
-                                       adata_name=dataset_name)
+                                       adata_name=dataset_name,
+                                       shuffle=False,
+                                       sentence_collator=self.collater,)
         gene_embeds = self.get_gene_embedding(adata.var.index)
         logprobs_batchs = []
         for batch in tqdm(dataloader,
@@ -271,6 +276,7 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
+        mask = mask.to(self.device)
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
@@ -342,7 +348,6 @@ class LitUCEModel(L.LightningModule):
             return
 
         self.eval()
-
         current_step = self.global_step
         try:
             if self.cfg.validations.diff_exp.enable:
@@ -364,7 +369,9 @@ class LitUCEModel(L.LightningModule):
         adata.X = np.log1p(adata.X)
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
-                                       adata_name=self.cfg.validations.perturbation.dataset_name,)
+                                       adata_name=self.cfg.validations.perturbation.dataset_name,
+                                       shuffle=False,
+                                       sentence_collator=self.collater)
         all_embs = []
         for batch in tqdm(dataloader,
                           position=0,
