@@ -35,7 +35,7 @@ class Preprocessor:
 
         # Load gene embedding and convert gene to lower case
         self.gene_embs = torch.load(self.emb_file)
-        self.gene_embs = {gene.lower(): emb for gene, emb in self.gene_embs.items()}
+        self.gene_embs = {gene: emb for gene, emb in self.gene_embs.items()}
         self.gene_filter = list(self.gene_embs.keys())
 
         if self.summary_file:

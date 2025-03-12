@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrain_${loss.name}_${model.nhead}_${model.nlayers}"
+  name: "vci_pretrain_inference_${loss.name}_${model.nhead}_${model.nlayers}"
   local: "local"
   compiled: false
   deaware: false
@@ -11,7 +11,7 @@ experiment:
   num_nodes: 1
   num_gpus_per_node: 1
   port: 12399
-  val_check_interval: 2000 # Number of steps between tests
+  val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 0.005 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
@@ -24,13 +24,15 @@ wandb:
   project: "vci"
 
 embeddings:
+  current: esm2
   esm2:
-    embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
-    cnt: 19790
+    all_embeddings: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
+    ds_emb_mapping: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     size: 5120
-    # embedding_file: /large_storage/ctc/ML/data/cell/embs/Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_mean.pt
-    # cnt: 19790
-    # size: 4096
+  evo2:
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch
+    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch
+    size: 4096
 
 validations:
   diff_exp:
@@ -45,7 +47,7 @@ validations:
 
   perturbation:
     enable: true
-    eval_interval_multiple: 10
+    eval_interval_multiple: 1
     pert_col: gene
     ctrl_label: non-targeting
     dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad
@@ -60,7 +62,6 @@ dataset:
   val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
   data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
   # this is a map for each dataset's columns mapping them to a global gene ordering
-  protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3
@@ -69,6 +70,7 @@ dataset:
   N: 512
   num_cells:  36238464 # TODO: Is this required
   filter: false
+  valid_genes_masks: null # For scBasecamp: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
 
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad

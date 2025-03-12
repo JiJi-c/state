@@ -8,8 +8,8 @@ from torch import nn
 
 from vci.model import LitUCEModel
 from vci.train.trainer import get_ESM2_embeddings
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, create_dataloader
-
+from vci.data import create_dataloader
+from vci.utils import get_embedding_cfg
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class Inference():
         self.model.binary_decoder.requires_grad = False
         self.model.eval()
 
-        self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
+        self.protein_embeds = torch.load(get_embedding_cfg(self._vci_conf))
 
     def init_from_model(self, model, protein_embeds=None):
         '''
@@ -45,7 +45,7 @@ class Inference():
         if protein_embeds:
             self.protein_embeds = protein_embeds
         else:
-            self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
+            self.protein_embeds = torch.load(get_embedding_cfg(self._vci_conf))
 
     def get_gene_embedding(self, genes):
         protein_embeds = [self.protein_embeds[x] \

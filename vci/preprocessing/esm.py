@@ -35,7 +35,7 @@ class ESMEmbedding(object):
 
     def _generate_gene_emb_mapping(self, max_seq_len=8280):
         ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
-        gene_seq_mapping = parse_genome_for_gene_seq_map(self.species, ref_genome_file, return_type=self.seq_type)
+        gene_seq_mapping, _ = parse_genome_for_gene_seq_map(self.species, ref_genome_file, return_type=self.seq_type)
 
         for gene, (chroms, sequences) in gene_seq_mapping.items():
             if '.' in gene:

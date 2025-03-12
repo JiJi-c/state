@@ -283,6 +283,7 @@ def resolve_gene_symbols(
             emb_generator.species = species
             emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
 
+
 def gene_ensemble_mapping(
         geneome_loc=geneome_loc,
         model_type='Evo2',
@@ -460,6 +461,7 @@ def dataset_embedding_mapping_by_species(
         torch.save(dataset_emb_idx, dataset_emb_idx_path)
         logging.info(f'Done {dataset_emb_idx_path}')
 
+
 def consolidate(gene_seq_mapping_loc=gene_seq_mapping_loc,
                 emb_model='Evo2'):
     logging.info(f'Loading embeddings for {data_file_loc}...')
@@ -485,6 +487,41 @@ def consolidate(gene_seq_mapping_loc=gene_seq_mapping_loc,
     logging.info(f'Done {valid_gene_index_path}')
     torch.save(dataset_emb_idx, dataset_emb_idx_path)
     logging.info(f'Done {dataset_emb_idx_path}')
+
+
+def add_new_dataset(dataset_name,
+                    dataset_file,
+                    species='homo_sapiens',
+                    ref_genome_file='/large_storage/ctc/projects/vci/ref_genome/Homo_sapiens.GRCh38.cdna.all.fa.gz',
+                    all_embs='/large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch',
+                    valid_gene_index_path='/large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch',
+                    dataset_emb_idx_path='/large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch'):
+
+    _, gene_name_map = parse_genome_for_gene_seq_map(species, ref_genome_file)
+
+    gene_embs = torch.load(all_embs)
+    valid_genes_list = list(gene_embs.keys())
+
+    valid_gene_index = torch.load(valid_gene_index_path)
+    dataset_emb_idx = torch.load(dataset_emb_idx_path)
+
+    with h5.File(dataset_file) as h5f:
+        gene_names = np.array([g.decode('utf-8') for g in h5f['var/gene_name'][:]])
+        gene_names = [gene_name_map.get(gene, gene) for gene, gene_name in gene_name_map.items()]
+        gene_names = [gene_name.split('.')[0] for gene_name in gene_names]
+
+        valid_mask = np.isin(gene_names, valid_genes_list)
+        valid_gene_index[dataset_name] = valid_mask
+
+        gene_names = np.asarray(gene_names)[valid_mask]
+        ds_gene_idx_mapping = [valid_genes_list.index(g) for g in gene_names]
+        dataset_emb_idx[dataset_name] = torch.tensor(ds_gene_idx_mapping)
+
+
+    logging.info(f'Saving after datasets {valid_gene_index_path} and {dataset_emb_idx_path}...')
+    torch.save(valid_gene_index, valid_gene_index_path)
+    torch.save(dataset_emb_idx, dataset_emb_idx_path)
+
 
 
 if __name__ == '__main__':

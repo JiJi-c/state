@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import math
+import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -24,7 +25,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
-from vci.utils import compute_gene_overlap_cross_pert
+from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
 
@@ -198,9 +199,9 @@ class LitUCEModel(L.LightningModule):
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
-            self.protein_embeds = torch.load(self.cfg.embeddings.esm2.embedding_file)
+            self.protein_embeds = torch.load(get_embedding_cfg(self.cfg))
         protein_embeds = [self.protein_embeds[x] \
-                          if x in self.protein_embeds else torch.zeros(self.cfg.embeddings.esm2.size) for x in genes]
+                          if x in self.protein_embeds else torch.zeros(get_embedding_cfg(self.cfg).size) for x in genes]
         protein_embeds = torch.stack(protein_embeds).to(self.device)
         return self.gene_embedding_layer(protein_embeds)
 
@@ -271,11 +272,12 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
+        mask = mask.to(self.device)
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
         embedding = gene_output[:, 0, :] # select only the CLS token.
-        embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
+        # embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
         return gene_output, embedding
 
     def shared_step(self, batch, batch_idx):
@@ -340,6 +342,8 @@ class LitUCEModel(L.LightningModule):
     def on_validation_epoch_end(self):
         if self.global_rank != 0:
             return
+
+        logging.info(f"Validation Epoch End: {self.global_step}==============")
 
         current_step = self.global_step
 

@@ -62,7 +62,8 @@ def resolve_genes(gene_symbols:List[str],
 
 
 def parse_genename_seq(fasta_file, return_type='dna'):
-    gene_dict = {}
+    gene_dict = {} # gene_name -> (chromosome, sequence)
+    gene_name_map = {} # gene_name -> gene_id
     with gzip.open(fasta_file, 'rt') as handle:
         for record in SeqIO.parse(handle, 'fasta'):
             if return_type == 'dna':
@@ -88,6 +89,9 @@ def parse_genename_seq(fasta_file, return_type='dna'):
                 if gene_name and chromosome:
                     break
 
+            if gene_name is not None and gene is not None:
+                gene_name_map[gene_name] = gene
+
             if gene_name is None and gene is not None:
                 gene_name = gene
 
@@ -101,18 +105,17 @@ def parse_genename_seq(fasta_file, return_type='dna'):
                 prot_seqs.append(seq)
                 gene_dict[gene_name] = chroms, prot_seqs
 
-    return gene_dict
+    return gene_dict, gene_name_map
 
 
 def parse_genome_for_gene_seq_map(species,
                                   fasta_file,
                                   output_file=None,
                                   return_type='dna'):
-    gene_dict = parse_genename_seq(fasta_file,
-                                   return_type=return_type)
+    gene_dict, gene_name_map = parse_genename_seq(fasta_file, return_type=return_type)
     logging.info(f'{len(gene_dict)} genes in {fasta_file}')
     if output_file is not None:
         with open(output_file, 'a') as f:
             for gene, info in gene_dict.items():
                 f.write(f'{species}\t{gene}\t{info[0]}\t{info[1]}\n')
-    return gene_dict
+    return gene_dict, gene_name_map

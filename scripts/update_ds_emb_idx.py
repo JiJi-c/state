@@ -43,13 +43,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--emb_idx_file",
         type=str,
-        default='/large_storage/ctc/ML/data/cell/embs/scBasecamp/esm2embedding_dsidx_mapping.torch',
+        default='/large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch',
         help="Path to save the output summary file",
     )
     parser.add_argument(
         "--embedding_file",
         type=str,
-        default='/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp.gene_symbol_to_embedding_ESM2.pt',
+        default='/large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch',
         help="Path to save the output summary file",
     )
 

@@ -171,7 +171,7 @@ class Evo2Embedding(object):
 
     def _generate_gene_emb_mapping(self):
         ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
-        gene_seq_mapping = parse_genome_for_gene_seq_map(self.species,
+        gene_seq_mapping, _ = parse_genome_for_gene_seq_map(self.species,
                                                          ref_genome_file,
                                                          return_type=self.seq_type)
         for gene, (chroms, sequences) in gene_seq_mapping.items():
