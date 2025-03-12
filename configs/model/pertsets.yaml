@@ -4,6 +4,7 @@ device: cuda
 
 kwargs:
   cell_set_len: 512
+  blur: 0.05
   hidden_dim: 512
   loss: energy
   n_encoder_layers: 4

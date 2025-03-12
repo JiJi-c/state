@@ -67,9 +67,9 @@ class LatentToGeneDecoder(nn.Module):
         # Final output layer
         layers.append(nn.Linear(input_dim, gene_dim))
 
-        # Add a learnable softplus activation
+        # Just add a relu function for now
         if softplus:
-            layers.append(LearnableSoftplus())
+            layers.append(nn.ReLU())
         
         self.decoder = nn.Sequential(*layers)
     
@@ -140,7 +140,7 @@ class PerturbationModel(ABC, LightningModule):
 
         self.gene_decoder = None
         self.gene_decoder_relu = None
-        if embed_key != "X_hvg" and output_space == "gene":
+        if embed_key and embed_key != "X_hvg" and output_space == "gene":
             if embed_key == "X_scfound":
                 hidden_dims = [512, 1024]
             else:
@@ -222,7 +222,7 @@ class PerturbationModel(ABC, LightningModule):
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         pred = self(batch)
-        if self.output_space == "gene":
+        if self.embed_key and self.output_space == "gene":
             if "X_hvg" not in batch:
                 raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
             target = batch["X_hvg"]

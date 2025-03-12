@@ -172,9 +172,11 @@ def compute_metrics(
 
             adata_real_gene_ct = None
             adata_pred_gene_ct = None
-            if adata_real_gene is not None and adata_pred_gene is not None:
-                logger.info(f"Using gene expression data for {celltype}")
+            if adata_real_gene is not None:
+                logger.info(f"Using gene expression data for true {celltype}")
                 adata_real_gene_ct = adata_real_gene[adata_real_gene.obs[celltype_col] == celltype]
+            if adata_pred_gene is not None:
+                logger.info(f"Using gene expression data for pred {celltype}")
                 adata_pred_gene_ct = adata_pred_gene[adata_pred_gene.obs[celltype_col] == celltype]
 
             if DE_metric_flag:
@@ -194,7 +196,7 @@ def compute_metrics(
                     model_decoder=decoder,
                 )
 
-                DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred)
+                DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert=control_pert)
                 # why does the above print 0.02 but the output prints 0.005?
                 metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
                 metrics[celltype]['DE_50'] = np.mean(list(DE_metrics.values()))

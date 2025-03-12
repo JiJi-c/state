@@ -187,8 +187,8 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
 
 
 def compute_DE_for_truth_and_pred(
-    adata_real_ct,  # ground truth in gene space (or latent if output_space=latent but has real_exp?)
-    adata_pred_ct,  # predicted data (latent or gene)
+    adata_real_ct,  # ground truth in gene space or latent space
+    adata_pred_ct,  # predicted data in gene space or latent space
     control_pert: str,
     pert_col: str = "gene",
     n_top_genes: int = 2000,  # HVG cutoff
@@ -200,13 +200,9 @@ def compute_DE_for_truth_and_pred(
     Unify logic for computing DE from both the ground truth and model predictions.
 
     Steps:
-        1) If adata_pred_ct is in latent space (output_space != 'gene'), but we do have a 'model_decoder',
-           call model_decoder.decode_to_adata(adata_pred_ct). -> returns an adata_pred_gene in gene space.
+        1) It is assumed that adata_real_ct is always in gene space, unless the model was explicitly trained in latent space only.
 
-           Otherwise, if output_space='gene', we already have gene space in .X.
-
-        2) Subset ground truth and predictions to the same gene set, then do HVG filtering (n_top_genes).
-           We'll unify them by intersection, or the predicted data might already have the same features.
+        2) If a decoder is present, adata_pred_ct is assumed to be in UCE latent space and DEGs are computed using UCE logprobs.
 
         3) For each: run rank_genes_groups to get top k DE genes vs. control_pert. Return the final
            lists as a DataFrame: row=pert, columns=ranked DE genes in descending order.
@@ -215,23 +211,37 @@ def compute_DE_for_truth_and_pred(
         (DE_true, DE_pred) as two data frames (index=pert_name, columns=top_k DE genes).
     """
 
-    adata_real_ct = adata_real_ct.copy()
-    adata_pred_ct = adata_pred_ct.copy()
+    adata_real_ct = adata_real_ct
+    if 'DMSO_TF' in control_pert:
+        # attach var names to adata_real_ct, which consists of HVGs
+        hvg_gene_names = np.load('/home/aadduri/tahoe_hvg_gene_names.npy', allow_pickle=True)
+        adata_real_ct.var.index = hvg_gene_names
+    adata_pred_ct = adata_pred_ct
 
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.
     sc.pp.highly_variable_genes(adata_real_ct, n_top_genes=n_top_genes)
     hvg_mask = adata_real_ct.var["highly_variable"].values
-    adata_real_hvg = adata_real_ct[:, hvg_mask].copy()
+    adata_real_hvg = adata_real_ct[:, hvg_mask]
     adata_real_hvg.obs["pert_name"] = adata_real_hvg.obs["pert_name"].astype('category')
     DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
 
-    # assume adata_pred_ct is already in gene space
-    adata_pred_gene = adata_pred_ct
-    adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
-    adata_pred_hvg = adata_pred_gene[:, hvg_mask].copy()
-    adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
-    DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+    if model_decoder is not None:
+        DE_pred = model_decoder.compute_de_genes(
+            adata_pred_ct,
+            pert_col=pert_col,
+            control_pert=control_pert,
+            genes=adata_real_hvg.var.index.values,
+            k=k_de_genes,
+        )
+    else:
+        # assume adata_pred_ct is already in gene space
+        adata_pred_ct.var.index = adata_real_ct.var.index
+        adata_pred_gene = adata_pred_ct
+        adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
+        adata_pred_hvg = adata_pred_gene[:, hvg_mask]
+        adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
+        DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
 
     return DE_true, DE_pred
 

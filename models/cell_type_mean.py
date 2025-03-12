@@ -97,7 +97,7 @@ class CellTypeMeanModel(PerturbationModel):
         with torch.no_grad():
             for batch in train_loader:
                 # Select the proper expression space
-                if self.embed_key != "X_hvg" and self.output_space == "gene":
+                if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene":
                     X_vals = batch["X_hvg"]
                 else:
                     X_vals = batch["X"]
@@ -150,7 +150,7 @@ class CellTypeMeanModel(PerturbationModel):
         B = len(batch["cell_type"])
         device = self.dummy_param.device
         # Determine which key to use for the expression values.
-        output_key = "X_hvg" if self.output_space == "gene" and self.embed_key != "X_hvg" else "X"
+        output_key = "X_hvg" if self.embed_key and self.output_space == "gene" and self.embed_key != "X_hvg" else "X"
         pred_out = torch.zeros((B, self.output_dim), device=device)
         
         for i in range(B):
@@ -181,7 +181,7 @@ class CellTypeMeanModel(PerturbationModel):
             torch.Tensor: The computed loss.
         """
         pred = self(batch)
-        output_key = "X_hvg" if self.output_space == "gene" and self.embed_key != "X_hvg" else "X"
+        output_key = "X_hvg" if self.embed_key and self.output_space == "gene" and self.embed_key != "X_hvg" else "X"
         target = batch[output_key]
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, prog_bar=True)
