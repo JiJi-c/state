@@ -277,7 +277,7 @@ class LitUCEModel(L.LightningModule):
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
         embedding = gene_output[:, 0, :] # select only the CLS token.
-        # embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
+        embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
         return gene_output, embedding
 
     def shared_step(self, batch, batch_idx):
