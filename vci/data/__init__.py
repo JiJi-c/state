@@ -1,2 +1,5 @@
-from .loader import H5adDatasetSentences, VCIDatasetSentenceCollator, GeneFilterDataset, create_dataloader
-# , MultiDatasetSentences, MultiDatasetSentenceCollator
+from .loader import (H5adSentenceDataset,
+                     VCIDatasetSentenceCollator,
+                     GeneFilterDataset,
+                     NpzMultiDataset,
+                     create_dataloader)

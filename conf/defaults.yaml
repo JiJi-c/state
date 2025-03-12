@@ -56,11 +56,13 @@ validations:
 dataset:
   name: "vci"
   seed: 42
-  num_train_workers: 8
+  num_train_workers: 16
   num_val_workers: 4
-  train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
-  val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
-  data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+
+  ds_type: npz # npz, h5ad, or filtered_h5ad
+  train: /scratch/ctc/ML/uce/npz_train_datasets.csv
+  val: /scratch/ctc/ML/uce/npz_val_datasets.csv
+  data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
   # this is a map for each dataset's columns mapping them to a global gene ordering
   pad_length: 2048
   pad_token_idx: 0
