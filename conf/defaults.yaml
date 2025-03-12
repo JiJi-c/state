@@ -24,10 +24,10 @@ wandb:
   project: "vci"
 
 embeddings:
-  current: evo2
+  current: esm2
   esm2:
-    all_embeddings: /large_storage/ctc/ML/data/cell/misc/all_tokens.torch
-    ds_emb_mapping: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
     size: 5120
   evo2:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch
