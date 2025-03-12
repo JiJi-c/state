@@ -105,9 +105,6 @@ class PerturbationDataset(Dataset):
         # Determine the full set of indices in the file
         self.all_indices = np.arange(self.metadata_cache.n_cells)
 
-                # Determine the full set of indices in the file
-        self.all_indices = np.arange(self._get_num_cells())
-
         # Store number of genes from the expression matrix (will use in _get_num_genes)
         self.n_genes = self._get_num_genes()
 
@@ -174,13 +171,6 @@ class PerturbationDataset(Dataset):
         # Get expression from the h5 file.
         # For now, we assume the data is stored in "X" (could be counts) and/or in obsm (embed_key)
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
-        if self.embed_key:
-            # For example, get the embedding from obsm/X_uce
-            pert_expr = self.fetch_obsm_expression(underlying_idx, self.embed_key)
-        else:
-            # Otherwise, fetch from X directly
-            pert_expr = self.fetch_gene_expression(underlying_idx)
-
         pert_expr, ctrl_expr = self.mapping_strategy.get_mapped_expressions(self, split, underlying_idx)
         
         # Get perturbation information using metadata cache
@@ -323,6 +313,7 @@ class PerturbationDataset(Dataset):
     def collate_fn(batch, transform=False, pert_col="drug", normalize=False):
         """
         Custom collate that reshapes data into sequences.
+        Safely handles normalization when vectors sum to zero.
         """
         # First do normal collation
         batch_dict = {
@@ -333,41 +324,42 @@ class PerturbationDataset(Dataset):
             "cell_type": [item["cell_type"] for item in batch],
             "gem_group": torch.tensor([item["gem_group"] for item in batch]),
         }
-
+        
         # If the first sample has "X_hvg", assume the entire batch does
-        # This should be log transformed always, since X_hvg is not log counts
-        if "X_hvg" in batch[0]: # this is only done if store_raw_expression is set in getitem
-            # 1. Replogle X_hvg is already log transformed.
-            # 2. Tahoe X_hvg is NOT already log transformed.
+        if "X_hvg" in batch[0]:
             X_hvg = torch.stack([item["X_hvg"] for item in batch])
             batch_dict["X_hvg"] = X_hvg
             
-            # if this is tahoe dataset then log
+            # Handle Tahoe dataset (needs log transform)
             if pert_col == "drug" or pert_col == "drugname_drugconc":
                 if normalize:
                     library_sizes = X_hvg.sum(dim=1, keepdim=True)
-                    X_hvg_norm = X_hvg * 10000 / library_sizes
+                    # Replace zeros with ones (will result in no change for zero vectors)
+                    safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
+                    X_hvg_norm = X_hvg * 10000 / safe_sizes
                     batch_dict["X_hvg"] = torch.log1p(X_hvg_norm)
                 else:
                     batch_dict["X_hvg"] = torch.log1p(X_hvg)
         
-        # Apply transform if provided, but only if X and basal are in counts space
+        # Apply transform if provided
         if transform:
             if normalize:
                 # Normalize X by library size before log transform
                 X_library_sizes = batch_dict["X"].sum(dim=1, keepdim=True)
-                X_norm = batch_dict["X"] * 10000 / X_library_sizes
+                X_safe_sizes = torch.where(X_library_sizes > 0, X_library_sizes, torch.ones_like(X_library_sizes) * 10000)
+                X_norm = batch_dict["X"] * 10000 / X_safe_sizes
                 batch_dict["X"] = torch.log1p(X_norm)
                 
                 # Normalize basal by library size before log transform
                 basal_library_sizes = batch_dict["basal"].sum(dim=1, keepdim=True)
-                basal_norm = batch_dict["basal"] * 10000 / basal_library_sizes
+                basal_safe_sizes = torch.where(basal_library_sizes > 0, basal_library_sizes, torch.ones_like(basal_library_sizes) * 10000)
+                basal_norm = batch_dict["basal"] * 10000 / basal_safe_sizes
                 batch_dict["basal"] = torch.log1p(basal_norm)
             else:
                 # Original behavior: just log transform without normalization
                 batch_dict["X"] = torch.log1p(batch_dict["X"])
                 batch_dict["basal"] = torch.log1p(batch_dict["basal"])
-
+        
         return batch_dict
 
     ##############################

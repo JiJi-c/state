@@ -48,6 +48,11 @@ def parse_args():
         help="Checkpoint filename. Default is 'last.ckpt'. Relative to the output directory.",
     )
     parser.add_argument(
+        "--use_uce_decoder",
+        action="store_true",
+        help="Use the UCELogProbDecoder for decoding the model output (if applicable).",
+    )
+    parser.add_argument(
         "--map_type",
         type=str,
         default=None,
@@ -219,7 +224,7 @@ def main():
             # Move each tensor in the returned dict to CPU to free GPU memory
             batch_preds = {k: (v.cpu() if isinstance(v, torch.Tensor) else v) for k, v in batch_preds.items()}
             preds.append(batch_preds)
-    logger.info("Aggregated predictions from manual loop.")
+    logger.info("Aggregating predictions from manual loop...")
 
     # Flatten out
     all_preds = []
@@ -311,21 +316,21 @@ def main():
     # Create adata for real
     adata_real = anndata.AnnData(X=final_reals, obs=obs.copy())
 
-    # # TODO-Abhi: Remove this before merging, this is to account for a bug with training
-    # # that didn't store the decoder
-    # if data_module.embed_key == "X_uce" and cfg["data"]["kwargs"]["output_space"] == "latent":
-    #     model.decoder = UCELogProbDecoder()
-    # else:
-    #     model.decoder = None
+    if args.use_uce_decoder:
+        assert data_module.embed_key == "X_uce", "UCELogProbDecoder can only be used with UCE embeddings."
+        logger.info("Using UCELogProbDecoder for decoding.")
+        decoder = UCELogProbDecoder()
+    else:
+        decoder = None
 
     # Create adata for real data in gene space (if available)
     adata_real_gene = None
-    if final_X_hvg is not None:
+    if final_X_hvg is not None: # either this is available, or we are already working in gene space
         adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs.copy())
 
     # Create adata for gene predictions (if available)
     adata_pred_gene = None
-    if final_gene_preds is not None:
+    if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
         adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs.copy())
 
     # 6. Compute metrics
@@ -345,6 +350,7 @@ def main():
         embed_key=data_module.embed_key,
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         shared_perts=data_module.get_shared_perturbations(),
+        decoder=decoder,
     )
 
     # 7. Summarize results

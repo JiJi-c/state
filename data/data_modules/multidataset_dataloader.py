@@ -149,12 +149,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         )  # move this to a mapping strategy specific config
 
         self.store_raw_expression = False
-        if self.embed_key != "X_hvg" and self.output_space == "gene":
+        if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene":
             self.store_raw_expression = True
         
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = False
-        if embed_key == "X_hvg":
+        if embed_key == "X_hvg" or embed_key is None:
             # basically, make sure we do this for tahoe because I forgot to 
             # log transform the hvg's... but don't do this for replogle
             # TODO: fix this before we ship
@@ -610,7 +610,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             input_dim = underlying_ds.n_genes
 
         gene_dim = underlying_ds.n_genes
-        output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
+
+        if self.embed_key:
+            output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
+        else:
+            output_dim = input_dim # training on raw gene expression
 
         gene_names = underlying_ds.get_gene_names()
 

@@ -69,7 +69,8 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.gene_dim = gene_dim
 
         # Build the distributional loss from geomloss
-        self.loss_fn = SamplesLoss(loss=self.distributional_loss)
+        blur = kwargs.get("blur", 0.05)
+        self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
 
         # Build the underlying neural OT network
         self._build_networks()
@@ -77,12 +78,12 @@ class PertSetsPerturbationModel(PerturbationModel):
         # if the model is outputting to counts space, apply softplus
         # otherwise its in embedding space and we don't want to
         if 'softplus' in kwargs and kwargs['softplus'] and kwargs['embed_key'] == 'X_hvg':
-            self.softplus = LearnableSoftplus()
+            # actually just set this to a relu for now
+            self.softplus = torch.nn.ReLU()
 
     def _build_networks(self):
         """
-        Here we instantiate the actual GPT2-based model or any neuralOT translator
-        via your old get_model(model_key, model_kwargs) approach.
+        Here we instantiate the actual GPT2-based model.
         """
         self.pert_encoder = build_mlp(
             in_dim=self.pert_dim,
@@ -180,7 +181,8 @@ class PertSetsPerturbationModel(PerturbationModel):
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
-        main_loss = self.loss_fn(pred, target).mean()
+
+        main_loss = self.loss_fn(pred, target).nanmean()
         self.log("train_loss", main_loss)
         
         # Process decoder if available
