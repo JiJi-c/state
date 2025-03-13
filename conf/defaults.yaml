@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrain_${loss.name}_${model.nhead}_${model.nlayers}"
+  name: "vci_pretrai1_${loss.name}_${model.nhead}_${model.nlayers}"
   local: "local"
   compiled: false
   deaware: false
@@ -24,12 +24,13 @@ wandb:
   project: "vci"
 
 embeddings:
-  current: esm2
-  esm2:
+  current: evo2-scbasecamp
+  esm2-cellxgene:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
     size: 5120
-  evo2:
+
+  evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch
     ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch
     size: 4096
@@ -58,11 +59,30 @@ dataset:
   seed: 42
   num_train_workers: 16
   num_val_workers: 4
+  current: scbasecamp
 
-  ds_type: npz # npz, h5ad, or filtered_h5ad
-  train: /scratch/ctc/ML/uce/npz_train_datasets.csv
-  val: /scratch/ctc/ML/uce/npz_val_datasets.csv
-  data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
+  cellxgene:
+    ds_type: npz # npz, h5ad, or filtered_h5ad
+    train: /scratch/ctc/ML/uce/npz_train_datasets.csv
+    val: /scratch/ctc/ML/uce/npz_val_datasets.csv
+    data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
+    filter: false
+    valid_genes_masks: null # For scBasecamp: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
+
+  scbasecamp:
+    ds_type: filtered_h5ad
+    train: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
+    val: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
+    filter: true
+    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
+
+  tahoe:
+    ds_type: filtered_h5ad
+    train: /scratch/ctc/ML/uce/full_train_datasets.csv
+    val: /scratch/ctc/ML/uce/full_train_datasets.csv
+    filter: true
+    valid_genes_masks: null
+
   # this is a map for each dataset's columns mapping them to a global gene ordering
   pad_length: 2048
   pad_token_idx: 0
@@ -71,9 +91,6 @@ dataset:
   P: 512
   N: 512
   num_cells:  36238464 # TODO: Is this required
-  filter: false
-  valid_genes_masks: null # For scBasecamp: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
-
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
 

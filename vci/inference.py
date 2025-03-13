@@ -11,7 +11,7 @@ from pathlib import Path
 from vci.nn.model import LitUCEModel
 from vci.train.trainer import get_embeddings
 from vci.data import create_dataloader
-from vci.utils import get_embedding_cfg
+from vci.utils import get_embedding_cfg, get_dataset_cfg
 
 log = logging.getLogger(__name__)
 

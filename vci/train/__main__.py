@@ -19,6 +19,14 @@ def main(config_file):
         log.info(f'Loading config {config_file}...')
         cfg = compose(config_name=config_file.name)
 
+        if cfg.embeddings.current is None:
+            log.error("Gene embeddings are required for training. Please set 'embeddings.current'")
+            sys.exit(1)
+
+        if cfg.dataset.current is None:
+            log.error("Please set the desired dataset to 'dataset.current'")
+            sys.exit(1)
+
     os.environ['MASTER_PORT'] = str(cfg.experiment.port)
     # WAR: Workaround for sbatch failing when --ntasks-per-node is set.
     # lightning expects this to be set.

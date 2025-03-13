@@ -13,7 +13,7 @@ from lightning.pytorch.strategies import DDPStrategy
 from vci.nn.model import LitUCEModel
 from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilterDataset, NpzMultiDataset
 from vci.train.callbacks import LogLR, ProfilerCallback
-from vci.utils import get_latest_checkpoint, get_embedding_cfg
+from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
 
 def get_embeddings(cfg):
@@ -37,14 +37,14 @@ def main(cfg):
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
 
-    if cfg.dataset.ds_type == 'h5ad':
+    if get_dataset_cfg(cfg).ds_type == 'h5ad':
         DatasetClass = H5adSentenceDataset
-    elif cfg.dataset.ds_type == 'filtered_h5ad':
-        DatasetClass = FilteredGenesCounts
-    elif cfg.dataset.ds_type == 'npz':
+    elif get_dataset_cfg(cfg).ds_type == 'filtered_h5ad':
+        DatasetClass = GeneFilterDataset
+    elif get_dataset_cfg(cfg).ds_type == 'npz':
         DatasetClass = NpzMultiDataset
     else:
-        raise ValueError(f'Unknown dataset type: {cfg.dataset.ds_type}')
+        raise ValueError(f'Unknown dataset type: {get_dataset_cfg(cfg).ds_type}')
 
     # Training dataloader
     train_dataset = DatasetClass(cfg)

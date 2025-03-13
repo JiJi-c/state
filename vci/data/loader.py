@@ -33,7 +33,7 @@ def create_dataloader(cfg,
             raise ValueError('Either datasets and shape_dict or adata and adata_name should be provided')
 
         if data_dir:
-            cfg.dataset.data_dir = data_dir
+            utils.get_dataset_cfg(cfg).data_dir = data_dir
 
         dataset = H5adSentenceDataset(cfg,
                                        datasets=datasets,
@@ -56,9 +56,9 @@ class NpzMultiDataset(data.Dataset):
         super(NpzMultiDataset, self).__init__()
 
         self.cfg = cfg
-        ds_path = cfg.dataset.train
+        ds_path = utils.get_dataset_cfg(cfg).train
         if test:
-            ds_path = cfg.dataset.val
+            ds_path = utils.get_dataset_cfg(cfg).val
 
         _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(ds_path)
 
@@ -123,9 +123,9 @@ class H5adSentenceDataset(data.Dataset):
             self.datasets = [adata_name]
             self.shapes_dict = {self.datasets[0]: adata.shape}
         elif datasets is None:
-            ds_path = cfg.dataset.train
+            ds_path = utils.get_dataset_cfg(cfg).train
             if test:
-                ds_path = cfg.dataset.val
+                ds_path = utils.get_dataset_cfg(cfg).val
             _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map= utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
@@ -243,12 +243,12 @@ class H5adSentenceDataset(data.Dataset):
         return self.num_genes
 
 
-class GeneFilterDataset(H5adDatasetSentences):
+class GeneFilterDataset(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
         super(GeneFilterDataset, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
-        if cfg.dataset.valid_genes_masks is not None:
-            self.valid_gene_index = torch.load(cfg.dataset.valid_genes_masks)
+        if utils.get_dataset_cfg(cfg).valid_genes_masks is not None:
+            self.valid_gene_index = torch.load(utils.get_dataset_cfg(cfg).valid_genes_masks)
         elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg))
             valid_genes_list = list(esm_data.keys())

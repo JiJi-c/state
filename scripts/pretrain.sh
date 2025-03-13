@@ -17,4 +17,4 @@ python3 -m vci.tools.slurm \
     optimizer.gradient_accumulation_steps=100 \
     experiment.val_check_interval=1000 \
     validations.diff_exp.eval_interval_multiple=1 \
-    embeddings.current=evo2
+    embeddings.current=evo2-scbasecamp

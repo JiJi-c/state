@@ -18,6 +18,9 @@ def is_valid_uuid(val):
 def get_embedding_cfg(cfg):
     return cfg.embeddings[cfg.embeddings.current]
 
+def get_dataset_cfg(cfg):
+    return cfg.dataset[cfg.dataset.current]
+
 
 def compute_pearson_delta(pred, true, ctrl, ctrl_true):
     """
