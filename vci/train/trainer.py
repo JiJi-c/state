@@ -26,6 +26,7 @@ def get_embeddings(cfg):
 
 
 def main(cfg):
+    print(f"Starting training with Embedding {cfg.embeddings.current} and dataset {cfg.dataset.current}")
     os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)

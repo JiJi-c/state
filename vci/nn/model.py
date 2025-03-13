@@ -168,11 +168,11 @@ class LitUCEModel(L.LightningModule):
         X = batch[1].to(self.device)
         Y = batch[2]
         batch_weights = batch[4]
+        mask = batch[5]
+        mask = mask.to(torch.bool)
 
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences.long())
-        # Add a learnable CLS token to the beginning of the sentence
-        batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
         X = self.pe_embedding(X.long())
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
@@ -227,6 +227,7 @@ class LitUCEModel(L.LightningModule):
                           leave=True,
                           ncols=100,
                           desc=f"Embeddings for {dataset_name}",):
+            torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
             if self.cfg.model.rda:
@@ -262,9 +263,9 @@ class LitUCEModel(L.LightningModule):
     def forward(self, src: Tensor, mask: Tensor):
         """
         Args:
-            src: Tensor, shape [seq_len, batch_size]
+            src: Tensor, shape [batch_size, seq_len, ntoken]
         Returns:
-            output Tensor of shape [seq_len, batch_size, ntoken]
+            output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
         mask = mask.to(self.device)
@@ -341,9 +342,7 @@ class LitUCEModel(L.LightningModule):
         self.eval()
         current_step = self.global_step
         try:
-        self.trainer.strategy.barrier()
-
-        if self.global_rank == 0:
+            self.trainer.strategy.barrier()
             current_step = self.global_step
             if self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
@@ -351,8 +350,7 @@ class LitUCEModel(L.LightningModule):
                 if current_step >= interval and current_step % interval == 0:
                     self._compute_val_de()
 
-        self.trainer.strategy.barrier()
-        if self.global_rank == 0:
+            self.trainer.strategy.barrier()
             if self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
                 current_step = current_step - (current_step % 10)
@@ -362,7 +360,6 @@ class LitUCEModel(L.LightningModule):
             self.train()
 
     def _compute_val_perturbation(self, current_step):
-                    self._compute_val_perturbation()
         self.trainer.strategy.barrier()
 
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)
@@ -379,6 +376,7 @@ class LitUCEModel(L.LightningModule):
                           ncols=100,
                           desc=f"Embeddings for {self.cfg.validations.perturbation.dataset_name}",):
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()
             _, _, _, emb = self._compute_embedding_for_batch(batch)
             all_embs.append(emb.cpu().detach().numpy())
 
@@ -500,6 +498,7 @@ class LitUCEModel(L.LightningModule):
         pred_exp = self._predict_exp_for_adata(tmp_adata,
                                                self.cfg.validations.diff_exp.dataset_name,
                                                self.cfg.validations.diff_exp.obs_pert_col)
+        torch.cuda.synchronize()
         de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
         self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
