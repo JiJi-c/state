@@ -43,7 +43,7 @@ class UCELogProbDecoder(DecoderInterface):
         """
         logger.info(f"Computing DE genes using UCE log probs decoder.")
         gene_predictor = UCEGenePredictor(device="cuda:0", model_loc=self.model_loc)
-        gene_logprobs = gene_predictor.compute_gene_prob_group_batched(adata_latent.X, genes, batch_size=32)
+        gene_logprobs = gene_predictor.compute_gene_prob_group_batched(adata_latent.X, genes, batch_size=96)
         probs_df = pd.DataFrame(gene_logprobs)
         probs_df["pert"] = adata_latent.obs[pert_col].values
         mean_df = probs_df.groupby("pert").mean()

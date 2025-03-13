@@ -178,9 +178,12 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
     all_overlaps = {}
     k = max(k, len(DE_true.columns))
     for c in DE_pred.index:
-        if c == control_pert:
+        if c == control_pert or c not in DE_true.index:
             continue
-        all_overlaps[c] = len(set(DE_true.loc[c].values).intersection(set(DE_pred.loc[c].values))) / k
+        try:
+            all_overlaps[c] = len(set(DE_true.loc[c].values).intersection(set(DE_pred.loc[c].values))) / k
+        except:
+            continue
 
     print("Average DE: ", np.mean(list(all_overlaps.values())))
     return all_overlaps
@@ -211,12 +214,10 @@ def compute_DE_for_truth_and_pred(
         (DE_true, DE_pred) as two data frames (index=pert_name, columns=top_k DE genes).
     """
 
-    adata_real_ct = adata_real_ct
-    if 'DMSO_TF' in control_pert:
+    if 'DMSO_TF' in control_pert: # only for tahoe dataset for now
         # attach var names to adata_real_ct, which consists of HVGs
         hvg_gene_names = np.load('/home/aadduri/tahoe_hvg_gene_names.npy', allow_pickle=True)
         adata_real_ct.var.index = hvg_gene_names
-    adata_pred_ct = adata_pred_ct
 
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.

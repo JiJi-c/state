@@ -198,7 +198,6 @@ def compute_metrics(
 
                 DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert=control_pert)
                 # why does the above print 0.02 but the output prints 0.005?
-                metrics[celltype]['DE'] = [DE_metrics.get(k, 0.0) for k in metrics[celltype]['pert']]
                 metrics[celltype]['DE_50'] = np.mean(list(DE_metrics.values()))
 
                 # Compute the actual top-k gene lists per perturbation
