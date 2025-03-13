@@ -305,25 +305,34 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         # First compute global fewshot splits
         self._setup_global_fewshot_splits()
 
-        # choose 40% of the fewshot cell types for validation
-        num_val_cts = max(int(len(self.fewshot_splits) * 0.4), 1)
-        np.random.seed(self.random_seed)
-
-        try:
-            val_cts = set(np.random.choice(list(self.fewshot_splits.keys()), size=num_val_cts, replace=False))
-
-            # if we only have val_cts, just set it to empty set
-            if len(val_cts) == len(self.fewshot_splits):
-                val_cts = set()
-        except:
-            val_cts = set()
-
-        # Get zeroshot cell types
+        # Get zeroshot cell types and store as a set
         zeroshot_cts = {
             spec.cell_type
             for spec in self.test_specs
             if spec.task_type == TaskType.ZEROSHOT
         }
+
+        # Ordered list for reproducible splicing into val / test
+        val_test_cts = [
+            spec.cell_type
+            for spec in self.test_specs
+            if spec.task_type == TaskType.ZEROSHOT or spec.task_type == TaskType.FEWSHOT
+        ]
+
+        # Choose 40% of the fewshot cell types for validation
+        num_val_cts = int(len(val_test_cts) * 0.4)
+
+        # if we don't have enough cell types for validation,
+        # just use some of the test data as validation too
+        # this should never be an issue if you just stop the model based on number of steps
+        if num_val_cts > 0:
+            val_cts = set(val_test_cts[:num_val_cts])
+        else:
+            val_cts = set()
+
+        # keep track of what we add to test
+        final_test_cts = set()
+        final_val_cts = set()
 
         # Process each training spec by grouping them by dataset
         train_map = self._group_specs_by_dataset(self.train_specs)
@@ -400,17 +409,19 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
                         # For zeroshot, all cells go to val / test, and none go to train
                         if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
-                            test_subset = ds.to_subset_dataset(
-                                "test", pert_indices, ctrl_indices
-                            )
-                            self.test_datasets.append(test_subset)
-                            test_sum += len(test_subset)
-
                             val_subset = ds.to_subset_dataset(
                                 "val", pert_indices, ctrl_indices
                             )
                             self.val_datasets.append(val_subset)
                             val_sum += len(val_subset)
+                            final_val_cts.add(ct)
+
+                            test_subset = ds.to_subset_dataset(
+                                "test", pert_indices, ctrl_indices
+                            )
+                            self.test_datasets.append(test_subset)
+                            test_sum += len(test_subset)
+                            final_test_cts.add(ct)
                         else: # otherwise we can split
                             if ct in val_cts:
                                 # If this cell type is in the val set, create a val subset
@@ -419,13 +430,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                                 )
                                 self.val_datasets.append(val_subset)
                                 val_sum += len(val_subset)
+                                final_val_cts.add(ct)
                             else:
                                 test_subset = ds.to_subset_dataset(
                                     "test", pert_indices, ctrl_indices
                                 )
                                 self.test_datasets.append(test_subset)
                                 test_sum += len(test_subset)
-
+                                final_test_cts.add(ct)
 
                     elif ct in self.fewshot_splits:
                         # For fewshot, use pre-computed splits
@@ -471,17 +483,19 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         # is used as validation data
                         if len(test_pert_indices) > 0:
                             if len(val_cts) == 0: # if there are no cell types in validation, let's just put into both val and test
-                                test_subset = ds.to_subset_dataset(
-                                    "test", test_pert_indices, test_controls
-                                )
-                                self.test_datasets.append(test_subset)
-                                test_sum += len(test_subset)
-
                                 val_subset = ds.to_subset_dataset(
                                     "val", test_pert_indices, test_controls
                                 )
                                 self.val_datasets.append(val_subset)
                                 val_sum += len(val_subset)
+                                final_val_cts.add(ct)
+
+                                test_subset = ds.to_subset_dataset(
+                                    "test", test_pert_indices, test_controls
+                                )
+                                self.test_datasets.append(test_subset)
+                                test_sum += len(test_subset)
+                                final_test_cts.add(ct)
                             else: # otherwise we can split
                                 if ct in val_cts:
                                     # If this cell type is in the val set, create a val subset
@@ -490,12 +504,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                                     )
                                     self.val_datasets.append(val_subset)
                                     val_sum += len(val_subset)
+                                    final_val_cts.add(ct)
                                 else:
                                     test_subset = ds.to_subset_dataset(
                                         "test", test_pert_indices, test_controls
                                     )
                                     self.test_datasets.append(test_subset)
                                     test_sum += len(test_subset)
+                                    final_test_cts.add(ct)
 
                     else:
                         # Regular training cell type - no perturbation-based splitting needed
@@ -531,6 +547,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 del cache
 
             logger.info(f"Finished processing dataset {ds_name}")
+            logger.info(f"Using {final_test_cts} as test cell types")
+            logger.info(f"Using {final_val_cts} as val cell types")
 
     def setup(self, stage: Optional[str] = None):
         """
@@ -601,10 +619,6 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def get_var_dims(self):
         underlying_ds: PerturbationDataset = self.test_datasets[0].dataset
         if self.embed_key:
-            # if self.transform:  # PCA transform, todo change this.
-            #     input_dim = self.transform.n_components  # data is processed on the fly here
-            # else:
-            #     # TODO- if we peek into the files we can get dimensions before having to call setup on the datamodule
             input_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
         else:
             input_dim = underlying_ds.n_genes

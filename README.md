@@ -7,6 +7,42 @@ conda env create -f pertsets_environment.yml
 conda activate pertsets
 ```
 
+# Disclaimer
+
+Some parts of the code can be messy. If something is confusing, just ask! Chances are we can improve the code.
+
+# The machine learning task
+
+We are primarily interested in cell type generalization of perturbation prediction. That is, can we predict the effects of perturbations that we have seen in our training data on unseen cell types, either in the zeroshot or fewshot setting.
+
+<p align="center">
+    <img src="assets/generalization_task.png" alt="Generalization Task" width="50%">
+</p>
+
+# Frequently Asked Questions
+
+## Data Parameters
+
+The current datasets are a bit scattered, but here are the key ideas:
+
+1. `data.kwargs.embed_key`: This is the key in the `.obsm` of the h5 file that contains the embeddings. For example, `X_hvg` is the key for the highly variable genes embeddings. Other options include `X_uce`, `X_scGPT`, `X_scfound`, etc.
+
+2. As a byproduct of data pre-processing, the embeddings for cells are separated by folder. So for example, in the slurm script below, to have access to key `X_scfound`, you would need to change all occurrences of `tahoe_45_ct_scgpt` to `tahoe_45_ct_scfound`.
+
+3. To train on the full transcriptome (19k gene featurization of the cell), use `tahoe_45_ct_processed` and set `data.kwargs.embed_key=null`.
+
+4. `data.kwargs.basal_mapping_strategy`: This is the strategy used to map perturbed cells to control cells. For our experiments right now, this should always be `random`.
+
+5. `data.kwargs.output_space`: This is the space that the model is predicting. For our experiments right now, this should always be `gene`. Then, if `data.kwargs.embed_key` is not `X_hvg`, the model automatically trains a decoder to HVG space for you. Otherwise, if `data.kwargs.embed_key` is `X_hvg`, no decoder is trained.
+
+6. To change the size of the model, change `model.kwargs.hidden_dim`.
+
+7. To set tags automatically for organizing your wandb, use `wandb.tags`.
+
+## Parameters you should always set constant
+
+You should always keep the following defaults: `data.kwargs.should_yield_control_cells=True`, `data.kwargs.map_controls=True`, `model.kwargs.softplus=True`
+
 # Example Commands
 
 ## Example Tahoe Training Command (5-fold cross validation on cell type)
@@ -27,15 +63,15 @@ conda activate pertsets
 
 # Define test tasks for each fold
 if [ $SLURM_ARRAY_TASK_ID -eq 1 ]; then
-    TEST_TASKS="[tahoe_45_ct_scgpt:RKO:fewshot,tahoe_45_ct_scgpt:SNU-423:fewshot,tahoe_45_ct_scgpt:BT-474:fewshot,tahoe_45_ct_scgpt:AN3 CA:fewshot,tahoe_45_ct_scgpt:NCI-H661:fewshot]"
+    TEST_TASKS="[tahoe_45_ct_scvi:SNU-423:fewshot,tahoe_45_ct_scvi:NCI-H661:fewshot,tahoe_45_ct_scvi:AN3 CA:fewshot,tahoe_45_ct_scvi:BT-474:fewshot,tahoe_45_ct_scvi:RKO:fewshot]"
 elif [ $SLURM_ARRAY_TASK_ID -eq 2 ]; then
-    TEST_TASKS="[tahoe_45_ct_scgpt:HEC-1-A:fewshot,tahoe_45_ct_scgpt:HCT15:fewshot,tahoe_45_ct_scgpt:HS-578T:fewshot,tahoe_45_ct_scgpt:J82:fewshot,tahoe_45_ct_scgpt:CHP-212:fewshot]"
+    TEST_TASKS="[tahoe_45_ct_scvi:HCT15:fewshot,tahoe_45_ct_scvi:CHP-212:fewshot,tahoe_45_ct_scvi:HEC-1-A:fewshot,tahoe_45_ct_scvi:HS-578T:fewshot,tahoe_45_ct_scvi:J82:fewshot]"
 elif [ $SLURM_ARRAY_TASK_ID -eq 3 ]; then
-    TEST_TASKS="[tahoe_45_ct_scgpt:A-172:fewshot,tahoe_45_ct_scgpt:NCI-H1792:fewshot,tahoe_45_ct_scgpt:H4:fewshot,tahoe_45_ct_scgpt:HT-29:fewshot,tahoe_45_ct_scgpt:SNU-1:fewshot]"
+    TEST_TASKS="[tahoe_45_ct_scvi:NCI-H1792:fewshot,tahoe_45_ct_scvi:SNU-1:fewshot,tahoe_45_ct_scvi:A-172:fewshot,tahoe_45_ct_scvi:H4:fewshot,tahoe_45_ct_scvi:HT-29:fewshot]"
 elif [ $SLURM_ARRAY_TASK_ID -eq 4 ]; then
-    TEST_TASKS="[tahoe_45_ct_scgpt:CFPAC-1:fewshot,tahoe_45_ct_scgpt:SK-MEL-2:fewshot,tahoe_45_ct_scgpt:NCI-H23:fewshot,tahoe_45_ct_scgpt:SHP-77:fewshot,tahoe_45_ct_scgpt:SW480:fewshot]"
+    TEST_TASKS="[tahoe_45_ct_scvi:SK-MEL-2:fewshot,tahoe_45_ct_scvi:SW480:fewshot,tahoe_45_ct_scvi:CFPAC-1:fewshot,tahoe_45_ct_scvi:NCI-H23:fewshot,tahoe_45_ct_scvi:SHP-77:fewshot]"
 else
-    TEST_TASKS="[tahoe_45_ct_scgpt:C-33 A:fewshot,tahoe_45_ct_scgpt:LS 180:fewshot,tahoe_45_ct_scgpt:RPMI-7951:fewshot,tahoe_45_ct_scgpt:COLO 205:fewshot,tahoe_45_ct_scgpt:NCI-H1573:fewshot]"
+    TEST_TASKS="[tahoe_45_ct_scvi:LS 180:fewshot,tahoe_45_ct_scvi:NCI-H1573:fewshot,tahoe_45_ct_scvi:C-33 A:fewshot,tahoe_45_ct_scvi:COLO 205:fewshot,tahoe_45_ct_scvi:RPMI-7951:fewshot]"
 fi
 
 python -m train \
@@ -62,6 +98,8 @@ python -m train \
     output_dir=<YOUR OUTPUT DIRECTORY> \
     name="fold${SLURM_ARRAY_TASK_ID}"
 ```
+
+This will create five folders, one for each cell-type split of Tahoe, in the output directory you specify. The names will be `fold1`, etc.
 
 ## Example Replogle Training Command (1-fold cross validation on cell type)
 ```sh
@@ -114,9 +152,46 @@ python -m train \
     model=pertsets \
     output_dir=<YOUR OUTPUT FOLDER> \
     name="fold${SLURM_ARRAY_TASK_ID}" \
-    model.kwargs.transformer_backbone_kwargs.n_embd=256 \
     model.kwargs.hidden_dim=256 # model size 20M recommended for replogle
 ```
+
+# Example Evaluation Script
+
+```
+#!/bin/bash
+#SBATCH --partition=gpu_batch_high_mem,preemptible,gpu_high_mem
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=512GB
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:1
+#SBATCH --array=1-5
+#SBATCH --output=<YOUR_OUTPUT_LOG>_%a.out
+#SBATCH --error=<YOUR_ERROR_LOG>_%a.err
+#SBATCH --job-name=eval_hvg_samp_ctrl_50m
+#SBATCH --exclude=GPU115A
+
+EVAL_MAP_TYPE="random"
+
+# This is the output folder from your job + the name
+EXPERIMENT_DIR="/large_storage/ctc/userspace/aadduri/feb28_conc/cv_hvg_samp_ctrl/fold$SLURM_ARRAY_TASK_ID"
+
+# make sure that ${EXPERIMENT_DIR}/last.ckpt is actually the most up to date step
+CKPT="last.ckpt"
+
+# Print job info for logging
+echo "Running job $SLURM_ARRAY_TASK_ID"
+echo "Fold $SLURM_ARRAY_TASK_ID"
+echo "Checking for evaluation directory: $EXPERIMENT_DIR"
+
+python -m train.evaluate_model \
+        --output_dir ${EXPERIMENT_DIR} \
+        --checkpoint ${CKPT} \
+        --map_type ${EVAL_MAP_TYPE}
+```
+
+The resulting metrics will connect to wandb if you have that set up. They will also be printed out to your error file.
 
 ## Model Options
 
