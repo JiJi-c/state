@@ -1,5 +1,5 @@
 experiment:
-  name: "vci_pretrai1_${loss.name}_${model.nhead}_${model.nlayers}"
+  name: "vci_pretrain_${loss.name}_${model.nhead}_${model.nlayers}"
   local: "local"
   compiled: false
   deaware: false
@@ -12,7 +12,7 @@ experiment:
   num_gpus_per_node: 1
   port: 12399
   val_check_interval: 1000 # Number of steps between tests
-  limit_val_batches: 0.005 # Use 1% of validation dataset
+  limit_val_batches: 500 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
@@ -24,7 +24,7 @@ wandb:
   project: "vci"
 
 embeddings:
-  current: evo2-scbasecamp
+  current: null
   esm2-cellxgene:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
@@ -59,7 +59,7 @@ dataset:
   seed: 42
   num_train_workers: 16
   num_val_workers: 4
-  current: scbasecamp
+  current: null
 
   cellxgene:
     ds_type: npz # npz, h5ad, or filtered_h5ad
