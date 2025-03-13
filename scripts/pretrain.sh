@@ -9,6 +9,14 @@
 #     --set val_check_interval=50 \
 #     --set validations.diff_exp.eval_interval_multiple=1
 
+python3 -m vci.tools.slurm \
+    --exp_name vci_mse_20250225 \
+    --set dataset.name=vci \
+    --set experiment.checkpoint.path /scratch/ctc/ML/vci/checkpoint/pretrain/20250225 \
+    --set experiment.val_check_interval=1000 \
+    --set loss.name=mse
+
+
 
 python3 -m vci.tools.slurm \
     --exp_name vci_scbasecamp \

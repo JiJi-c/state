@@ -4,6 +4,8 @@ import torch
 import anndata
 import h5py as h5
 
+from pathlib import Path
+from omegaconf import OmegaConf
 from tqdm import tqdm
 from torch import nn
 from pathlib import Path
@@ -19,7 +21,6 @@ log = logging.getLogger(__name__)
 class Inference():
 
     def __init__(self, cfg):
-        self._vci_conf = cfg
         self.model = None
         self.collator = None
         self.protein_embeds = None
@@ -37,6 +38,7 @@ class Inference():
                 raise ValueError('Input file contains count mtx in non-csr matrix')
         return {Path(adata_path).stem: (num_cells, num_genes)}
 
+      
     def _save_data(self, input_adata_path, output_adata_path, obsm_key, data):
         '''
         Save data in the output file. This function addresses following cases:

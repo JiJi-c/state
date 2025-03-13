@@ -121,5 +121,5 @@ optimizer:
   gradient_accumulation_steps: 1
 
 loss:
-  name: "cross_entropy" # cross_entropy, cross_entropy, mse, wasserstein
+  name: "cross_entropy" # cross_entropy, kl_divergence, mse, wasserstein
   apply_normalization: False
