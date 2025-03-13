@@ -22,11 +22,13 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --gres=gpu:{{ num_gpus_per_node }}
 #SBATCH --ntasks-per-node={{ num_gpus_per_node }}
 ##SBATCH --cpus-per-task=8
-#SBATCH --mem=200G
+#SBATCH --mem=400G
 #SBATCH --time={{ duration }}
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/{{ exp_name }}/training.log
 #SBATCH --open-mode=append
+#SBATCH --exclude=GPU115A
+#SBATCH --account=ctc
 #SBATCH --partition={{ partition }}
 {{ sbatch_overrides }}
 
@@ -37,10 +39,15 @@ scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
 sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
 MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
-MASTER_PORT='12357'
 
 NCCL_DEBUG=INFO
 PYTHONFAULTHANDLER=1
+
+#export NCCL_DEBUG=INFO
+#export NCCL_DEBUG_SUBSYS=ALL
+#export NCCL_VERBOSE_MARK=100
+#export TORCH_DISTRIBUTED_DEBUG=DETAIL
+#export TORCH_CPP_LOG_LEVEL=INFO
 
 srun \\
     python -m vci.train --config {{ traing_config_file }}
@@ -99,7 +106,7 @@ if __name__ == '__main__':
         "-p", "--partition",
         dest='partition',
         type=str,
-        default='gpu_batch',
+        default='gpu_batch,gpu_high_mem,gpu_batch_high_mem',
         help="Slurm partition to use.",
     )
     parser.add_argument(

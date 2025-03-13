@@ -8,11 +8,12 @@ from pathlib import Path
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from torch import nn
+from pathlib import Path
 
 from vci.nn.model import LitUCEModel
-from vci.train.trainer import get_ESM2_embeddings
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, create_dataloader
-
+from vci.train.trainer import get_embeddings
+from vci.data import create_dataloader
+from vci.utils import get_embedding_cfg, get_dataset_cfg
 
 log = logging.getLogger(__name__)
 
@@ -24,11 +25,20 @@ class Inference():
         self.collator = None
         self.protein_embeds = None
 
-        if isinstance(cfg, str):
-            self._vci_conf = OmegaConf.load(cfg)
-        else:
-            self._vci_conf = cfg
+    def __load_dataset_meta(self, adata_path):
+        with h5.File(adata_path) as h5f:
+            attrs = dict(h5f['X'].attrs)
+            if attrs['encoding-type'] == 'csr_matrix':
+                num_cells = attrs['shape'][0]
+                num_genes = attrs['shape'][1]
+            elif attrs['encoding-type'] == 'array':
+                num_cells = h5f['X'].shape[0]
+                num_genes = h5f['X'].shape[1]
+            else:
+                raise ValueError('Input file contains count mtx in non-csr matrix')
+        return {Path(adata_path).stem: (num_cells, num_genes)}
 
+      
     def _save_data(self, input_adata_path, output_adata_path, obsm_key, data):
         '''
         Save data in the output file. This function addresses following cases:
@@ -73,14 +83,14 @@ class Inference():
 
         # Load and initialize model for eval
         self.model = LitUCEModel.load_from_checkpoint(checkpoint, strict=False)
-        all_pe = get_ESM2_embeddings(self._vci_conf)
+        all_pe = get_embeddings(self._vci_conf)
         all_pe.requires_grad = False
         self.model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
         self.model.pe_embedding.to(self.model.device)
         self.model.binary_decoder.requires_grad = False
         self.model.eval()
 
-        self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
+        self.protein_embeds = torch.load(get_embedding_cfg(self._vci_conf).all_embeddings)
 
     def init_from_model(self, model, protein_embeds=None):
         '''
@@ -90,7 +100,7 @@ class Inference():
         if protein_embeds:
             self.protein_embeds = protein_embeds
         else:
-            self.protein_embeds = torch.load(self._vci_conf.embeddings.esm2.embedding_file)
+            self.protein_embeds = torch.load(get_embedding_cfg(self._vci_conf))
 
     def get_gene_embedding(self, genes):
         protein_embeds = [self.protein_embeds[x] \
@@ -103,7 +113,7 @@ class Inference():
             for i, batch in enumerate(dataloader):
                 torch.cuda.empty_cache()
                 batch_sentences = batch[0].to(self.model.device)
-                mask = batch[1].to(self.model.device)
+                mask = batch[5].to(self.model.device)
 
                 batch_sentences = self.model.pe_embedding(batch_sentences.long())
                 batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
@@ -117,12 +127,17 @@ class Inference():
                      output_adata_path: str,
                      emb_key: str = 'X_emb',
                      batch_size: int = 32,):
+        shape_dict = self.__load_dataset_meta(input_adata_path)
+        datasets = list(shape_dict.keys())
+        adata = anndata.read(input_adata_path)
 
-        adata = anndata.read_h5ad(input_adata_path)
-        dataset_name = os.path.basename(input_adata_path).split('.')[0]
         dataloader = create_dataloader(self._vci_conf,
                                        adata=adata,
-                                       adata_name=dataset_name)
+                                       adata_name=Path(input_adata_path).stem,
+                                       shape_dict=shape_dict,
+                                       batch_size=batch_size,
+                                       data_dir=os.path.dirname(input_adata_path),
+                                       shuffle=False)
 
         for embeddings in self.encode(dataloader):
             self._save_data(input_adata_path, output_adata_path, emb_key, embeddings)

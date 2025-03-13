@@ -10,10 +10,9 @@ experiment:
   num_epochs: 16
   num_nodes: 1
   num_gpus_per_node: 1
-  master: localhost
   port: 12399
-  val_check_interval: 2000 # Number of steps between tests
-  limit_val_batches: 0.005 # Use 1% of validation dataset
+  val_check_interval: 1000 # Number of steps between tests
+  limit_val_batches: 500 # Use 1% of validation dataset
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4
@@ -25,13 +24,16 @@ wandb:
   project: "vci"
 
 embeddings:
-  esm2:
-    embedding_file: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
-    cnt: 19790
+  current: null
+  esm2-cellxgene:
+    all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
     size: 5120
-    # embedding_file: /large_storage/ctc/ML/data/cell/embs/Homo_sapiens.GRCh38.gene_symbol_to_embedding_Evo2_7B_mean.pt
-    # cnt: 19790
-    # size: 4096
+
+  evo2-scbasecamp:
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch
+    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch
+    size: 4096
 
 validations:
   diff_exp:
@@ -55,11 +57,33 @@ validations:
 dataset:
   name: "vci"
   seed: 42
-  train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
-  val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
-  data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+  num_train_workers: 16
+  num_val_workers: 4
+  current: null
+
+  cellxgene:
+    ds_type: npz # npz, h5ad, or filtered_h5ad
+    train: /scratch/ctc/ML/uce/npz_train_datasets.csv
+    val: /scratch/ctc/ML/uce/npz_val_datasets.csv
+    data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
+    filter: false
+    valid_genes_masks: null # For scBasecamp: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
+
+  scbasecamp:
+    ds_type: filtered_h5ad
+    train: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
+    val: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
+    filter: true
+    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
+
+  tahoe:
+    ds_type: filtered_h5ad
+    train: /scratch/ctc/ML/uce/full_train_datasets.csv
+    val: /scratch/ctc/ML/uce/full_train_datasets.csv
+    filter: true
+    valid_genes_masks: null
+
   # this is a map for each dataset's columns mapping them to a global gene ordering
-  protein_emb_file_format: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
   pad_length: 2048
   pad_token_idx: 0
   cls_token_idx: 3
@@ -67,8 +91,6 @@ dataset:
   P: 512
   N: 512
   num_cells:  36238464 # TODO: Is this required
-  filter: false
-
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
 
@@ -91,11 +113,11 @@ task:
   mask: 0.2
 
 optimizer:
-  max_lr: 4e-4
+  max_lr: 0.00024
   weight_decay: 0.01
   start: 1e-4
   end: 1.0
-  max_grad_norm: 1.0
+  max_grad_norm: 0.8
   gradient_accumulation_steps: 1
 
 loss:

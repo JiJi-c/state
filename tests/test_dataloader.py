@@ -9,7 +9,8 @@ from hydra import compose, initialize
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator
+from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator
+from vci.utils import get_dataset_cfg
 
 
 logging.basicConfig(
@@ -27,7 +28,7 @@ def test_index_compute():
         num_cell_idx = df.num_cells.cumsum()
         file_cnt = num_cell_idx.shape[0]
 
-        ds = H5adDatasetSentences(cfg)
+        ds = H5adSentenceDataset(cfg)
         test_cnt = 10
         for i in range(test_cnt):
             ds_num = randrange(0, file_cnt)
@@ -52,7 +53,7 @@ def test_data_index():
         cfg = compose(config_name="defaults")
 
         t_0 = time.time()
-        dataset = H5adDatasetSentences(cfg)
+        dataset = H5adSentenceDataset(cfg)
         multi_ds_sent_collator = VCIDatasetSentenceCollator(cfg)
 
         # Make the dataloader outside of the

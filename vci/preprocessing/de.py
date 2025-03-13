@@ -7,6 +7,8 @@ import scanpy as sc
 from pathlib import Path
 from hydra import compose, initialize
 
+from vci.utils import get_dataset_cfg
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -150,8 +152,8 @@ def validate(config_file):
         logging.info(f'Loading config {config_file}...')
         cfg = compose(config_name=config_file.name)
 
-        ds_paths = [cfg.dataset.val, cfg.dataset.train]
-        file_loc = cfg.dataset.data_dir
+        ds_paths = [get_dataset_cfg(cfg).val, get_dataset_cfg(cfg).train]
+        file_loc = get_dataset_cfg(cfg).data_dir
 
         issue_files = []
         for ds_path in ds_paths:

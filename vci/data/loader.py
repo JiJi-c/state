@@ -23,7 +23,7 @@ def create_dataloader(cfg,
                       shape_dict=None,
                       adata=None,
                       adata_name=None,
-                      shuffle=True,
+                      shuffle=False,
                       sentence_collator=None):
         '''
         Expected to be used for inference
@@ -33,9 +33,9 @@ def create_dataloader(cfg,
             raise ValueError('Either datasets and shape_dict or adata and adata_name should be provided')
 
         if data_dir:
-            cfg.dataset.data_dir = data_dir
+            utils.get_dataset_cfg(cfg).data_dir = data_dir
 
-        dataset = H5adDatasetSentences(cfg,
+        dataset = H5adSentenceDataset(cfg,
                                        datasets=datasets,
                                        shape_dict=shape_dict,
                                        adata=adata,
@@ -51,7 +51,61 @@ def create_dataloader(cfg,
         return dataloader
 
 
-class H5adDatasetSentences(data.Dataset):
+class NpzMultiDataset(data.Dataset):
+    def __init__(self, cfg, test=False) -> None:
+        super(NpzMultiDataset, self).__init__()
+
+        self.cfg = cfg
+        ds_path = utils.get_dataset_cfg(cfg).train
+        if test:
+            ds_path = utils.get_dataset_cfg(cfg).val
+
+        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(ds_path)
+
+        self.num_cells = {}
+        self.num_genes = {}
+
+        self.total_num_cells = 0
+        for name in self.datasets:
+            num_cells, num_genes = self.shapes_dict[name]
+            self.num_cells[name] = num_cells
+            self.num_genes[name] = num_genes
+
+            self.total_num_cells += num_cells
+
+        self.datasets_to_num = {k: v for k, v in zip(self.datasets, range(len(self.datasets)))}
+
+
+    @functools.lru_cache
+    def dataset_file(self, dataset):
+        cts = np.memmap(f"/large_experiments/ctc/ML/data/cell/observational/" + f"{dataset}_counts.npz",
+                            dtype='int64', mode='r', shape=self.shapes_dict[dataset])
+        return cts
+
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            for dataset in sorted(self.datasets):
+                if idx < self.num_cells[dataset]:
+                    cts = self.dataset_file(dataset)
+                    counts = cts[idx]
+                    counts = np.ascontiguousarray(counts)
+                    counts = torch.tensor(counts).unsqueeze(0)
+                    dataset_num = self.datasets_to_num[dataset]
+                    return counts, idx, dataset, dataset_num,  None, None
+                else:
+                    idx -= self.num_cells[dataset]
+            raise IndexError
+        else:
+            raise NotImplementedError
+
+    def __len__(self) -> int:
+        return self.total_num_cells
+
+    def get_dim(self) -> Dict[str, int]:
+        return self.num_genes
+
+
+class H5adSentenceDataset(data.Dataset):
     def __init__(self,
                  cfg,
                  test=False,
@@ -59,7 +113,7 @@ class H5adDatasetSentences(data.Dataset):
                  shape_dict=None,
                  adata=None,
                  adata_name=None) -> None:
-        super(H5adDatasetSentences, self).__init__()
+        super(H5adSentenceDataset, self).__init__()
 
         self.adata = None
         self.adata_name = adata_name
@@ -69,15 +123,16 @@ class H5adDatasetSentences(data.Dataset):
             self.datasets = [adata_name]
             self.shapes_dict = {self.datasets[0]: adata.shape}
         elif datasets is None:
-            ds_path = cfg.dataset.train
+            ds_path = utils.get_dataset_cfg(cfg).train
             if test:
-                ds_path = cfg.dataset.val
+                ds_path = utils.get_dataset_cfg(cfg).val
             _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map= utils.get_shapes_dict(ds_path)
         else:
             assert shape_dict is not None
             assert len(datasets) == len(shape_dict)
             self.datasets = datasets
             self.shapes_dict = shape_dict
+            self.dataset_path_map = {dataset: dataset for dataset in datasets}
 
         self.datasets = sorted(self.datasets)
         self.cfg = cfg
@@ -119,7 +174,6 @@ class H5adDatasetSentences(data.Dataset):
         gene_indices = torch.tensor(h5f['/uns/ranked_genes/gene_indices'][cluster_id][:])
         gene_scores = torch.tensor(h5f['/uns/ranked_genes/gene_scores'][cluster_id][:])
         gene_scores = torch.nn.functional.softmax(gene_scores)
-        # gene_scores = torch.nn.functional.softplus(gene_scores)
         return gene_indices, gene_scores
 
     def __getitem__(self, idx):
@@ -186,12 +240,15 @@ class H5adDatasetSentences(data.Dataset):
     def get_dim(self) -> Dict[str, int]:
         return self.num_genes
 
-class FilteredGenesCounts(H5adDatasetSentences):
+
+class GeneFilterDataset(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
-        super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
+        super(GeneFilterDataset, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
-        if cfg.embeddings.esm2.embedding_file is not None:
-            esm_data = torch.load(cfg.embeddings.esm2.embedding_file)
+        if utils.get_dataset_cfg(cfg).valid_genes_masks is not None:
+            self.valid_gene_index = torch.load(utils.get_dataset_cfg(cfg).valid_genes_masks)
+        elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
+            esm_data = torch.load(utils.get_embedding_cfg(self.cfg))
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
                 if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
@@ -199,14 +256,14 @@ class FilteredGenesCounts(H5adDatasetSentences):
                     gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
                     valid_mask = np.isin(gene_names, valid_genes_list)
                     self.valid_gene_index[name] = valid_mask
-                    num_valid_genes = np.sum(valid_mask)
 
     def __getitem__(self, idx):
         counts, idx, dataset, dataset_num, gene_indices, gene_scores = super().__getitem__(idx)
-        if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
+        if dataset in self.valid_gene_index:
             valid_mask = self.valid_gene_index[dataset]
             counts = counts[:, valid_mask]
         return counts, idx, dataset, dataset_num, gene_indices, gene_scores
+
 
 class VCIDatasetSentenceCollator(object):
     def __init__(self, cfg):
@@ -216,8 +273,8 @@ class VCIDatasetSentenceCollator(object):
         self.cfg = cfg
 
         self.dataset_to_protein_embeddings = torch.load(
-            self.cfg.dataset.protein_emb_file_format.format(
-                self.cfg.tokenizer.token_dim
+            utils.get_embedding_cfg(self.cfg).ds_emb_mapping.format(
+                utils.get_embedding_cfg(self.cfg).size
             )
         )
 
@@ -267,8 +324,15 @@ class VCIDatasetSentenceCollator(object):
     def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores):
         if torch.isnan(counts).any():
             log.error(f"NaN values in counts for dataset {dataset}")
-        expression_weights = torch.log1p(counts)
-        expression_weights = (expression_weights / torch.sum(expression_weights))
+
+        if torch.any(counts < 0):
+            counts = F.relu(counts)
+
+        # if the data has not already been log transformed
+        if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
+            counts = torch.log1p(counts)
+        # expression_weights = (counts / torch.sum(counts))
+        expression_weights = F.softmax(counts, dim=0)
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
@@ -280,11 +344,11 @@ class VCIDatasetSentenceCollator(object):
         half_len = available_length
 
         for c, cell in enumerate(counts):
-            genes_ranked_exp = torch.argsort(cell, descending=True)[:half_len]
-
-            # sample_size = (half_len - genes_ranked_exp.shape[0]) + half_len + 1
-            # gened_sampled_by_exp = torch.multinomial(torch.nn.functional.softmax(expression_weights[c]),
-            #                                          sample_size, replacement=True)
+            num_pos_genes = torch.sum(cell > 0)
+            # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
+            # the first is only used if you have more expressed genes than pad_length / 2
+            start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), num_pos_genes)
+            genes_ranked_exp = torch.argsort(cell, descending=True)
 
             # Combine into final sequence
             cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
@@ -301,13 +365,33 @@ class VCIDatasetSentenceCollator(object):
                 replacement=True
             task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=replacement)]
 
-            exp_genes = cell[cell > 0]
-            unexp_genes = cell[cell < 1]
+                # TODO: if this overlaps too much we might mask out too much of the sentence
+                # THIS CONTAINS EXPRESSED AND UNEXPRESSED GENES
+                task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=False)]
 
-            if len(exp_genes) > de_budget:
-                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randperm(len(exp_genes)) [0:de_budget]
+                # NOTE: this may overlap with the first half of task sentence. let's talk about this more.
+                exp_genes = torch.where(cell > 0)[0]
+
+                if len(exp_genes) > self.cfg.dataset.P - de_budget:
+                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                        exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P - de_budget]]
+                elif len(exp_genes) > 0:
+                    # sample with replacement
+                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
+                        exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
+
             else:
-                task_sentence[c, de_budget:self.cfg.dataset.P] = torch.randint(len(exp_genes), (de_budget,))
+                exp_genes = torch.where(cell > 0)[0]
+                if len(exp_genes) > self.cfg.dataset.P:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P]]
+                elif len(exp_genes) > 0:
+                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
+
+            # DE AWARE FOR UNEXPRESSED GENES???
+            unexp_genes = torch.where(cell == 0)[0]
+            if len(unexp_genes) == 0:
+                print(f"WARNING: No unexpressed genes (== 0) found for cell {c}. Falling back to < 1.")
+                unexp_genes = torch.where(cell < 1)[0]  # Fallback to < 1
 
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]
@@ -317,5 +401,67 @@ class VCIDatasetSentenceCollator(object):
             task_counts[c] = cell[task_sentence[c].to(torch.int32)]
             task_counts[c] = torch.nn.functional.normalize(task_counts[c], dim=0)
 
+            if self.cfg.loss.name == "cross_entropy":
+                # binarize the counts to 0/1
+                task_counts[c] = (task_counts[c] > 0).float()
+
+            # REMOVED NORMALIZATION FOR MMD! #
+
+            if self.cfg.model.rda:
+                # sum the counts of the task sentence before converting to global indices
+                cell_total_counts[c] = torch.sum(task_counts[c])
+
+            # convert from dataset specific gene indices to global gene indices
             task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
-        return cell_sentences, task_sentence, task_counts, expression_weights
+
+            # mask out the task genes from the cell sentence
+            task_gene_set = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)
+            potential_mask = torch.isin(cell_sentences[c], task_gene_set)
+
+            # Calculate target number of masked tokens
+            target_mask_count = int(self.cfg.task.mask * self.cfg.dataset.pad_length)
+            current_mask_count = potential_mask.sum().item()
+
+            if current_mask_count > target_mask_count:
+                # Too many tokens are being masked - randomly select subset
+                # Only consider indices after the CLS token (index 0)
+                mask_indices = torch.where(potential_mask[1:])[0] + 1  # +1 to adjust for offset
+                keep_indices = torch.randperm(len(mask_indices))[:target_mask_count]
+                selected_indices = mask_indices[keep_indices]
+
+                # Create new mask with only the selected indices, ensuring CLS is not masked
+                final_mask = torch.zeros_like(potential_mask)
+                final_mask[selected_indices] = True
+                mask[c] = final_mask
+            elif current_mask_count < target_mask_count:
+                # Not enough tokens masked - we need to mask additional tokens
+                non_masked = ~potential_mask
+
+                # Exclude the CLS token (index 0) by only considering indices 1 and up
+                non_masked_indices = torch.where(non_masked[1:])[0] + 1  # +1 to adjust for offset
+
+                # Calculate how many more tokens to mask
+                additional_needed = target_mask_count - current_mask_count
+                additional_needed = min(additional_needed, len(non_masked_indices))
+
+                if len(non_masked_indices) > 0 and additional_needed > 0:
+                    additional_indices = non_masked_indices[torch.randperm(len(non_masked_indices))[:additional_needed]]
+                    potential_mask[additional_indices] = True
+
+                mask[c] = potential_mask
+            else:
+                # Exactly self.cfg.task.mask percent are masked, use the potential mask as is
+                mask[c] = potential_mask
+
+                # TODO: DOUBLE CHECK THE MASKING FOR CELL SENTENCE VS TASK SENTENCE.
+                # housekeeping genes, ribosomal and mitochondrial genes take up a lot of the cell sentence
+                # many of these genes are expressed in every cell - log transform helps a lot
+
+                # 1. how much are we masking
+                # 2. on average how much overlap is there
+                # 3. entropy in the cell sentence and the task sentence
+
+            # make sure that the CLS token is never masked out.
+            mask[c, 0] = False
+
+        return cell_sentences, task_sentence, task_counts, counts, mask, cell_total_counts if self.cfg.model.rda else None

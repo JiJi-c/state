@@ -11,19 +11,22 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
-from vci.data import H5adDatasetSentences, VCIDatasetSentenceCollator, FilteredGenesCounts
+from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilterDataset, NpzMultiDataset
 from vci.train.callbacks import LogLR, ProfilerCallback
-from vci.utils import get_latest_checkpoint
+from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
 
-def get_ESM2_embeddings(cfg):
+def get_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
-    all_pe = torch.load(cfg.embeddings.esm2.embedding_file)
-    all_pe = torch.vstack(list(all_pe.values()))
-    all_pe.requires_grad = False
+    all_pe = torch.load(get_embedding_cfg(cfg).all_embeddings)
+    if isinstance(all_pe, dict):
+        all_pe = torch.vstack(list(all_pe.values()))
+
     return all_pe
 
+
 def main(cfg):
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
@@ -34,7 +37,14 @@ def main(cfg):
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
 
-    DatasetClass = FilteredGenesCounts if cfg.dataset.filter else H5adDatasetSentences
+    if get_dataset_cfg(cfg).ds_type == 'h5ad':
+        DatasetClass = H5adSentenceDataset
+    elif get_dataset_cfg(cfg).ds_type == 'filtered_h5ad':
+        DatasetClass = GeneFilterDataset
+    elif get_dataset_cfg(cfg).ds_type == 'npz':
+        DatasetClass = NpzMultiDataset
+    else:
+        raise ValueError(f'Unknown dataset type: {get_dataset_cfg(cfg).ds_type}')
 
     # Training dataloader
     train_dataset = DatasetClass(cfg)
@@ -42,7 +52,7 @@ def main(cfg):
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
-                                  num_workers=4,
+                                  num_workers=cfg.dataset.num_train_workers,
                                   persistent_workers=True,
                                   generator=generator)
 
@@ -51,11 +61,10 @@ def main(cfg):
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,
                                 collate_fn=dataset_sentence_collator,
-                                num_workers=4,
+                                num_workers=cfg.dataset.num_val_workers,
                                 persistent_workers=True,
                                 generator=generator)
-
-    model = LitUCEModel(token_dim=cfg.tokenizer.token_dim,
+    model = LitUCEModel(token_dim=get_embedding_cfg(cfg).size,
                         d_model=cfg.model.emsize,
                         nhead=cfg.model.nhead,
                         d_hid=cfg.model.d_hid,
@@ -65,10 +74,10 @@ def main(cfg):
                         warmup_steps=warmup_steps,
                         compiled=False,
                         max_lr=cfg.optimizer.max_lr,
-                        emb_cnt=cfg.embeddings.esm2.cnt,
-                        emb_size=cfg.embeddings.esm2.size,
+                        emb_size=get_embedding_cfg(cfg).size,
+                        collater=dataset_sentence_collator,
                         cfg=cfg).cuda()
-    all_pe = get_ESM2_embeddings(cfg)
+    all_pe = get_embeddings(cfg)
     all_pe.requires_grad = False
     model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
 
