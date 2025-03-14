@@ -22,6 +22,7 @@ def get_embeddings(cfg):
     if isinstance(all_pe, dict):
         all_pe = torch.vstack(list(all_pe.values()))
 
+    all_pe = all_pe.cuda()
     return all_pe
 
 

@@ -16,7 +16,6 @@ import pandas as pd
 log = logging.getLogger(__file__)
 
 def create_dataloader(cfg,
-                      batch_size=32,
                       workers=1,
                       data_dir=None,
                       datasets=None,
@@ -32,18 +31,21 @@ def create_dataloader(cfg,
         if datasets is None and adata is None:
             raise ValueError('Either datasets and shape_dict or adata and adata_name should be provided')
 
+        if adata is not None:
+            shuffle = False
+
         if data_dir:
             utils.get_dataset_cfg(cfg).data_dir = data_dir
 
         dataset = H5adSentenceDataset(cfg,
-                                       datasets=datasets,
-                                       shape_dict=shape_dict,
-                                       adata=adata,
-                                       adata_name=adata_name)
+                                      datasets=datasets,
+                                      shape_dict=shape_dict,
+                                      adata=adata,
+                                      adata_name=adata_name)
         if sentence_collator is None:
             sentence_collator = VCIDatasetSentenceCollator(cfg)
         dataloader = DataLoader(dataset,
-                                batch_size=batch_size,
+                                batch_size=cfg.model.batch_size,
                                 shuffle=shuffle,
                                 collate_fn=sentence_collator,
                                 num_workers=workers,
