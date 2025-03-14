@@ -101,12 +101,13 @@ exclude_kingdom = ["plantae"]
 exclude_species = []
 # exclude_species = ["Homo_sapiens", 'Bos_taurus']
 
-summary_file = '/large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv'
-data_file_loc = '/scratch/ctc/ML/uce/scBasecamp'
-embedding_file = '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
-geneome_loc = '/large_storage/ctc/projects/vci/ref_genome'
+original_downloads =   '/large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/GeneFull_Ex50pAS'
+data_file_loc =        '/scratch/ctc/ML/uce/scBasecamp'
+embedding_file =       '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
+summary_file =         '/large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv'
+geneome_loc =          '/large_storage/ctc/projects/vci/ref_genome'
 gene_seq_mapping_loc = '/large_storage/ctc/projects/vci/genes'
-emb_idx_file = '/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch'
+emb_idx_file =         '/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch'
 
 
 def download_ref_genome():
@@ -161,7 +162,7 @@ def fix_numpy_to_tensor_issue(
     torch.save(gene_emb_mapping, fixed_gene_emb_mapping_file)
 
 
-def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/GeneFull_Ex50pAS',
+def preprocess_scbasecamp(data_path=data_file_loc,
                           dest_path=data_file_loc,
                           summary_file = summary_file,
                           species_dirs=None):
@@ -182,7 +183,7 @@ def preprocess_scbasecamp(data_path='/large_storage/ctc/public/scBasecamp/GeneFu
         log.info(f'Species {species}...')
         species_dir = Path(data_path) / species
 
-        os.makedirs(dest_path, exist_ok=True)
+        # os.makedirs(dest_path, exist_ok=True)
 
         preprocess = Preprocessor(species,
                                   species_dir,

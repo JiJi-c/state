@@ -78,8 +78,8 @@ class Preprocessor:
         elif attrs['encoding-type'] == 'array':
             num_cells = h5f['X'].shape[0]
             num_genes = h5f['X'].shape[1]
-        elif attrs['encoding-type'] == 'csc_matrix':
-            num_cells, num_genes = self._convert_to_csr(h5f, attrs)
+        # elif attrs['encoding-type'] == 'csc_matrix':
+        #     num_cells, num_genes = self._convert_to_csr(h5f, attrs)
         else:
             raise ValueError('Input file contains count mtx in non-csr matrix')
 
@@ -122,7 +122,7 @@ class Preprocessor:
         h5ad_files = [f.name for f in Path(self.source).iterdir() if f.is_file()]
         h5ad_files = sorted(h5ad_files)
 
-        os.makedirs(os.path.join(self.dest, self.species), exist_ok=True)
+        # os.makedirs(os.path.join(self.dest, self.species), exist_ok=True)
 
         for h5ad_file in h5ad_files:
             h5ad_file = Path(os.path.join(self.source, h5ad_file))
@@ -133,9 +133,9 @@ class Preprocessor:
             dataset = h5ad_file.stem
             dest_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}.h5ad')
 
-            if not os.path.exists(dest_h5ad_file):
-                log.info(f'{dest_h5ad_file} already exists')
-                shutil.copyfile(str(h5ad_file), dest_h5ad_file)
+            # if not os.path.exists(dest_h5ad_file):
+            #     log.info(f'{dest_h5ad_file} already exists')
+            #     shutil.copyfile(str(h5ad_file), dest_h5ad_file)
 
             with h5.File(dest_h5ad_file, mode='r+') as h5f:
                 try:

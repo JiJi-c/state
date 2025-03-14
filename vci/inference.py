@@ -24,6 +24,7 @@ class Inference():
         self.model = None
         self.collator = None
         self.protein_embeds = None
+        self._vci_conf = cfg
 
     def __load_dataset_meta(self, adata_path):
         with h5.File(adata_path) as h5f:
@@ -38,7 +39,6 @@ class Inference():
                 raise ValueError('Input file contains count mtx in non-csr matrix')
         return {Path(adata_path).stem: (num_cells, num_genes)}
 
-      
     def _save_data(self, input_adata_path, output_adata_path, obsm_key, data):
         '''
         Save data in the output file. This function addresses following cases:
@@ -135,7 +135,6 @@ class Inference():
                                        adata=adata,
                                        adata_name=Path(input_adata_path).stem,
                                        shape_dict=shape_dict,
-                                       batch_size=batch_size,
                                        data_dir=os.path.dirname(input_adata_path),
                                        shuffle=False)
 

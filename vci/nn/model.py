@@ -158,7 +158,7 @@ class LitUCEModel(L.LightningModule):
         self.step_ctr = 0
 
         self.true_top_genes = None
-        self.protein_embeds = torch.load(get_embedding_cfg(self.cfg).all_embeddings)
+        self.protein_embeds = None
 
         self._last_val_de_check = 0
         self._last_val_perturbation_check = 0
@@ -192,6 +192,9 @@ class LitUCEModel(L.LightningModule):
         return X, Y, batch_weights, embedding
 
     def get_gene_embedding(self, genes):
+        if protein_embeds is None:
+            protein_embeds = torch.load(get_embedding_cfg(self.cfg).all_embeddings)
+
         protein_embeds = [self.protein_embeds[x] \
                           if x in self.protein_embeds else torch.zeros(get_embedding_cfg(self.cfg).size) for x in genes]
         protein_embeds = torch.stack(protein_embeds).to(self.device)

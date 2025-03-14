@@ -24,7 +24,7 @@ wandb:
   project: "vci"
 
 embeddings:
-  current: null
+  current: esm2-cellxgene
   esm2-cellxgene:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
@@ -59,7 +59,7 @@ dataset:
   seed: 42
   num_train_workers: 16
   num_val_workers: 4
-  current: null
+  current: cellxgene
 
   cellxgene:
     ds_type: npz # npz, h5ad, or filtered_h5ad
@@ -71,8 +71,8 @@ dataset:
 
   scbasecamp:
     ds_type: filtered_h5ad
-    train: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
-    val: /large_storage/ctc/ML/data/cell/embs/scBasecamp/scBasecamp_all.csv
+    train: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
+    val: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
     filter: true
     valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
 
