@@ -6,15 +6,17 @@ import scanpy as sc
 import anndata as ad
 import logging
 import yaml
+
 from pathlib import Path
 from models import *
+from typing import Optional
 
 torch.autograd.set_detect_anomaly(True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class InferenceModule:
-    def __init__(self, model_folder: str, cell_set_len: int):
+    def __init__(self, model_folder: str, cell_set_len: Optional[int] = None):
         """
         Initialize the inference module.
         
@@ -39,8 +41,8 @@ class InferenceModule:
         # Load the model checkpoint.
         self.model: PertSetsPerturbationModel = self._load_model()
 
-        if cell_set_len > self.data_module.cell_sentence_len:
-            logger.info(f"Requested cell set length {cell_set_len} is greater than the maximum cell sentence length "
+        if cell_set_len is None or cell_set_len > self.data_module.cell_sentence_len:
+            logger.info(f"Requested cell set length {cell_set_len} is None or greater than the maximum cell sentence length "
                         f"({self.data_module.cell_sentence_len}). Setting cell_set_len to {self.data_module.cell_sentence_len}")
             self.cell_set_len = self.data_module.cell_sentence_len
         else:
@@ -64,15 +66,20 @@ class InferenceModule:
         checkpoint_path = checkpoint_dir / "last.ckpt"
         
         if not checkpoint_path.exists():
-            # Try to find the latest checkpoint based on step number
-            checkpoint_files = list(checkpoint_dir.glob("step=*.ckpt"))
-            if not checkpoint_files:
-                raise FileNotFoundError(f"No checkpoint files found in {checkpoint_dir}")
-            
-            # Sort by step number (assuming filenames contain 'step=X')
-            checkpoint_files.sort(key=lambda x: int(str(x).split("step=")[1].split("-")[0]))
-            # Get the highest step (last item after sorting)
-            checkpoint_path = checkpoint_files[-1]
+            # the mean baseline models output a "final.ckpt" checkpoint
+            checkpoint_backup = checkpoint_dir / "final.ckpt"
+            if checkpoint_backup.exists():
+                checkpoint_path = checkpoint_backup
+            else:
+                # Try to find the latest checkpoint based on step number
+                checkpoint_files = list(checkpoint_dir.glob("step=*.ckpt"))
+                if not checkpoint_files:
+                    raise FileNotFoundError(f"No checkpoint files found in {checkpoint_dir}")
+                
+                # Sort by step number (assuming filenames contain 'step=X')
+                checkpoint_files.sort(key=lambda x: int(str(x).split("step=")[1].split("-")[0]))
+                # Get the highest step (last item after sorting)
+                checkpoint_path = checkpoint_files[-1]
         
         logger.info(f"Loading model from checkpoint: {checkpoint_path}")
         
@@ -97,7 +104,7 @@ class InferenceModule:
             **model_kwargs,
         }
 
-        model = ModelClass.load_from_checkpoint(checkpoint_path, **model_init_kwargs)
+        model = ModelClass.load_from_checkpoint(checkpoint_path, strict=False, **model_init_kwargs)
         model.eval()
         return model
 
@@ -196,9 +203,14 @@ class InferenceModule:
                 chunk_indices = idx_list[start : start + self.cell_set_len]
                 basal = X_embed[chunk_indices, :]  # (chunk_size, embed_dim)
                 pert_tensor = onehot.unsqueeze(0).repeat(len(chunk_indices), 1)
-                batch = {"basal": basal, "pert": pert_tensor}
+                pert_names = [p] * len(chunk_indices)
+                batch = {"basal": basal, "pert": pert_tensor, "pert_name": pert_names}
                 with torch.no_grad():
-                    batch_pred = self.model.forward(batch, padded=False)
+                    # if self.model is class PertSetsPerturbationModel, need to set padded=False
+                    if isinstance(self.model, PertSetsPerturbationModel):
+                        batch_pred = self.model.forward(batch, padded=False)
+                    else:
+                        batch_pred = self.model.forward(batch)
                     latent_out = batch_pred
                     gene_out = self.model.gene_decoder(latent_out) if (hasattr(self.model, "gene_decoder") 
                                                                         and self.model.gene_decoder is not None) else None
