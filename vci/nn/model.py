@@ -172,8 +172,8 @@ class LitUCEModel(L.LightningModule):
         mask = mask.to(torch.bool)
 
         # convert the cell sentence and task sentence into embeddings
-        batch_sentences = self.pe_embedding(batch_sentences.long())
-        X = self.pe_embedding(X.long())
+        batch_sentences = self.pe_embedding(batch_sentences)
+        X = self.pe_embedding(X)
 
         # Normalize token outputs now # TODO YANAY EXPERIMENT WITH REMOVING THIS
         batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
@@ -192,8 +192,8 @@ class LitUCEModel(L.LightningModule):
         return X, Y, batch_weights, embedding
 
     def get_gene_embedding(self, genes):
-        if protein_embeds is None:
-            protein_embeds = torch.load(get_embedding_cfg(self.cfg).all_embeddings)
+        if self.protein_embeds is None:
+            self.protein_embeds = torch.load(get_embedding_cfg(self.cfg).all_embeddings)
 
         protein_embeds = [self.protein_embeds[x] \
                           if x in self.protein_embeds else torch.zeros(get_embedding_cfg(self.cfg).size) for x in genes]

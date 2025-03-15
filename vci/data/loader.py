@@ -228,7 +228,7 @@ class H5adSentenceDataset(data.Dataset):
             if self.cfg.experiment.deaware:
                 gene_indices, gene_scores = self._get_DE_scores(h5f, ds_idx, self.dataset_group_map[dataset])
 
-        except IndexError as iex:
+        except Exception as iex:
             log.exception(f"Error in dataset {dataset} at index {ds_idx}")
             raise iex
 
@@ -281,14 +281,14 @@ class VCIDatasetSentenceCollator(object):
 
     def __call__(self, batch):
         batch_size = len(batch)
-        batch_sentences = torch.zeros((batch_size, self.pad_length))
+        batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
 
-        idxs = torch.zeros(batch_size)
-        Xs = torch.zeros((batch_size, (self.P + self.N)))
+        idxs = torch.zeros(batch_size, dtype=torch.int32)
+        Xs = torch.zeros((batch_size, (self.P + self.N)), dtype=torch.int32)
         Ys = torch.zeros((batch_size, (self.P + self.N)))
-        masks = torch.zeros((batch_size, self.pad_length))
+        masks = torch.zeros((batch_size, self.pad_length), dtype=torch.bool)
 
-        dataset_nums = torch.zeros(batch_size)
+        dataset_nums = torch.zeros(batch_size, dtype=torch.int32)
 
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
@@ -299,9 +299,10 @@ class VCIDatasetSentenceCollator(object):
 
         i = 0
         max_len = 0
-
+        datasets = []
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
             (bs, xx, yy, batch_weight, mask, cell_total_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
+            datasets.append(dataset)
 
             batch_sentences[i, :] = bs
             masks[i, :] = mask
