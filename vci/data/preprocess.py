@@ -122,7 +122,7 @@ class Preprocessor:
         h5ad_files = [f.name for f in Path(self.source).iterdir() if f.is_file()]
         h5ad_files = sorted(h5ad_files)
 
-        # os.makedirs(os.path.join(self.dest, self.species), exist_ok=True)
+        os.makedirs(os.path.join(self.dest, self.species), exist_ok=True)
 
         for h5ad_file in h5ad_files:
             h5ad_file = Path(os.path.join(self.source, h5ad_file))
@@ -133,9 +133,9 @@ class Preprocessor:
             dataset = h5ad_file.stem
             dest_h5ad_file = os.path.join(self.dest, self.species, f'{dataset}.h5ad')
 
-            # if not os.path.exists(dest_h5ad_file):
-            #     log.info(f'{dest_h5ad_file} already exists')
-            #     shutil.copyfile(str(h5ad_file), dest_h5ad_file)
+            if not os.path.exists(dest_h5ad_file):
+                log.info(f'{dest_h5ad_file} already exists')
+                shutil.copyfile(str(h5ad_file), dest_h5ad_file)
 
             with h5.File(dest_h5ad_file, mode='r+') as h5f:
                 try:
@@ -145,8 +145,8 @@ class Preprocessor:
                     with open(self.summary_file, 'a') as f:
                         f.write(f'{self.species},{dest_h5ad_file},{dataset},{num_cells},{num_genes}\n')
 
-                    # self.update_dataset_emb_idx(adata_path, dataset)
-                    # del adata
+                    self.update_dataset_emb_idx(adata_path, dataset)
+                    del adata
                 except Exception as ex:
                     log.exception(ex)
                     continue

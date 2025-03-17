@@ -190,5 +190,7 @@ def get_shapes_dict(dataset_path):
 
         if not np.isnan(ngenes):
             shapes_dict[name] = (int(ncells), int(ngenes))
+        else:
+            shapes_dict[name] = (int(ncells), 8000)
 
     return datasets_df, sorted_dataset_names, shapes_dict, dataset_path_map, dataset_group_map

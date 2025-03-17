@@ -72,6 +72,12 @@ class ESMEmbedding(object):
 
         ctr = 0
         for species, gene, sequences in self.seq_generator_fn():
+            # Ideally dataloader should be already skipping the processed genes
+            # This is here as a precaution to avoid overwriting the embeddings
+            if self.gene_emb_mapping.get(gene) is not None:
+                logging.info(f"Skipping {species} {gene}  {len(sequences[0])}...")
+                continue
+
             ctr += 1
             # Tokenize the sequence
             inputs = tokenizer(sequences, return_tensors="pt", padding=True).to(device)

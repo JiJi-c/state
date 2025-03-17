@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 ##SBATCH --cpus-per-task=10
 ##SBATCH --mem=200G
-#SBATCH --time=0-05:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/esm2/%x_%j.log
 #SBATCH --open-mode=append

@@ -1,64 +1,33 @@
 import gzip
 import logging
-import asyncio
+import requests
 
 from functools import partial
 from typing import List
 
 from Bio import SeqIO, Entrez
+from Bio.Seq import Seq
 
 
-def sequence_from_gene_symbol(gene_name:str,
-                              return_type = 'dna',
-                              email="rajesh.ilango@arcinstitute.org"):
+def resolve_genes(ensemble_id,
+                  return_type = 'dna',
+                  email="rajesh.ilango@arcinstitute.org"):
     Entrez.email = email
     Entrez.api_key = "6015ba109c4bd986f4a2947a90462ba53708"
     Entrez.tool = "vci_gene_symbol_resolver"
 
-    logging.info(f"Processing {gene_name}...")
-    # Find the gene ID
-    try:
-        seq = None
-        if gene_name.startswith('ENSG') or '.' in gene_name:
-            handle = Entrez.efetch(db="nucleotide", id=gene_name, rettype="fasta", retmode="text")
-            for record in SeqIO.parse(handle, 'fasta'):
-                seq = record
-                break
-        else:
-            gene_search = Entrez.esearch(db="gene", term=f"{gene_name}[GENE]")
-            gene_record = Entrez.read(gene_search)
-            if len(gene_record["IdList"]) == 0:
-                return None, None
-            gene_id = gene_record["IdList"][0]
+    logging.info(f"Processing {ensemble_id}...")
+    server = "https://rest.ensembl.org"
+    ext = f"/sequence/id/{ensemble_id}"
 
-            # Link to nucleotide database
-            link_results = Entrez.read(Entrez.elink(dbfrom="gene", db="nuccore", id=gene_id))
-            nuccore_ids = [link["LinkSetDb"][0]["Link"][0]["Id"] for link in link_results if link["LinkSetDb"]]
-
-            # Fetch the sequence
-            if nuccore_ids:
-                handle = Entrez.efetch(db="nuccore", id=nuccore_ids[0], rettype="fasta", retmode="text")
-                for record in SeqIO.parse(handle, 'fasta'):
-                    seq = record
-        if seq is None:
-            return None, None
-        elif return_type == 'dna':
-            return gene_name, seq.seq
-        else:
-            return gene_name, seq.translate().seq
-    except Exception as e:
-        logging.error(f"Error processing {gene_name}: {e}")
+    r = requests.get(server + ext, headers={"Content-Type": "text/plain"})
+    if not r.ok:
         return None, None
 
-
-def resolve_genes(gene_symbols:List[str],
-                  return_type = 'dna',
-                  email="rajesh.ilango@arcinstitute.org"):
-    resolve_gene_fn = partial(sequence_from_gene_symbol, return_type=return_type, email=email)
-    tasks = []
-    for gene_symbol in gene_symbols:
-        tasks.append(resolve_gene_fn(gene_symbol) )
-    return tasks
+    if return_type == 'dna':
+        return ensemble_id, r.text
+    else:
+        return ensemble_id, str(Seq(r.text).translate())
 
 
 def parse_genename_seq(fasta_file, return_type='dna'):

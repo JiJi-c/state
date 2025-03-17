@@ -182,11 +182,7 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        if self.cfg.model.rda:
-            total_counts = batch[6].to(self.device)
-            _, embedding = self.forward(batch_sentences, mask=mask, total_counts=total_counts)
-        else:
-            _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding = self.forward(batch_sentences, mask=mask)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -500,7 +496,9 @@ class LitUCEModel(L.LightningModule):
                                                self.cfg.validations.diff_exp.dataset_name,
                                                self.cfg.validations.diff_exp.obs_pert_col)
         torch.cuda.synchronize()
-        de_metrics = compute_gene_overlap_cross_pert(pred_exp, self.true_top_genes)
+        de_metrics = compute_gene_overlap_cross_pert(pred_exp,
+                                                     self.true_top_genes,
+                                                     k=self.cfg.validations.diff_exp.top_k_rank)
         self.log("validation/de", np.array(list(de_metrics.values())).mean())
 
     def configure_optimizers(self):

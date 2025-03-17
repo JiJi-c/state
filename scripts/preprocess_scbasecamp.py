@@ -183,7 +183,7 @@ def preprocess_scbasecamp(data_path=data_file_loc,
         log.info(f'Species {species}...')
         species_dir = Path(data_path) / species
 
-        # os.makedirs(dest_path, exist_ok=True)
+        os.makedirs(dest_path, exist_ok=True)
 
         preprocess = Preprocessor(species,
                                   species_dir,
@@ -194,15 +194,18 @@ def preprocess_scbasecamp(data_path=data_file_loc,
         preprocess.process()
 
 
-def _dataset_gene_iter(emb_type='ESM2',
+def _dataset_gene_iter(emb_type='Evo2',
                        species=None,
                        h5ad_file=None,
                        data_path=None,
                        feature_field=None,
                        output_dir=None):
+    '''
+    Iterates thru the genes in the dataset for which the sequence is not available.
+    '''
     h5ad_file = Path(os.path.join(data_path, species, h5ad_file))
     with h5.File(h5ad_file, mode='r') as h5f:
-        gene_symbols = h5f[f'var/{feature_field}/categories'][:]
+        gene_symbols = h5f[f'var/{feature_field}'][:]
         total_genes = len(gene_symbols)
         chunk_size = 3
 
@@ -249,12 +252,68 @@ def _dataset_gene_iter(emb_type='ESM2',
                 yield species, gene_symbol, [str(sequence)]
 
 
+def _species_gene_iter(emb_type='Evo2',
+                       species=None,
+                       species_data_dir=None,
+                       feature_field=None,
+                       output_dir=None):
+    '''
+    Iterates thru the genes in the dataset for which the sequence is not available.
+    '''
+    h5ad_files = [f.name for f in Path(species_data_dir).iterdir() if f.is_file()]
+    ensemble_ids = []
+    for h5ad_file in h5ad_files:
+        with h5.File(os.path.join(species_data_dir, h5ad_file), mode='r') as h5f:
+            gene_symbols = h5f[f'var/{feature_field}'][:]
+            gene_symbols = [gene_symbol.decode('utf-8') for gene_symbol in gene_symbols]
+
+            ensemble_ids.extend(gene_symbols)
+            ensemble_ids = list(set(ensemble_ids))
+
+    output_file = os.path.join(output_dir, f'{emb_type}_emb_{species.lower()}.torch')
+    gene_emb_mapping = {}
+    if os.path.exists(output_file):
+        gene_emb_mapping = torch.load(output_file)
+
+    for ensemble_id in ensemble_ids:
+        if gene_emb_mapping.get(ensemble_id) is not None:
+            logging.info(f"Skipping {species} {ensemble_id}...")
+            continue
+
+        gene_symbol, sequence = resolve_genes(ensemble_id, return_type = 'dna')
+        if sequence is None:
+            logging.warning(f"Could not resolve {ensemble_id}")
+            continue
+
+        if sequence is None:
+            logging.warning(f"Could not resolve {gene_symbol}")
+            continue
+        with open(f'/large_storage/ctc/projects/vci/ncbi/{species}.cvs', 'a') as file:
+            file.write(f'{gene_symbol},{str(sequence)}\n')
+
+        gene_emb_mapping[gene_symbol] = sequence
+        if emb_type == 'ESM2':
+            sequence = sequence.translate()
+
+        sequence = str(sequence)
+        if emb_type == 'ESM2':
+            if len(sequence) > 16559:
+                sequence = sequence[:16559]
+
+        yield species, gene_symbol, [str(sequence)]
+
+
 def resolve_gene_symbols(
-        feature_field='gene_symbols',
+        feature_field='_index',
         species_dir=None,
         data_path=data_file_loc,
         gene_seq_mapping_loc=gene_seq_mapping_loc,
-        emb_type='ESM2'):
+        emb_type='Evo2'):
+    '''
+    Goes thru each dataset and finds the gene which is not yet resolved to Sequence.
+    For these unresolved genes, the sequence is quiered from the NCBI and stored
+    in the gene_seq_mapping_loc.
+    '''
 
     if species_dir is None:
         species_dirs = [item.name for item in Path(data_path).iterdir() if item.is_dir()]
@@ -262,27 +321,27 @@ def resolve_gene_symbols(
     else:
         species_dirs = [species_dir]
 
+    output_dir = os.path.join(gene_seq_mapping_loc, f'{emb_type}_ensemble')
+
     for species in species_dirs:
-        h5ad_files = [f.name for f in Path(os.path.join(data_path, species)).iterdir() if f.is_file()]
-        for h5ad_file in h5ad_files:
-            _dataset_gene_iter_fn = partial(_dataset_gene_iter,
-                                            emb_type='ESM2',
-                                            species=species,
-                                            h5ad_file=h5ad_file,
-                                            data_path=data_path,
-                                            feature_field=feature_field,
-                                            output_dir=gene_seq_mapping_loc)
-            logging.info(f'Generating {emb_type} embedding for {h5ad_file}')
-            if emb_type == 'ESM2':
-                emb_generator = ESMEmbedding(None,
-                                             geneome_loc=geneome_loc,
-                                             seq_generator_fn=_dataset_gene_iter_fn)
-            else:
-                emb_generator = Evo2Embedding(None,
+        species_data_dir = os.path.join(data_path, species)
+
+        _dataset_gene_iter_fn = partial(_species_gene_iter,
+                                        emb_type=emb_type,
+                                        species=species,
+                                        species_data_dir=species_data_dir,
+                                        feature_field=feature_field,
+                                        output_dir=output_dir)
+        if emb_type == 'ESM2':
+            emb_generator = ESMEmbedding(None,
                                             geneome_loc=geneome_loc,
                                             seq_generator_fn=_dataset_gene_iter_fn)
-            emb_generator.species = species
-            emb_generator.generate_gene_emb_mapping(gene_seq_mapping_loc)
+        else:
+            emb_generator = Evo2Embedding(None,
+                                            geneome_loc=geneome_loc,
+                                            seq_generator_fn=_dataset_gene_iter_fn)
+        emb_generator.species = species
+        emb_generator.generate_gene_emb_mapping(output_dir)
 
 
 def gene_ensemble_mapping(
@@ -394,7 +453,6 @@ def dataset_embedding_mapping(
             continue
 
         h5f_path = row["path"]
-        logging.info(f'Processing {name}...')
         with h5.File(h5f_path) as h5f:
             gene_names = np.array([g.decode('utf-8') for g in h5f['var/_index'][:]])
             valid_mask = np.isin(gene_names, valid_genes_list)

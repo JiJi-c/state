@@ -343,8 +343,7 @@ class VCIDatasetSentenceCollator(object):
         # if the data has not already been log transformed
         if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
-        # expression_weights = (counts / torch.sum(counts))
-        expression_weights = F.softmax(counts, dim=0)
+        expression_weights = (counts / torch.sum(counts))
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
@@ -358,6 +357,14 @@ class VCIDatasetSentenceCollator(object):
             cell_total_counts = None
 
         for c, cell in enumerate(counts):
+            if self.cfg.model.rda:
+                total_cnt = torch.sum(cell)
+                # if total_cnt <= 1:
+                #     min_value = cell[cell > 0].min()
+                #     max_value = cell.max()
+                #     total_cnt = cell * (max_value - min_value) + min_value
+                cell_total_counts[c] = total_cnt
+
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -404,11 +411,7 @@ class VCIDatasetSentenceCollator(object):
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
             # DE AWARE FOR UNEXPRESSED GENES???
-            unexp_genes = torch.where(cell == 0)[0]
-            if len(unexp_genes) == 0:
-                print(f"WARNING: No unexpressed genes (== 0) found for cell {c}. Falling back to < 1.")
-                unexp_genes = torch.where(cell < 1)[0]  # Fallback to < 1
-
+            unexp_genes = torch.where(cell < 1)[0]
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
             else:

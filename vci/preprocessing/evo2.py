@@ -96,7 +96,7 @@ def get_model(*,
 
     m = StripedHyena(config)
 
-    state_dict = torch.load(checkpoint_path)#, map_location=device)
+    state_dict = torch.load(checkpoint_path, weights_only=False)#, map_location=device)
     m.custom_load_state_dict(state_dict, strict=False)
 
     print(f"Number of parameters: {sum(p.numel() for p in m.parameters())}")
@@ -185,18 +185,24 @@ class Evo2Embedding(object):
     def generate_gene_emb_mapping(self,
                                   output_dir):
         os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species}.torch')
+        output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species.lower()}.torch')
         if os.path.exists(output_file):
             self.gene_emb_mapping = torch.load(output_file)
 
         ctr = 0
         for species, gene, sequences in self.seq_generator_fn():
+            # Ideally dataloader should be already skipping the processed genes
+            # This is here as a precaution to avoid overwriting the embeddings
+            if self.gene_emb_mapping.get(gene) is not None:
+                logging.info(f"Skipping {species} {gene}  {len(sequences[0])}...")
+                continue
+
             ctr += 1
             logging.info(f"Processing {species} {gene}  {len(sequences[0])}...")
             sequences = sequences[0]
 
-            if len(sequences) > 100000:
-                sequences = sequences[:100000]
+            if len(sequences) > 70000:
+                sequences = sequences[:70000]
 
             octs = run_forward(sequences)
             dna_sequence = Seq(sequences)
@@ -209,11 +215,11 @@ class Evo2Embedding(object):
             self.gene_emb_mapping[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
             logging.debug(f'Embedding of {gene} is {emb}')
 
-            if ctr % (100) == 0:
+            if ctr % (10) == 0:
                 logging.info(f'Saving after {ctr} batches...')
                 torch.save(self.gene_emb_mapping, output_file)
 
-            if ctr % (1000) == 0:
+            if ctr % (100) == 0:
                 logging.info(f'creating checkpoint {ctr}...')
                 chk_dir = os.path.join(output_dir, 'chk')
                 if chk_dir:
@@ -224,4 +230,5 @@ class Evo2Embedding(object):
                 shutil.copyfile(output_file, checkpoint_file)
             torch.cuda.empty_cache()
 
+        logging.info(f'Saving final mapping...')
         torch.save(self.gene_emb_mapping, output_file)
