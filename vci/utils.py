@@ -117,8 +117,12 @@ def parse_chk_info(chk):
 
     return int(epoch), int(steps)
 
-def get_shapes_dict(dataset_path):
+def get_shapes_dict(dataset_path, filter_by_species=None):
     datasets_df = pd.read_csv(dataset_path)
+
+    if filter_by_species is not None:
+        datasets_df = datasets_df[datasets_df["species"] == filter_by_species]
+
     sorted_dataset_names = sorted(datasets_df["names"])
     datasets_df = datasets_df.drop_duplicates() ## TODO: there should be no duplicates
 
@@ -165,7 +169,6 @@ def get_shapes_dict(dataset_path):
 
     shapes_dict["zyl_sanes_glaucoma_pig"] = (5901, 6819)
     shapes_dict["parkinsons_macaF"] = (1062, 5103)
-
 
     for row in datasets_df.iterrows():
         ngenes = row[1].num_genes

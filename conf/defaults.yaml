@@ -74,6 +74,7 @@ dataset:
     train: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
     val: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
     filter: true
+    filter_by_species: null
     valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
 
   tahoe:

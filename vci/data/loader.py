@@ -128,7 +128,8 @@ class H5adSentenceDataset(data.Dataset):
             ds_path = utils.get_dataset_cfg(cfg).train
             if test:
                 ds_path = utils.get_dataset_cfg(cfg).val
-            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map= utils.get_shapes_dict(ds_path)
+            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = \
+                utils.get_shapes_dict(ds_path, utils.get_dataset_cfg(cfg).get('filter_by_species'))
         else:
             assert shape_dict is not None
             assert len(datasets) == len(shape_dict)
@@ -343,7 +344,11 @@ class VCIDatasetSentenceCollator(object):
         # if the data has not already been log transformed
         if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
-        expression_weights = (counts / torch.sum(counts))
+
+        if counts.sum() == 0:
+             expression_weights = F.softmax(counts, dim=0)
+        else:
+            expression_weights = (counts / torch.sum(counts))
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))

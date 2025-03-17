@@ -19,10 +19,9 @@ python3 -m vci.tools.slurm \
 
 
 python3 -m vci.tools.slurm \
-    --exp_name vci_scbasecamp \
+    --exp_name vci_scbasecamp_human \
     -n 1 -g 1 \
-    --set dataset.name=vci \
-    optimizer.gradient_accumulation_steps=100 \
-    experiment.val_check_interval=1000 \
-    validations.diff_exp.eval_interval_multiple=1 \
-    embeddings.current=evo2-scbasecamp
+    --set validations.diff_exp.eval_interval_multiple=1 \
+          embeddings.current=evo2-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens

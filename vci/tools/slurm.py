@@ -106,7 +106,7 @@ if __name__ == '__main__':
         "-p", "--partition",
         dest='partition',
         type=str,
-        default='gpu_batch,gpu_high_mem,gpu_batch_high_mem',
+        default='gpu_batch,gpu_high_mem,gpu_batch_high_mem,vci_gpu_priority,preemptible',
         help="Slurm partition to use.",
     )
     parser.add_argument(

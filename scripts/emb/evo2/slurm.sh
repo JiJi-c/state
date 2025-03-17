@@ -10,7 +10,7 @@
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/evo2/%x_%j.log
 #SBATCH --open-mode=append
-#SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible
+#SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible,vci_gpu_priority
 #SBATCH --exclude=GPU115A
 
 ## ls /large_storage/ctc/projects/vci/ref_genome -1 | xargs -I{} sbatch scripts/emb/evo2/slurm.sh {}
