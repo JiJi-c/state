@@ -128,16 +128,6 @@ def get_shapes_dict(dataset_path):
     dataset_path_map = {}
     dataset_group_map = {} # Name of the obs column to be used for retrieing DE scrores
 
-    # for name in sorted_dataset_names:
-    #     shapes_dict[name] = (int(datasets_df.set_index("names").loc[name]["num_cells"]), 8000)
-    #     dataset_path_map[name] = datasets_df.set_index("names").loc[name]["path"]
-
-    #     if de_data_available:
-    #         dataset_group_map[name] = datasets_df.set_index("names").loc[name]["groupid_for_de"]
-    #     else:
-    #         # This is for backward compatibility with old datasets CSV
-    #         dataset_group_map[name] = 'leiden'
-
     shapes_dict["dev_immune_mouse"] = (443697, 4786)
     shapes_dict["dev_immune_human"] = (34009, 5566)
     shapes_dict["intestinal_tract_human"] =  (69668, 5192)
