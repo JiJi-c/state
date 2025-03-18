@@ -2,13 +2,13 @@
 
 #SBATCH --job-name=evo2_emb
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+##SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=100G
+#SBATCH --cpus-per-task=4
+##SBATCH --mem=100G
 #SBATCH --time=1-00:00:00
 #SBATCH --signal=B:SIGINT@300
-#SBATCH --output=outputs/emb/evo2/%x_%j.log
+#SBATCH --output=outputs/emb/evo2_gene_map/%x_%j.log
 #SBATCH --open-mode=append
 #SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible,vci_gpu_priority
 #SBATCH --exclude=GPU115A
@@ -33,11 +33,11 @@
 # sbatch ./scripts/emb/evo2/slurm.sh Schistosoma_mansoni
 # sbatch ./scripts/emb/evo2/slurm.sh Sus_scrofa
 #
-# df.shape
-# (30138, 5)
+# srun python3 ./scripts/preprocess_scbasecamp.py create_genelist --ref_genome $1
+srun python3 ./scripts/preprocess_scbasecamp.py create_gene_seq_mapping --species $1
 # srun python3 ./scripts/preprocess_scbasecamp.py inferEvo2 $1
-# srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping \
-#     --emb_model Evo2 --start $1 --end $2
+# srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping --emb_model Evo2 --start $1 --end $2
 
 # srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping_by_species --species_dirs $1
-srun python3 ./scripts/preprocess_scbasecamp.py resolve_gene_symbols --species_dir  $1
+
+# srun python3 ./scripts/preprocess_scbasecamp.py resolve_gene_symbols --species_dir  $1

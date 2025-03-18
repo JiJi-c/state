@@ -67,7 +67,7 @@ dataset:
     val: /scratch/ctc/ML/uce/npz_val_datasets.csv
     data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
     filter: false
-    valid_genes_masks: null # For scBasecamp: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
+    valid_genes_masks: null
 
   scbasecamp:
     ds_type: filtered_h5ad

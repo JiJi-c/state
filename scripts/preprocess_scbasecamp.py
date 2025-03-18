@@ -1,8 +1,11 @@
+#!/usr/bin/env python
+
 import os
 import fire
 import gzip
-import asyncio
 import logging
+import requests
+import json
 
 import torch
 import h5py as h5
@@ -77,7 +80,7 @@ scBasecamp_dir_species = {
     "oryza_sativa":             {"name": "Oryza_sativa",
                                  "bio_class": "plantae",
                                  "ref_genome": f"https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-60/fasta/oryza_sativa/{ref_genome_file_type}/Oryza_sativa.IRGSP-1.0.{ref_genome_file_type}.all.fa.gz"},
-    "ovis_aries":               {"name": "Ovis_aries",
+    "ovis_aries_rambouillet":   {"name": "Ovis_aries_rambouillet",
                                  "bio_class": "mammal",
                                  "ref_genome": f"https://ftp.ensembl.org/pub/release-113/fasta/ovis_aries/{ref_genome_file_type}/Ovis_aries_rambouillet.ARS-UI_Ramb_v2.0.{ref_genome_file_type}.all.fa.gz"},
     "pan_troglodytes":          {"name": "Pan_troglodytes",
@@ -105,49 +108,190 @@ original_downloads =   '/large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/Ge
 data_file_loc =        '/scratch/ctc/ML/uce/scBasecamp'
 embedding_file =       '/large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt'
 summary_file =         '/large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv'
-geneome_loc =          '/large_storage/ctc/projects/vci/ref_genome'
-gene_seq_mapping_loc = '/large_storage/ctc/projects/vci/genes'
+ref_genome_loc =       '/large_storage/ctc/projects/vci/ref_genome'
+mapping_output_loc =   '/large_storage/ctc/projects/vci/genes'
 emb_idx_file =         '/scratch/ctc/ML/uce/model_files/gene_embidx_mapping.torch'
 
 
 def download_ref_genome():
-    if not os.path.exists(geneome_loc):
-        os.makedirs(geneome_loc, exist_ok=True)
+    if not os.path.exists(ref_genome_loc):
+        os.makedirs(ref_genome_loc, exist_ok=True)
 
     for dataset, metadata in scBasecamp_dir_species.items():
         url = metadata['ref_genome']
-        download_file = os.path.join(geneome_loc, Path(url).name)
+        download_file = os.path.join(ref_genome_loc, Path(url).name)
         if not os.path.exists(download_file):
             logging.info(f"Downloading {url} to {download_file}...")
             urllib.request.urlretrieve(url, download_file)
 
 
-def inferESM2(ref_genome=None,
-              geneome_loc=geneome_loc,
-              gene_seq_mapping_loc=gene_seq_mapping_loc):
+def _fetch_genes_in_dataset(species_data_dir, feature_field):
+    h5ad_files = [f.name for f in Path(species_data_dir).iterdir() if f.is_file()]
+    ensemble_ids = []
+    for h5ad_file in h5ad_files:
+        with h5.File(os.path.join(species_data_dir, h5ad_file), mode='r') as h5f:
+            gene_symbols = h5f[f'var/{feature_field}'][:]
+            gene_symbols = [gene_symbol.decode('utf-8') for gene_symbol in gene_symbols]
+
+            ensemble_ids.extend(gene_symbols)
+            ensemble_ids = list(set(ensemble_ids))
+    logging.info(f'{len(ensemble_ids)} genes in {species_data_dir}')
+    return ensemble_ids
+
+
+def create_genelist(ref_genome=None,
+                    feature_field='_index',
+                    ref_genome_loc=ref_genome_loc,
+                    data_file_loc=data_file_loc,
+                    mapping_output_loc=mapping_output_loc
+                    ):
     if ref_genome is None:
-        ref_genomes = [f.name for f in Path(geneome_loc).iterdir() if f.is_file()]
+        ref_genomes = [f.name for f in Path(ref_genome_loc).iterdir() if f.is_file()]
     else:
         ref_genomes = [ref_genome]
 
     for genome in ref_genomes:
-        logging.info(f'Generating ESM2 embedding for {genome}')
-        emb_generator = ESMEmbedding(genome, geneome_loc=geneome_loc)
-        emb_generator.generate_gene_emb_mapping(os.path.join(gene_seq_mapping_loc, 'ESM2'))
+        logging.info(f'Processing {genome}...')
+        species = genome.split('.')[0]
+        ref_genome_file = Path(os.path.join(ref_genome_loc, ref_genome))
+        gene_seq_mapping, _ = parse_genome_for_gene_seq_map(species, ref_genome_file)
+
+        species_data_dir = os.path.join(data_file_loc, species)
+        while not os.path.exists(species_data_dir):
+            logging.warning(f"Could not find {species_data_dir}. Trying to resolve...")
+            species = "_".join(species.split("_")[:-1])
+            species_data_dir = os.path.join(data_file_loc, species)
+        ensemble_ids = _fetch_genes_in_dataset(species_data_dir, feature_field)
+
+        ensemble_ids.extend(gene_seq_mapping.keys())
+        ensemble_ids = list(set(ensemble_ids))
+        df = pd.DataFrame(ensemble_ids, columns=['ensemble_id'])
+        logging.info(f'Saving {species} ensemble ids to {mapping_output_loc} {df.shape[0]}...')
+
+        gene_list_dir = os.path.join(mapping_output_loc, 'gene_lists')
+        os.makedirs(gene_list_dir, exist_ok=True)
+        df.to_csv(os.path.join(gene_list_dir, f'{species}-ensemble_ids.csv'), index=False)
+
+        ensemble_ids = []
+        chromosomes = []
+        sequences = []
+        for ensemble_id, (chroms, sequence) in gene_seq_mapping.items():
+            ensemble_ids.append(ensemble_id.split('.')[0])
+            chromosomes.append(chroms)
+            sequences.append(sequence)
+
+        df = pd.DataFrame({'ensemble_id': ensemble_ids,
+                           'chromosome': chromosomes,
+                           'sequence': sequences})
+        logging.info(f'Saving {species} gene seq to {mapping_output_loc} {df.shape[0]}...')
+        df.to_csv(os.path.join(gene_list_dir, f'{species}-gene_seq.csv'), index=False)
 
 
+def _get_sequences_with_chromosome(id_list):
+    logging.info(f"Fetching {len(id_list)} genes...")
+    server = "https://rest.ensembl.org/sequence/id"
+    headers={ "Content-Type" : "application/json", "Accept" : "application/json"}
+    data = {
+        "ids": id_list,
+        "type": "genomic",  # types: genomic, cds, cdna, protein
+        "expand_3prime": 0,
+        "expand_5prime": 0,
+        "format": "json"
+    }
+    response = requests.post(server,
+                             headers=headers,
+                             data=json.dumps(data))
+    if not response.ok:
+        response.raise_for_status()
+
+    results = response.json()
+
+    genes, sequences, chromes = [], [], []
+    for result in results:
+        genes.append(result['id'])
+        sequences.append(result['seq'])
+        if 'desc' in result:
+            desc = result['desc']
+            if 'chromosome:' in desc:
+                chrom_info = desc.split('chromosome:')[1].split(':')
+                chromes.append(chrom_info)
+            else:
+                chromes.append(None)
+        else:
+            chromes.append(None)
+
+    return genes, sequences, chromes
+
+
+def create_gene_seq_mapping(species=None,
+                            mapping_output_loc=mapping_output_loc):
+    gene_list_dir = os.path.join(mapping_output_loc, 'gene_lists')
+    seq_files = os.path.join(gene_list_dir, f'{species}-ensemble_ids.csv')
+    gene_seq_file = os.path.join(gene_list_dir, f'{species}-gene_seq.csv')
+
+    df = pd.read_csv(gene_seq_file)
+    gene_seq_map = df.set_index('ensemble_id')['sequence'].to_dict()
+
+    df = pd.read_csv(seq_files)
+    ensemble_ids = df['ensemble_id'].tolist()
+
+    remaining = set(ensemble_ids) - set(list(gene_seq_map.keys()))
+    logging.info(f'{species}: Mapped gene cnt {len(gene_seq_map)}, Genes in the datasets {len(set(ensemble_ids))}')
+    logging.info(f'{species}: Remaining for processing {len(remaining)}. Expected {len(set(ensemble_ids + list(gene_seq_map.keys())))}')
+    logging.info(remaining)
+
+
+    gene_symbols = []
+    for ensemble_id in remaining:
+        ensemble_id = ensemble_id.split('.')[0]
+        if ensemble_id in gene_seq_map:
+            logging.info(f"Skipping {ensemble_id}...")
+            continue
+
+        gene_symbols.append(ensemble_id)
+        if len(gene_symbols) >= 50:
+            genes, sequences, chromes = _get_sequences_with_chromosome(gene_symbols)
+            new_mappings = pd.DataFrame({'ensemble_id': genes,
+                                         'chromosome': chromes,
+                                         'sequence': sequences})
+            df = pd.read_csv(gene_seq_file)
+            df = pd.concat([df, new_mappings], ignore_index=True)
+            df.to_csv(gene_seq_file, index=False)
+            gene_symbols = []
+
+    if len(gene_symbols) > 0:
+        genes, sequences, chromes = _get_sequences_with_chromosome(gene_symbols)
+        new_mappings = pd.DataFrame({'ensemble_id': genes,
+                                        'chromosome': chromes,
+                                        'sequence': sequences})
+        df = pd.read_csv(gene_seq_file)
+        df = pd.concat([df, new_mappings], ignore_index=True)
+        df.to_csv(gene_seq_file, index=False)
+
+    df = pd.read_csv(gene_seq_file)
+    logging.info(f"Done {df.shape[0]} genes. Expected {len(set(ensemble_ids + list(gene_seq_map.keys())))}")
+
+
+def inferESM2(species=None,
+             mapping_output_loc=mapping_output_loc):
+    logging.info(f'Generating ESM2 embedding for {species}')
+    emb_generator = ESMEmbedding(species, mapping_output_loc=mapping_output_loc)
+    emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2'))
+
+
+#TODO: inferEvo2 needs to be updated to use the mapping files in Evo2Embedding dataloader.
 def inferEvo2(ref_genome=None,
-              geneome_loc=geneome_loc,
-              gene_seq_mapping_loc=gene_seq_mapping_loc):
+              ref_genome_loc=ref_genome_loc,
+              mapping_output_loc=mapping_output_loc):
     if ref_genome is None:
-        ref_genomes = [f.name for f in Path(geneome_loc).iterdir() if f.is_file()]
+        ref_genomes = [f.name for f in Path(ref_genome_loc).iterdir() if f.is_file()]
     else:
         ref_genomes = [ref_genome]
 
     for genome in ref_genomes:
         logging.info(f'Generating Evo2 embedding for {genome}')
-        emb_generator = Evo2Embedding(genome, geneome_loc=geneome_loc)
-        emb_generator.generate_gene_emb_mapping(os.path.join(gene_seq_mapping_loc, 'Evo2'))
+        emb_generator = Evo2Embedding(genome, ref_genome_loc=ref_genome_loc)
+        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'Evo2'))
 
 
 # TODO: This is meant to fix a bug without having to reprocess the entire dataset. Remove it after the bug is fixed
@@ -233,7 +377,7 @@ def _dataset_gene_iter(emb_type='Evo2',
                 logging.warning(f"Could not resolve {filtered_gene_symbols}")
                 continue
 
-            for gene_symbol, sequence in sequences:
+            for gene_symbol, sequence, chrom in sequences:
                 if sequence is None:
                     logging.warning(f"Could not resolve {gene_symbol}")
                     continue
@@ -260,27 +404,23 @@ def _species_gene_iter(emb_type='Evo2',
     '''
     Iterates thru the genes in the dataset for which the sequence is not available.
     '''
-    h5ad_files = [f.name for f in Path(species_data_dir).iterdir() if f.is_file()]
-    ensemble_ids = []
-    for h5ad_file in h5ad_files:
-        with h5.File(os.path.join(species_data_dir, h5ad_file), mode='r') as h5f:
-            gene_symbols = h5f[f'var/{feature_field}'][:]
-            gene_symbols = [gene_symbol.decode('utf-8') for gene_symbol in gene_symbols]
-
-            ensemble_ids.extend(gene_symbols)
-            ensemble_ids = list(set(ensemble_ids))
+    ensemble_ids = _fetch_genes_in_dataset(species_data_dir, feature_field)
 
     output_file = os.path.join(output_dir, f'{emb_type}_emb_{species.lower()}.torch')
     gene_emb_mapping = {}
     if os.path.exists(output_file):
         gene_emb_mapping = torch.load(output_file)
 
+    remaining = set(ensemble_ids) - set(list(gene_emb_mapping.keys()))
+    logging.info(f'{species}: Mapped gene cnt {len(gene_emb_mapping)}, Genes in the datasets {len(ensemble_ids)}')
+    logging.info(f'{species}: {len(remaining)} genes needs to be processed')
+
     for ensemble_id in ensemble_ids:
         if gene_emb_mapping.get(ensemble_id) is not None:
             logging.info(f"Skipping {species} {ensemble_id}...")
             continue
 
-        gene_symbol, sequence = resolve_genes(ensemble_id, return_type = 'dna')
+        gene_symbol, sequence, chrom = resolve_genes(ensemble_id, return_type = 'dna')
         if sequence is None:
             logging.warning(f"Could not resolve {ensemble_id}")
             continue
@@ -307,12 +447,12 @@ def resolve_gene_symbols(
         feature_field='_index',
         species_dir=None,
         data_path=data_file_loc,
-        gene_seq_mapping_loc=gene_seq_mapping_loc,
+        mapping_output_loc=mapping_output_loc,
         emb_type='Evo2'):
     '''
     Goes thru each dataset and finds the gene which is not yet resolved to Sequence.
     For these unresolved genes, the sequence is quiered from the NCBI and stored
-    in the gene_seq_mapping_loc.
+    in the mapping_output_loc.
     '''
 
     if species_dir is None:
@@ -321,7 +461,7 @@ def resolve_gene_symbols(
     else:
         species_dirs = [species_dir]
 
-    output_dir = os.path.join(gene_seq_mapping_loc, f'{emb_type}_ensemble')
+    output_dir = os.path.join(mapping_output_loc, f'{emb_type}_ensemble')
 
     for species in species_dirs:
         species_data_dir = os.path.join(data_path, species)
@@ -334,28 +474,28 @@ def resolve_gene_symbols(
                                         output_dir=output_dir)
         if emb_type == 'ESM2':
             emb_generator = ESMEmbedding(None,
-                                            geneome_loc=geneome_loc,
-                                            seq_generator_fn=_dataset_gene_iter_fn)
+                                         ref_genome_loc=ref_genome_loc,
+                                         seq_generator_fn=_dataset_gene_iter_fn)
         else:
             emb_generator = Evo2Embedding(None,
-                                            geneome_loc=geneome_loc,
-                                            seq_generator_fn=_dataset_gene_iter_fn)
+                                          ref_genome_loc=ref_genome_loc,
+                                          seq_generator_fn=_dataset_gene_iter_fn)
         emb_generator.species = species
         emb_generator.generate_gene_emb_mapping(output_dir)
 
 
 def gene_ensemble_mapping(
-        geneome_loc=geneome_loc,
+        ref_genome_loc=ref_genome_loc,
         model_type='Evo2',
-        gene_seq_mapping_loc=gene_seq_mapping_loc,
-        output_dir=gene_seq_mapping_loc):
+        mapping_output_loc=mapping_output_loc,
+        output_dir=mapping_output_loc):
 
     output_dir = os.path.join(output_dir, f'{model_type}_ensemble')
     os.makedirs(output_dir, exist_ok=True)
-    species_dirs = [item.name for item in Path(geneome_loc).iterdir() if item.is_file()]
+    species_dirs = [item.name for item in Path(ref_genome_loc).iterdir() if item.is_file()]
 
     for species in species_dirs:
-        ref_genome = os.path.join(geneome_loc, species)
+        ref_genome = os.path.join(ref_genome_loc, species)
         gene_dict = {}
 
         with gzip.open(ref_genome, 'rt') as handle:
@@ -379,7 +519,7 @@ def gene_ensemble_mapping(
                     logging.warning(f"Could not resolve gene for {record.description}")
 
         species = species.split('.')[0].lower()
-        embedding_file = os.path.join(gene_seq_mapping_loc, model_type, f'{model_type}_emb_{species}.torch')
+        embedding_file = os.path.join(mapping_output_loc, model_type, f'{model_type}_emb_{species}.torch')
         species_emb = torch.load(embedding_file)
 
         species_emb_with_ensemble = {}
@@ -387,14 +527,14 @@ def gene_ensemble_mapping(
             gene_name = gene_name.split('.')[0]
             species_emb_with_ensemble[gene] = species_emb[gene_name]
 
-        torch.save(species_emb_with_ensemble, os.path.join(output_dir,
-                                                           f'{model_type}_emb_{species}.torch'))
+        torch.save(species_emb_with_ensemble,
+                   os.path.join(output_dir, f'{model_type}_emb_{species}.torch'))
         logging.info(f'{species} has {len(species_emb_with_ensemble)} and updated with {len(species_emb)}. Gene dict has {len(gene_dict)}')
 
 
-def merge_all_species(embedding_dirs=gene_seq_mapping_loc,
+def merge_all_species(embedding_dirs=mapping_output_loc,
                       model='Evo2',
-                      output_path=gene_seq_mapping_loc):
+                      output_path=mapping_output_loc):
     gene_seq_mapping = {}
     embedding_files = [f.name for f in Path(os.path.join(embedding_dirs, f'{model}_ensemble')).iterdir() if f.is_file()]
 
@@ -416,7 +556,7 @@ def merge_all_species(embedding_dirs=gene_seq_mapping_loc,
 def dataset_embedding_mapping(
         emb_model='Evo2',
         dataset_path=summary_file,
-        embedding_paths=gene_seq_mapping_loc,
+        embedding_paths=mapping_output_loc,
         start: int = 0,
         end: int = None):
     logging.info(f'Loading embeddings from {start} to {end}...')
@@ -478,7 +618,7 @@ def dataset_embedding_mapping_by_species(
         emb_model='Evo2',
         species_dirs=None,
         dataset_path=summary_file,
-        embedding_paths=gene_seq_mapping_loc,
+        embedding_paths=mapping_output_loc,
         data_file_loc=data_file_loc):
     if species_dirs is None:
         species_dirs = [f.name for f in Path(data_file_loc).iterdir() if f.is_dir()]
@@ -521,10 +661,10 @@ def dataset_embedding_mapping_by_species(
         logging.info(f'Done {dataset_emb_idx_path}')
 
 
-def consolidate(gene_seq_mapping_loc=gene_seq_mapping_loc,
+def consolidate(mapping_output_loc=mapping_output_loc,
                 emb_model='Evo2'):
     logging.info(f'Loading embeddings for {data_file_loc}...')
-    partial_maps_loc = os.path.join(gene_seq_mapping_loc, f'{emb_model}_partial_maps')
+    partial_maps_loc = os.path.join(mapping_output_loc, f'{emb_model}_partial_maps')
 
     dataset_emb_idx_files = [f.name for f in Path(partial_maps_loc).iterdir() if f.is_file() and f.name.startswith('dataset_emb_idx_')]
     valid_gene_index_files = [f.name for f in Path(partial_maps_loc).iterdir() if f.is_file() and f.name.startswith('valid_gene_index_')]
@@ -539,8 +679,8 @@ def consolidate(gene_seq_mapping_loc=gene_seq_mapping_loc,
         logging.info(f'Processing {dataset_emb_idx_file}...')
         dataset_emb_idx.update(torch.load(os.path.join(partial_maps_loc, dataset_emb_idx_file)))
 
-    valid_gene_index_path = os.path.join(gene_seq_mapping_loc, f'valid_gene_index_{emb_model}.torch')
-    dataset_emb_idx_path = os.path.join(gene_seq_mapping_loc, f'dataset_emb_idx_{emb_model}.torch')
+    valid_gene_index_path = os.path.join(mapping_output_loc, f'valid_gene_index_{emb_model}.torch')
+    dataset_emb_idx_path = os.path.join(mapping_output_loc, f'dataset_emb_idx_{emb_model}.torch')
 
     torch.save(valid_gene_index, valid_gene_index_path)
     logging.info(f'Done {valid_gene_index_path}')

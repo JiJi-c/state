@@ -25,9 +25,9 @@ def resolve_genes(ensemble_id,
         return None, None
 
     if return_type == 'dna':
-        return ensemble_id, r.text
+        return ensemble_id, r.text, None
     else:
-        return ensemble_id, str(Seq(r.text).translate())
+        return ensemble_id, str(Seq(r.text).translate()), None
 
 
 def parse_genename_seq(fasta_file, return_type='dna'):
@@ -43,36 +43,27 @@ def parse_genename_seq(fasta_file, return_type='dna'):
                 continue
 
             header_parts = record.description.split()
-            gene_name = None
             chromosome = None
             gene = None
             for part in header_parts:
                 if part.startswith('gene:'):
                     gene = part.split(':')[1]
-                if part.startswith('gene_symbol:'):
-                    gene_name = part.split(':')[1]
                 elif part.startswith('chromosome:'):
                     chromosome = part.replace('chromosome:', '')
                 elif part.startswith('chr:'):
                     chromosome = part.replace('chr:', '')
-                if gene_name and chromosome:
+                if gene and chromosome:
                     break
 
-            if gene_name is not None and gene is not None:
-                gene_name_map[gene_name] = gene
-
-            if gene_name is None and gene is not None:
-                gene_name = gene
-
-            if gene_name:
-                if gene_name in gene_dict:
-                    chroms, prot_seqs = gene_dict[gene_name]
+            if gene:
+                if gene in gene_dict:
+                    chroms, prot_seqs = gene_dict[gene]
                 else:
                     chroms, prot_seqs = [], []
 
                 chroms.append(chromosome)
                 prot_seqs.append(seq)
-                gene_dict[gene_name] = chroms, prot_seqs
+                gene_dict[gene] = chroms, prot_seqs
 
     return gene_dict, gene_name_map
 

@@ -6,15 +6,14 @@ channels:
   - defaults
 dependencies:
   - python=3.11
-  - tensorboard
-  - numpy
-  - pandas
+  - pytorch==2.5.1
+  - torchvision==0.20.1
+  - torchaudio==2.5.1
   - pip
   - pip:
-    - torch
-    - torchvision
-    - torchaudio
     - lightning==2.4.0
+    - numpy
+    - pandas
     - h5py
     - pyyaml
     - jinja2
@@ -33,3 +32,4 @@ dependencies:
     - geomloss
     - flash-attn
     - triton
+    - biopython

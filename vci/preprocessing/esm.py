@@ -3,30 +3,27 @@ import logging
 import torch
 import shutil
 import time
+import pandas as pd
 
-from pathlib import Path
 from transformers import AutoTokenizer, AutoModel
-
-from vci.data.gene_emb import parse_genome_for_gene_seq_map
 
 
 class ESMEmbedding(object):
 
     def __init__(self,
-                 ref_genome,
-                 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome',
-                 seq_generator_fn=None,
-                 species=None):
-        self.geneome_loc = geneome_loc
-        if ref_genome is not None:
-            self.ref_genome = ref_genome
-            self.species = ref_genome.split('.')[0].lower()
-        else:
-            self.species = species
+                 species,
+                 mapping_output_loc=None,
+                 seq_generator_fn=None):
+        self.mapping_output_loc = mapping_output_loc
+        self.species = species
 
         self.seq_type = 'protein'
-        self.gene_emb_mapping = {}
         self.name = 'ESM2'
+
+        self.gene_emb_mapping = {}
+        output_file = os.path.join(mapping_output_loc, f'{self.name}_ensemble', f'{self.name}_emb_{self.species.lower()}.torch')
+        if os.path.exists(output_file):
+            self.gene_emb_mapping = torch.load(output_file)
 
         if seq_generator_fn is None:
             self.seq_generator_fn = self._generate_gene_emb_mapping
@@ -34,10 +31,13 @@ class ESMEmbedding(object):
             self.seq_generator_fn = seq_generator_fn
 
     def _generate_gene_emb_mapping(self, max_seq_len=8280):
-        ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
-        gene_seq_mapping, _ = parse_genome_for_gene_seq_map(self.species, ref_genome_file, return_type=self.seq_type)
+        gene_list_dir = os.path.join(self.mapping_output_loc, 'gene_lists')
+        gene_seq_file = os.path.join(gene_list_dir, f'{self.species}-gene_seq.csv')
 
-        for gene, (chroms, sequences) in gene_seq_mapping.items():
+        df = pd.read_csv(gene_seq_file)
+        gene_seq_map = df.set_index('ensemble_id')['sequence'].to_dict()
+
+        for gene, sequences in gene_seq_map.items():
             if '.' in gene:
                 gene = gene.split('.')[0]
 

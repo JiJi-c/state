@@ -3,21 +3,15 @@ import logging
 import time
 import torch
 import shutil
-import pandas as pd
 
-from base64 import decodebytes
-from io import BytesIO
-from numpy import load
 from Bio.Seq import Seq
 
 import torch
 import yaml
 
-from dataclasses import dataclass
 from functools import lru_cache
 from os import getenv
 from pathlib import Path
-from transformers import AutoTokenizer, AutoModel
 
 from vci.data.gene_emb import parse_genome_for_gene_seq_map
 
@@ -215,11 +209,11 @@ class Evo2Embedding(object):
             self.gene_emb_mapping[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
             logging.debug(f'Embedding of {gene} is {emb}')
 
-            if ctr % (10) == 0:
+            if ctr % (100) == 0:
                 logging.info(f'Saving after {ctr} batches...')
                 torch.save(self.gene_emb_mapping, output_file)
 
-            if ctr % (100) == 0:
+            if ctr % (1000) == 0:
                 logging.info(f'creating checkpoint {ctr}...')
                 chk_dir = os.path.join(output_dir, 'chk')
                 if chk_dir:
