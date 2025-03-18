@@ -171,6 +171,7 @@ class PerturbationDataset(Dataset):
         # Get expression from the h5 file.
         # For now, we assume the data is stored in "X" (could be counts) and/or in obsm (embed_key)
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
+
         pert_expr, ctrl_expr = self.mapping_strategy.get_mapped_expressions(self, split, underlying_idx)
         
         # Get perturbation information using metadata cache
@@ -406,6 +407,9 @@ class PerturbationDataset(Dataset):
                 except:
                     n_cols = self.h5_file["obsm/X_hvg"].shape[1]
         return n_cols
+
+    def get_num_hvgs(self) -> int:
+       return self.h5_file["obsm/X_hvg"].shape[1] 
 
     def _get_num_cells(self) -> int:
         """Return the total number of cells in the file."""

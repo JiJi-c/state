@@ -636,6 +636,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             input_dim = underlying_ds.n_genes
 
         gene_dim = underlying_ds.n_genes
+        hvg_dim = underlying_ds.get_num_hvgs()
 
         if self.embed_key:
             output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
@@ -651,6 +652,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         return {
             "input_dim": input_dim,
             "gene_dim": gene_dim,
+            "hvg_dim": hvg_dim,
             "output_dim": output_dim,
             "pert_dim": pert_dim,
             "gene_names": gene_names,

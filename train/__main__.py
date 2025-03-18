@@ -44,7 +44,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -52,7 +52,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "old_neuralot":
         return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -60,7 +60,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
         return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -68,7 +68,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "simplesum":
         return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -76,7 +76,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "globalsimplesum":
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -84,7 +84,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "celltypemean":
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -92,7 +92,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "decoder_only":
         return DecoderOnlyPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["gene_dim"],
+            gene_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -256,10 +256,11 @@ def train(cfg: DictConfig) -> None:
             data_module.setup(stage="test")
 
             # Save data module for reproducibility
+            logger.info("Saving data module...")
             with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
                 # TODO-Abhi: only save necessary data
                 pickle.dump(data_module, f)
-            logger.info(f"Data module loaded and saved.")
+            logger.info(f"Data module saved.")
 
 
     # Create model
