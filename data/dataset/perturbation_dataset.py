@@ -59,7 +59,7 @@ class PerturbationDataset(Dataset):
             name: Name of the dataset
             h5_path: Path to the h5 file containing the dataset
             mapping_strategy: Strategy for mapping basal cells to perturbed cells, one of "batch", "random", "nearest"
-            pert_onehot_map: Global mapping of perturbation names to one-hot encodings
+            pert_onehot_map: Global mapping of perturbation names to one-hot encodings or featurizations
             batch_onehot_map: Global mapping of batch names to one-hot encodings
             pert_col: Column in the h5 file containing perturbation information
             cell_type_key: Column in the h5 file containing cell type information
@@ -177,7 +177,7 @@ class PerturbationDataset(Dataset):
         pert_code = self.metadata_cache.pert_codes[underlying_idx]
         pert_name = self.metadata_cache.pert_categories[pert_code]
         if self.pert_onehot_map is not None:
-            # map across all files to a consistent one hot encoding
+            # map across all files to a consistent one hot encoding or featurization
             pert_onehot = self.pert_onehot_map[pert_name]
         else:
             pert_onehot = None
@@ -392,14 +392,19 @@ class PerturbationDataset(Dataset):
     def _get_num_genes(self) -> int:
         """Return the number of genes in the X matrix."""
         try:
-            n_cols = self.h5_file["X"].shape[1]
-        except Exception:
-            # If stored as sparse, infer from indices
+            # Try to get shape directly from metadata
+            n_cols = self.h5_file["X"].attrs["shape"][1]
+        except KeyError:
             try:
-                indices = self.h5_file["X/indices"][:]
-                n_cols = indices.max() + 1
-            except:
-                n_cols = self.h5_file["obsm/X_hvg"].shape[1]
+                # Fallback: if not stored, try the standard dataset shape
+                n_cols = self.h5_file["X"].shape[1]
+            except Exception:
+                # Final fallback: if stored as sparse but shape isn't available, compute from indices
+                try:
+                    indices = self.h5_file["X/indices"][:]
+                    n_cols = indices.max() + 1
+                except:
+                    n_cols = self.h5_file["obsm/X_hvg"].shape[1]
         return n_cols
 
     def _get_num_cells(self) -> int:
