@@ -26,5 +26,6 @@ kwargs:
   control_pert: DMSO_TF
   map_controls: true # for a control cell, should we use it as the target (learn identity) or sample a control?
   normalize_counts: false # should we normalize the hvg counts before taking the log transform?
+  perturbation_features_file: null
 output_dir: null
 debug: true

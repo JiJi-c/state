@@ -82,7 +82,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         eval_pert: Optional[str] = None, # what is this... needs to go
         should_yield_control_cells: bool = True, # this should just always be true, remove it
         cell_sentence_len: int = 512,
-        **kwargs,
+        **kwargs, # missing map_controls, normalize_counts, and perturbation_features_file for backwards compatibility
     ):
         """
         This class is responsible for serving multiple PerturbationDataset's each of which is specific
@@ -132,6 +132,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         self.map_controls = kwargs.get("map_controls", False)
         self.normalize_counts = kwargs.get("normalize_counts", False)
+        self.perturbation_features_file = kwargs.get("perturbation_features_file", None)
 
         self.train_datasets: List[Dataset] = []
         self.val_datasets: List[Dataset] = []
@@ -202,8 +203,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         dataset_names = {spec.dataset for spec in (self.train_specs + self.test_specs)}
         for ds_name in dataset_names:
             files = self._find_dataset_files(ds_name)
-            for fpath in files:
-                with h5py.File(files[fpath], "r") as f:
+            for fname, fpath in files.items():
+                with h5py.File(fpath, "r") as f:
                     pert_arr = f["obs/{}/categories".format(self.pert_col)][:]
                     perts = set(safe_decode_array(pert_arr))
                     all_perts.update(perts)
@@ -216,7 +217,18 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     all_batches.update(batches)
 
         # Create one-hot maps
-        self.pert_onehot_map = generate_onehot_map(all_perts)
+        if self.perturbation_features_file:
+            # Load the custom featurizations from a torch file
+            featurization_dict = torch.load(self.perturbation_features_file)
+            # Validate that every perturbation in all_perts is in the featurization dict.
+            missing = all_perts - set(featurization_dict.keys())
+            if missing:
+                raise ValueError(f"The following perturbations are missing from the featurization file: {missing}")
+            logger.info(f"Loaded custom perturbation featurizations for {len(featurization_dict)} perturbations.")
+            self.pert_onehot_map = featurization_dict  # use the custom featurizations
+        else:
+            # Fall back to default: generate one-hot mapping
+            self.pert_onehot_map = generate_onehot_map(all_perts)
         self.batch_onehot_map = generate_onehot_map(all_batches)
 
     def _group_specs_by_dataset(self, specs: List[TaskSpec]) -> Dict[str, List[TaskSpec]]:
@@ -632,11 +644,15 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         gene_names = underlying_ds.get_gene_names()
 
+        # get the shape of the first value in pert_onehot_map
+        pert_dim = next(iter(self.pert_onehot_map.values())).shape[0]
+
+
         return {
             "input_dim": input_dim,
             "gene_dim": gene_dim,
             "output_dim": output_dim,
-            "pert_dim": len(self.pert_onehot_map),
+            "pert_dim": pert_dim,
             "gene_names": gene_names,
         }
 
