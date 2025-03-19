@@ -155,6 +155,62 @@ python -m train \
     model.kwargs.hidden_dim=256 # model size 20M recommended for replogle
 ```
 
+# Example Replogle Tahoe Cross Training
+
+An example command is to train on all Tahoe cell types and transfer to Replogle. In this example we train on all 45 Tahoe cell types, and 3 out of 4 Replogle cell types. We evaluate the heldout cell type in a fewshot setting.
+
+```
+#!/bin/bash
+#SBATCH --partition=gpu_batch_high_mem,gpu_high_mem
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128GB
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:1
+#SBATCH --array=1-4
+#SBATCH --output=logs/replogle/fold_chemogenetic_%a.out
+#SBATCH --error=logs/replogle/fold_chemogenetic_%a.err
+#SBATCH --job-name=replogle_chemogenetic
+
+# Define test tasks for each fold - each fold holds out a different cell type
+if [ $SLURM_ARRAY_TASK_ID -eq 1 ]; then
+    TEST_TASKS="[replogle:hepg2:fewshot]"
+elif [ $SLURM_ARRAY_TASK_ID -eq 2 ]; then
+    TEST_TASKS="[replogle:jurkat:fewshot]"
+elif [ $SLURM_ARRAY_TASK_ID -eq 3 ]; then
+    TEST_TASKS="[replogle:k562:fewshot]"
+else
+    TEST_TASKS="[replogle:rpe1:fewshot]"
+fi
+
+python -m train \
+    data.kwargs.data_dir="/large_storage/ctc/userspace/aadduri/datasets/chemogenetic" \
+    data.kwargs.train_task="[replogle,tahoe]" \
+    data.kwargs.test_task="$TEST_TASKS" \
+    data.kwargs.embed_key=X_hvg \
+    data.kwargs.basal_mapping_strategy=random \
+    data.kwargs.output_space=gene \
+    data.kwargs.should_yield_control_cells=True \
+    data.kwargs.num_workers=16 \
+    data.kwargs.batch_col=batch\
+    data.kwargs.pert_col=perturbation \
+    data.kwargs.cell_type_key=cell_type \
+    data.kwargs.control_pert=control \
+    data.kwargs.map_controls=True \
+    # data.kwargs.perturbation_features_file=<YOUR DICTIONARY OF PERTURBATION TO TENSOR FEAUTURIZATIONS>,
+    training.max_steps=52001 \
+    training.val_freq=4000 \
+    training.ckpt_every_n_steps=4000 \
+    training.batch_size=512 \
+    model.kwargs.cell_set_len=32 \
+    model.kwargs.softplus=True \
+    wandb.tags="[chemogenetic,hvg,fold${SLURM_ARRAY_TASK_ID}]" \
+    model=pertsets \
+    output_dir=<YOUR OUTPUT DIR HERE> \
+    name="fold${SLURM_ARRAY_TASK_ID}"
+```
+
 # Example Evaluation Script
 
 ```
