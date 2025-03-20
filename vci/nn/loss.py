@@ -86,3 +86,18 @@ class MMDLoss(nn.Module):
 
     def forward(self, input, target):
         return self.mmd_loss(input, target)
+
+class TabularLoss(nn.Module):
+    def __init__(self, shared=128):
+        super().__init__()
+        self.shared = shared
+
+        self.mse_loss = nn.MSELoss()
+        self.mmd_loss = SamplesLoss(loss="energy")
+
+    def forward(self, input, target):
+        mse = self.mse_loss(input, target)
+
+        # mmd should only be on the shared genes, and match scale to mse loss
+        mmd = self.mmd_loss(input[:, -self.shared:], target[:, -self.shared:])
+        return mse + mmd / 10.0

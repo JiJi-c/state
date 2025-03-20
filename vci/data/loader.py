@@ -272,6 +272,7 @@ class VCIDatasetSentenceCollator(object):
         self.pad_length = cfg.dataset.pad_length
         self.P = cfg.dataset.P
         self.N = cfg.dataset.N
+        self.S = cfg.dataset.S
         self.cfg = cfg
 
         self.dataset_to_protein_embeddings = torch.load(
@@ -280,14 +281,28 @@ class VCIDatasetSentenceCollator(object):
             )
         )
 
+        self.global_to_local = {}
+        for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
+            # Create a tensor filled with -1 (indicating not present in this dataset)
+            reverse_mapping = torch.full((19790,), -1, dtype=torch.int64)
+            
+            local_indices = torch.arange(ds_emb_idxs.size(0), dtype=torch.int64)
+            mask = (ds_emb_idxs >= 0) & (ds_emb_idxs < 19790)
+            reverse_mapping[ds_emb_idxs[mask]] = local_indices[mask]
+            self.global_to_local[dataset_name] = reverse_mapping
+
     def __call__(self, batch):
         batch_size = len(batch)
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
+        masks = torch.zeros((batch_size, self.pad_length), dtype=torch.bool)
 
         idxs = torch.zeros(batch_size, dtype=torch.int32)
-        Xs = torch.zeros((batch_size, (self.P + self.N)), dtype=torch.int32)
-        Ys = torch.zeros((batch_size, (self.P + self.N)))
-        masks = torch.zeros((batch_size, self.pad_length), dtype=torch.bool)
+        if self.cfg.loss.name == "tabular":
+            task_num = self.P + self.N + self.S
+        else:
+            task_num = self.P + self.N
+        Xs = torch.zeros((batch_size, (task_num)), dtype=torch.int32)
+        Ys = torch.zeros((batch_size, (task_num)))
 
         dataset_nums = torch.zeros(batch_size, dtype=torch.int32)
 
@@ -298,11 +313,16 @@ class VCIDatasetSentenceCollator(object):
         if self.cfg.model.rda:
             total_counts_all = torch.zeros(batch_size)
 
+        if self.cfg.loss.name == "tabular":
+            shared_genes = torch.randint(low=0, high=19789, size=(self.S,), dtype=torch.int32)
+        else:
+            shared_genes = None
+
         i = 0
         max_len = 0
         datasets = []
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
-            (bs, xx, yy, batch_weight, mask, cell_total_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores)
+            (bs, xx, yy, batch_weight, mask, cell_total_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores, shared_genes)
             datasets.append(dataset)
 
             batch_sentences[i, :] = bs
@@ -334,7 +354,8 @@ class VCIDatasetSentenceCollator(object):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
 
-    def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores):
+    # sampling a single cell sentence
+    def sample_cell_sentences(self, counts, dataset, gene_indices, gene_scores, shared_genes=None):
         if torch.isnan(counts).any():
             log.error(f"NaN values in counts for dataset {dataset}")
 
@@ -346,7 +367,7 @@ class VCIDatasetSentenceCollator(object):
             counts = torch.log1p(counts)
 
         if counts.sum() == 0:
-             expression_weights = F.softmax(counts, dim=0)
+            expression_weights = F.softmax(counts, dim=0)
         else:
             expression_weights = (counts / torch.sum(counts))
 
@@ -355,24 +376,24 @@ class VCIDatasetSentenceCollator(object):
             ds_emb_idxs = torch.tensor(ds_emb_idxs)
 
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
-        task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
-        task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length), dtype=torch.bool)
+
+        if self.cfg.loss.name == "tabular":
+            # include capacity for shared genes
+            task_num = self.cfg.dataset.P + self.cfg.dataset.N + self.cfg.dataset.S
+        else:
+            task_num = self.cfg.dataset.P + self.cfg.dataset.N
+
+        task_counts = torch.zeros((counts.shape[0], task_num))
+        task_sentence = torch.zeros((counts.shape[0], task_num))
 
         if self.cfg.model.rda:
             cell_total_counts = torch.zeros((counts.shape[0],))
         else:
             cell_total_counts = None
 
+        # len(counts) = 1, e.g., we are looping over [cell]
         for c, cell in enumerate(counts):
-            if self.cfg.model.rda:
-                total_cnt = torch.sum(cell)
-                # if total_cnt <= 1:
-                #     min_value = cell[cell > 0].min()
-                #     max_value = cell.max()
-                #     total_cnt = cell * (max_value - min_value) + min_value
-                cell_total_counts[c] = total_cnt
-
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
@@ -387,11 +408,11 @@ class VCIDatasetSentenceCollator(object):
             cell_sentences[c, start_sentence + 1:] = torch.multinomial(
                     expression_weights, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
 
-            # Convert tokens to Embeddings
+            # Convert tokens to Embeddings - local to global
             # this also includes the cls token, but we will override it later with a learnable torch vector
-            # that logic is in model.py _compute_embedding_for_batch
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
+            # LOGIC FOR TASK SENTENCE
             if gene_indices is not None:
                 # Task sentence for DE aware
                 de_budget = min(self.cfg.dataset.P // 4, len(gene_indices))
@@ -418,27 +439,46 @@ class VCIDatasetSentenceCollator(object):
                 elif len(exp_genes) > 0:
                     task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
+            # get the total number of genes unique to this cell; everything
+            # past this are shared genes across all cells in a batch, used for tabular loss
+            unshared_num = self.cfg.dataset.P + self.cfg.dataset.N
+
             # DE AWARE FOR UNEXPRESSED GENES???
             unexp_genes = torch.where(cell < 1)[0]
             if len(unexp_genes) > self.cfg.dataset.N:
-                task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
+                task_sentence[c, self.cfg.dataset.P:unshared_num] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
             else:
-                task_sentence[c, self.cfg.dataset.P:] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
+                task_sentence[c, self.cfg.dataset.P:unshared_num] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
 
-            task_counts[c] = cell[task_sentence[c].to(torch.int32)]
+            # set counts for unshared genes
+            task_counts[c, :unshared_num] = cell[task_sentence[c, :unshared_num].to(torch.int32)]
 
-            if self.cfg.loss.name == "cross_entropy":
-                # binarize the counts to 0/1
-                task_counts[c] = (task_counts[c] > 0).float()
+            # convert from dataset specific gene indices to global gene indices
+            # only do this for everything up to shared genes, which are already global indices
+            task_sentence[c, :unshared_num] = ds_emb_idxs[task_sentence[c, :unshared_num].to(torch.int32)]
 
-            # REMOVED NORMALIZATION FOR MMD! #
+            # now take care of shared genes across all cells in the batch
+            if shared_genes is not None:
+                # Overwrite the final positions of task_sentence (adjust as needed)
+                task_sentence[c, unshared_num:] = shared_genes
+
+                # convert the shared_genes, which are global indices, to the dataset specific indices
+                local_indices = self.global_to_local[dataset][shared_genes].to(cell.device)
+                shared_counts = torch.zeros(local_indices.shape, dtype=cell.dtype, device=cell.device)
+                valid_mask = local_indices != -1
+                if valid_mask.any():
+                    shared_counts[valid_mask] = cell[local_indices[valid_mask]]
+
+                # for indices which are -1, count is 0, else index into cell
+                task_counts[c, unshared_num:] = shared_counts
 
             if self.cfg.model.rda:
                 # sum the counts of the task sentence before converting to global indices
                 cell_total_counts[c] = torch.sum(task_counts[c])
 
-            # convert from dataset specific gene indices to global gene indices
-            task_sentence[c: ] = ds_emb_idxs[task_sentence[c, :].to(torch.int32)]
+            if self.cfg.loss.name == "cross_entropy":
+                # binarize the counts to 0/1
+                task_counts[c] = (task_counts[c] > 0).float()
 
             # mask out the task genes from the cell sentence
             task_gene_set = torch.tensor(task_sentence[c].tolist(), dtype=cell_sentences.dtype)

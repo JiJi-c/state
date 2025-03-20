@@ -27,7 +27,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
-from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
+from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss
 
 
 # if flash-attn package is installed and available
@@ -305,6 +305,9 @@ class LitUCEModel(L.LightningModule):
             target = batch_weights
         elif self.cfg.loss.name == 'mmd':
             criterion = MMDLoss(kernel="energy")
+            target = Y
+        elif self.cfg.loss.name == 'tabular':
+            criterion = TabularLoss(shared=self.cfg.dataset.S)
             target = Y
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
