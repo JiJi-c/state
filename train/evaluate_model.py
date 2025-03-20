@@ -57,12 +57,8 @@ def parse_args():
         type=str,
         default=None,
         choices=[
-            "centroid",
-            "clustering",
             "batch",
             "random",
-            "nearest",
-            "pseudo_nearest",
             "pseudobulk",
         ],
         help="Override the mapping strategy at inference time (optional).",
@@ -212,88 +208,68 @@ def main():
         sys.exit(0)
 
     logger.info("Generating predictions on test set using manual loop...")
-    preds = []
     device = next(model.parameters()).device
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
-            # Move each tensor in the batch to the model's device
-            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
-                     for k, v in batch.items()}
-            # assert the model is receiving a batch size of 1
-            batch_preds = model.predict_step(batch, batch_idx, padded=False)
-            # Move each tensor in the returned dict to CPU to free GPU memory
-            batch_preds = {k: (v.cpu() if isinstance(v, torch.Tensor) else v) for k, v in batch_preds.items()}
-            preds.append(batch_preds)
-    logger.info("Aggregating predictions from manual loop...")
 
-    # Flatten out
+    # Initialize aggregation variables directly
     all_preds = []
-    all_basals = []
     all_pert_names = []
     all_celltypes = []
     all_gem_groups = []
     all_reals = []
-
-    # If we have output_space = gene
     all_X_hvg = []
     all_gene_preds = []
 
-    for item in preds:
-        # item["preds"] shape: [B, #genes or embed_dim], etc.
-        # Some or all might be None
-        if item["preds"] is not None:
-            all_preds.append(item["preds"].cpu().numpy())
-        else:
-            all_preds.append(None)
-
-        if item["basal"] is not None:
-            all_basals.append(item["basal"].cpu().numpy())
-        else:
-            all_basals.append(None)
-
-        # metadata
-        if item["pert_name"] is not None:
-            # item["pert_name"] might be a list (if in the batch) or a single item
-            if isinstance(item["pert_name"], list):
-                all_pert_names.extend(item["pert_name"])
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
+            # Move each tensor in the batch to the model's device
+            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+                    for k, v in batch.items()}
+            
+            # Get predictions
+            batch_preds = model.predict_step(batch, batch_idx, padded=False)
+            
+            # Extract metadata and data directly from batch_preds
+            # Handle pert_name
+            if isinstance(batch_preds["pert_name"], list):
+                all_pert_names.extend(batch_preds["pert_name"])
             else:
-                all_pert_names.append(item["pert_name"])
-
-        if item["celltype_name"] is not None:
-            if isinstance(item["celltype_name"], list):
-                all_celltypes.extend(item["celltype_name"])
+                all_pert_names.append(batch_preds["pert_name"])
+            
+            # Handle celltype_name
+            if isinstance(batch_preds["celltype_name"], list):
+                all_celltypes.extend(batch_preds["celltype_name"])
             else:
-                all_celltypes.append(item["celltype_name"])
-
-        if item["gem_group"] is not None:
-            # gem_group might be a list or single
-            if isinstance(item["gem_group"], list):
-                all_gem_groups.extend(item["gem_group"])
-            elif isinstance(item["gem_group"], torch.Tensor):
-                all_gem_groups.extend(item["gem_group"].cpu().numpy())
+                all_celltypes.append(batch_preds["celltype_name"])
+            
+            # Handle gem_group
+            if isinstance(batch_preds["gem_group"], list):
+                all_gem_groups.extend(batch_preds["gem_group"])
+            elif isinstance(batch_preds["gem_group"], torch.Tensor):
+                all_gem_groups.extend(batch_preds["gem_group"].cpu().numpy())
             else:
-                all_gem_groups.append(item["gem_group"])
+                all_gem_groups.append(batch_preds["gem_group"])
+            
+            # Handle predictions and ground truth
+            all_preds.append(batch_preds["preds"].cpu().numpy().astype(np.float16))
+            all_reals.append(batch_preds["X"].cpu().numpy().astype(np.float16))
+            
+            # Handle X_hvg for HVG space ground truth
+            if "X_hvg" in batch_preds and batch_preds["X_hvg"] is not None:
+                all_X_hvg.append(batch_preds["X_hvg"].cpu().numpy().astype(np.float16))
+            else:
+                all_X_hvg.append(None)
+            
+            # Handle decoded gene predictions if available
+            if "gene_preds" in batch_preds and batch_preds["gene_preds"] is not None:
+                all_gene_preds.append(batch_preds["gene_preds"].cpu().numpy().astype(np.float16))
+            else:
+                all_gene_preds.append(None)
 
-        if item["X"] is not None:
-            all_reals.append(item["X"].cpu().numpy())
-        else:
-            all_reals.append(None)
+    logger.info("Aggregating predictions from manual loop...")
 
-        # Store X_hvg for HVG space ground truth
-        if "X_hvg" in item and item["X_hvg"] is not None:
-            all_X_hvg.append(item["X_hvg"].cpu().numpy())
-        else:
-            all_X_hvg.append(None)
-        
-        # Store the decoded gene predictions if available
-        if "gene_preds" in item and item["gene_preds"] is not None:
-            all_gene_preds.append(item["gene_preds"].cpu().numpy())
-        else:
-            all_gene_preds.append(None)
-
-    # Because each predict_step might have a different batch size, we need to concatenate carefully
-    final_preds = np.concatenate([arr for arr in all_preds if arr is not None], axis=0)
-    final_reals = np.concatenate([arr for arr in all_reals if arr is not None], axis=0)
+    # Concatenate all predictions and ground truth data
+    final_preds = np.concatenate(all_preds, axis=0)
+    final_reals = np.concatenate(all_reals, axis=0)
 
     # Handle HVG ground truth if available
     if any(x is not None for x in all_X_hvg):
@@ -307,12 +283,11 @@ def main():
     else:
         final_gene_preds = None
 
-    # Build adatas for pred and real
+    # Build pandas DataFrame for obs
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
 
     # Create adata for predictions
     adata_pred = anndata.AnnData(X=final_preds, obs=obs.copy())
-
     # Create adata for real
     adata_real = anndata.AnnData(X=final_reals, obs=obs.copy())
 
