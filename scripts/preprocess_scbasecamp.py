@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os
 import fire
@@ -19,7 +19,7 @@ from ast import literal_eval
 from Bio import SeqIO
 
 from vci.data.preprocess import Preprocessor
-from vci.preprocessing import ESMEmbedding, Evo2Embedding
+from vci.preprocessing import ESM2Embedding, Evo2Embedding, ESM3Embedding
 from vci.data.gene_emb import parse_genome_for_gene_seq_map, resolve_genes
 
 
@@ -275,8 +275,24 @@ def create_gene_seq_mapping(species=None,
 def inferESM2(species=None,
              mapping_output_loc=mapping_output_loc):
     logging.info(f'Generating ESM2 embedding for {species}')
-    emb_generator = ESMEmbedding(species, mapping_output_loc=mapping_output_loc)
-    emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2'))
+    emb_generator = ESM2Embedding(species, mapping_output_loc=mapping_output_loc)
+    emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2_ensemble'))
+
+
+def inferESM3(species=None,
+              mapping_output_loc=mapping_output_loc,
+              data_file_loc=data_file_loc):
+    logging.info(f'Generating ESM3 embedding for {species}')
+
+    if species is None:
+        species = [f.name for f in Path(data_file_loc).iterdir() if f.is_dir()]
+    else:
+        species = [species]
+
+
+    for specie in species:
+        emb_generator = ESM3Embedding(specie, mapping_output_loc=mapping_output_loc)
+        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM3_ensemble'))
 
 
 #TODO: inferEvo2 needs to be updated to use the mapping files in Evo2Embedding dataloader.
@@ -291,7 +307,7 @@ def inferEvo2(ref_genome=None,
     for genome in ref_genomes:
         logging.info(f'Generating Evo2 embedding for {genome}')
         emb_generator = Evo2Embedding(genome, ref_genome_loc=ref_genome_loc)
-        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'Evo2'))
+        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2_ensemble'))
 
 
 # TODO: This is meant to fix a bug without having to reprocess the entire dataset. Remove it after the bug is fixed

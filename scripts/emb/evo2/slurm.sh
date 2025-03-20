@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=evo2_emb
 #SBATCH --nodes=1
-##SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 ##SBATCH --mem=100G
@@ -34,7 +34,7 @@
 # sbatch ./scripts/emb/evo2/slurm.sh Sus_scrofa
 #
 # srun python3 ./scripts/preprocess_scbasecamp.py create_genelist --ref_genome $1
-srun python3 ./scripts/preprocess_scbasecamp.py create_gene_seq_mapping --species $1
+# srun python3 ./scripts/preprocess_scbasecamp.py create_gene_seq_mapping --species $1
 # srun python3 ./scripts/preprocess_scbasecamp.py inferEvo2 $1
 # srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping --emb_model Evo2 --start $1 --end $2
 

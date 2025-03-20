@@ -143,21 +143,16 @@ class LayerHook:
 class Evo2Embedding(object):
 
     def __init__(self,
-                 ref_genome,
+                 species,
                  geneome_loc = '/large_storage/ctc/projects/vci/ref_genome',
-                 seq_generator_fn=None,
-                 species=None):
+                 seq_generator_fn=None):
         self.geneome_loc = geneome_loc
-        if ref_genome is not None:
-            self.ref_genome = ref_genome
-            self.species = ref_genome.split('.')[0].lower()
-        else:
-            self.species = species
+        self.species = species
 
         self.seq_type = 'dna'
-        self.gene_emb_mapping = {}
         self.name = 'Evo2'
 
+        self.gene_emb_mapping = {}
         if seq_generator_fn is None:
             self.seq_generator_fn = self._generate_gene_emb_mapping
         else:
