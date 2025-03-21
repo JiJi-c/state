@@ -238,7 +238,9 @@ def compute_DE_for_truth_and_pred(
     adata_real_hvg = adata_real_ct[:, hvg_mask]
     adata_real_hvg.obs["pert_name"] = adata_real_hvg.obs["pert_name"].astype('category')
     start_true = time.time()
-    DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
+    # DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
+    # DE_true = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes)
+    DE_true_fc, DE_true_pval = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes)
     print("Time taken for true DE: ", time.time() - start_true)
 
     start_pred = time.time()
@@ -257,10 +259,13 @@ def compute_DE_for_truth_and_pred(
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
         adata_pred_hvg = adata_pred_gene[:, hvg_mask]
         adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
-        DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+        # DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+        # DE_pred = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+        DE_pred_fc, DE_pred_pval = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes)
     print("Time taken for predicted DE: ", time.time() - start_pred)
 
-    return DE_true, DE_pred
+    # return DE_true, DE_pred
+    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval
 
 def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
     """
@@ -383,6 +388,63 @@ def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", 
     return mean_rank
 
 # PASTED FROM ARC SEQ #
+
+def parallel_compute_de(adata_gene, control_pert, pert_col, k):
+    """
+    Compute differential expression using parallel_differential_expression,
+    returns two DataFrames: one sorted by fold change and one by p-value
+    
+    Parameters
+    ----------
+    adata_gene : AnnData
+        The annotated data matrix with gene expression data
+    control_pert : str
+        Name of the control perturbation to use as reference
+    pert_col : str
+        Column in adata_gene.obs that contains perturbation information
+    k : int
+        Number of top genes to return for each perturbation
+        
+    Returns
+    -------
+    tuple of pd.DataFrame
+        Two DataFrames with rows as perturbations and columns as top K genes,
+        one sorted by fold change and one by p-value
+    """
+    import time
+    import pandas as pd
+    
+    # Start timer
+    start_time = time.time()
+    
+    # Filter groups to only include those with more than 1 cell
+    group_counts = adata_gene.obs[pert_col].value_counts()
+    valid_groups = group_counts[group_counts > 1].index.tolist()
+    adata_gene = adata_gene[adata_gene.obs[pert_col].isin(valid_groups)]
+    
+    # Make sure the control perturbation is included in the valid groups
+    if control_pert not in valid_groups:
+        raise ValueError(f"Control perturbation '{control_pert}' has fewer than 2 cells")
+    
+    # Run parallel differential expression
+    de_results = parallel_differential_expression(
+        adata=adata_gene,
+        groups=valid_groups,
+        reference=control_pert,
+        groupby_key=pert_col,
+        num_workers=120,  # Adjust based on your system
+        batch_size=1000  # Adjust based on memory constraints
+    )
+    
+    print(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
+    
+    # Get top DE genes sorted by fold change
+    de_genes_fc = vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change')
+    
+    # Get top DE genes sorted by p-value
+    de_genes_pval = vectorized_topk_de(de_results, control_pert, k, sort_by='p_value')
+    
+    return de_genes_fc, de_genes_pval
 
 def _build_shared_matrix(
     data: np.ndarray,
@@ -638,3 +700,50 @@ def _percent_change(
 ) -> float:
     """Calculate the percent change between two means."""
     return (μ_tgt - μ_ref) / μ_ref
+
+def vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change'):
+    """
+    Create a DataFrame with top k DE genes for each perturbation sorted by the specified metric.
+    
+    Parameters
+    ----------
+    de_results : pd.DataFrame
+        DataFrame with differential expression results
+    control_pert : str
+        Name of the control perturbation
+    k : int
+        Number of top genes to return for each perturbation
+    sort_by : str
+        Metric to sort by ('abs_fold_change' or 'p_value')
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with rows as perturbations and columns as top K genes
+    """
+    # Filter out the control perturbation rows
+    df = de_results[de_results['target'] != control_pert].copy()
+    
+    # Compute absolute fold change (if not already computed)
+    df['abs_fold_change'] = df['fold_change'].abs()
+
+    if df[sort_by].dtype == 'float16':
+        df[sort_by] = df[sort_by].astype('float32')
+    
+    # Sort direction depends on metric (descending for fold change, ascending for p-value)
+    ascending = True if sort_by == 'p_value' else False
+    
+    # Sort the DataFrame by target and the chosen metric
+    df_sorted = df.sort_values(['target', sort_by], ascending=[True, ascending])
+    
+    # For each target, pick the top k rows
+    df_sorted['rank'] = df_sorted.groupby('target').cumcount()
+    df_topk = df_sorted[df_sorted['rank'] < k]
+    
+    # Pivot the DataFrame so that rows are targets and columns are the ranked top genes
+    de_genes = df_topk.pivot(index='target', columns='rank', values='feature')
+    
+    # Optionally, sort the columns so that they are in order from 0 to k-1
+    de_genes = de_genes.sort_index(axis=1)
+    
+    return de_genes

@@ -11,6 +11,7 @@ import anndata
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import lightning.pytorch as pl
 import torch
 import wandb
 
@@ -121,6 +122,9 @@ def main():
     with open(data_module_path, "rb") as f:
         data_module: MultiDatasetPerturbationDataModule = pickle.load(f)
     logger.info("Loaded data module from %s", data_module_path)
+
+    # seed everything
+    pl.seed_everything(cfg["training"]["train_seed"])
 
     # If user overrides the mapping strategy
     if args.map_type is not None:
