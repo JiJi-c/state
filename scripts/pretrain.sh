@@ -16,6 +16,24 @@ python3 -m vci.tools.slurm \
     --set experiment.val_check_interval=1000 \
     --set loss.name=mse
 
+python3 -m vci.tools.slurm \
+    --exp_name vci_scbase_esm2_human_all \
+    -n 1 -g 1 \
+    --set embeddings.current=esm2-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens
+
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_scbase_esm2_human_all_mse_loss_normalized \
+    -n 1 -g 1 \
+    --set embeddings.current=esm2-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens \
+          loss.name=mse \
+          loss.apply_normalization=True
+
+
 
 
 python3 -m vci.tools.slurm \
@@ -25,3 +43,17 @@ python3 -m vci.tools.slurm \
           embeddings.current=evo2-scbasecamp \
           dataset.current=scbasecamp \
           dataset.scbasecamp.filter_by_species=Homo_sapiens
+
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_2048-1024_1024_16_4 \
+    -n 1 -g 1 \
+    --set embeddings.current=esm2-cellxgene \
+          dataset.current=cellxgene \
+          model.d_hid=2048 \
+          model.emsize=1024 \
+          model.output_dim=1024 \
+          model.nhead=16 \
+          model.nlayers=4 \
+          model.rda=true\
+          loss.name=mse

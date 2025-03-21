@@ -247,8 +247,8 @@ class GeneFilterDataset(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
         super(GeneFilterDataset, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
-        if utils.get_dataset_cfg(cfg).valid_genes_masks is not None:
-            self.valid_gene_index = torch.load(utils.get_dataset_cfg(cfg).valid_genes_masks)
+        if utils.get_embedding_cfg(cfg).valid_genes_masks is not None:
+            self.valid_gene_index = torch.load(utils.get_embedding_cfg(cfg).valid_genes_masks)
         elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg).all_embeddings)
             valid_genes_list = list(esm_data.keys())

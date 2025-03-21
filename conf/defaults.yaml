@@ -31,9 +31,16 @@ embeddings:
     size: 5120
 
   evo2-scbasecamp:
-    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch
-    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
+    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/Evo2/dataset_emb_idx_Evo2_fixed.torch
+    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/Evo2/valid_gene_index_Evo2.torch
     size: 4096
+
+  esm2-scbasecamp:
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/ESM2/all_species_ESM2.torch
+    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/ESM2/dataset_emb_idx_ESM2.torch
+    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/ESM2/valid_gene_index_ESM2.torch
+    size: 5120
 
 validations:
   diff_exp:
@@ -62,12 +69,11 @@ dataset:
   current: cellxgene
 
   cellxgene:
-    ds_type: npz # npz, h5ad, or filtered_h5ad
-    train: /scratch/ctc/ML/uce/npz_train_datasets.csv
-    val: /scratch/ctc/ML/uce/npz_val_datasets.csv
-    data_dir: /large_experiments/ctc/ML/data/cell/observational/ # Only used for npz files
+    data_dir: /large_experiments/goodarzilab/mohsen/cellxgene/processed
+    ds_type: h5ad
     filter: false
-    valid_genes_masks: null
+    train: /scratch/ctc/ML/uce/h5ad_train_dataset.csv
+    val: /scratch/ctc/ML/uce/h5ad_val_dataset.csv
 
   scbasecamp:
     ds_type: filtered_h5ad
@@ -75,7 +81,6 @@ dataset:
     val: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
     filter: true
     filter_by_species: null
-    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/valid_gene_index_Evo2.torch
 
   tahoe:
     ds_type: filtered_h5ad
@@ -83,7 +88,7 @@ dataset:
     val: /scratch/ctc/ML/uce/full_train_datasets.csv
     filter: true
     valid_genes_masks: null
-  
+
   tahoe-h5ad:
     ds_type: filtered_h5ad
     train: /scratch/ctc/ML/uce/h5ad_train_dataset_tahoe.csv
