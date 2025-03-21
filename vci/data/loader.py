@@ -250,7 +250,7 @@ class GeneFilterDataset(H5adSentenceDataset):
         if utils.get_dataset_cfg(cfg).valid_genes_masks is not None:
             self.valid_gene_index = torch.load(utils.get_dataset_cfg(cfg).valid_genes_masks)
         elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
-            esm_data = torch.load(utils.get_embedding_cfg(self.cfg))
+            esm_data = torch.load(utils.get_embedding_cfg(self.cfg).all_embeddings)
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
                 if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does

@@ -83,6 +83,13 @@ dataset:
     val: /scratch/ctc/ML/uce/full_train_datasets.csv
     filter: true
     valid_genes_masks: null
+  
+  tahoe-h5ad:
+    ds_type: filtered_h5ad
+    train: /scratch/ctc/ML/uce/h5ad_train_dataset_tahoe.csv
+    val: /scratch/ctc/ML/uce/h5ad_val_dataset_tahoe.csv
+    filter: true
+    valid_genes_masks: null
 
   # this is a map for each dataset's columns mapping them to a global gene ordering
   pad_length: 2048
