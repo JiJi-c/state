@@ -149,9 +149,9 @@ class LitUCEModel(L.LightningModule):
         if self.cfg.model.counts:
             self.bin_encoder = nn.Embedding(10, d_model)
             self.count_encoder = nn.Sequential(
-                nn.Linear(1, 10, bias=True),
+                nn.Linear(1, 512, bias=True),
                 nn.LeakyReLU(),
-                nn.Linear(10, 10),
+                nn.Linear(512, 10),
             )
 
         if compiled:

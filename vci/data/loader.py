@@ -371,9 +371,9 @@ class VCIDatasetSentenceCollator(object):
             counts = torch.log1p(counts)
 
         if counts.sum() == 0:
-            expression_weights = F.softmax(counts, dim=0)
+            expression_weights = F.softmax(counts, dim=1)
         else:
-            expression_weights = counts / torch.sum(counts, dim=0, keepdim=True)
+            expression_weights = counts / torch.sum(counts, dim=1, keepdim=True)
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         if isinstance(ds_emb_idxs, np.ndarray):
