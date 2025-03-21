@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 from torch import nn, Tensor
+import torch.nn.functional as F
 from torch.nn import (TransformerEncoder,
                       TransformerEncoderLayer,
                       BCEWithLogitsLoss)
@@ -145,6 +146,14 @@ class LitUCEModel(L.LightningModule):
             nn.Linear(output_dim + d_model + count_info, 1, bias=True)
         )
 
+        if self.cfg.model.counts:
+            self.bin_encoder = nn.Embedding(10, d_model)
+            self.count_encoder = nn.Sequential(
+                nn.Linear(1, 10, bias=True),
+                nn.LeakyReLU(),
+                nn.Linear(10, 10),
+            )
+
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
 
@@ -170,6 +179,7 @@ class LitUCEModel(L.LightningModule):
         batch_weights = batch[4]
         mask = batch[5]
         mask = mask.to(torch.bool)
+        batch_sentences_counts = batch[7]
 
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences)
@@ -182,7 +192,7 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding = self.forward(batch_sentences, mask=mask, counts=batch_sentences_counts)
 
         X = self.gene_embedding_layer(X)
         return X, Y, batch_weights, embedding
@@ -257,7 +267,7 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
-    def forward(self, src: Tensor, mask: Tensor):
+    def forward(self, src: Tensor, mask: Tensor, counts=None):
         """
         Args:
             src: Tensor, shape [batch_size, seq_len, ntoken]
@@ -265,6 +275,24 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
+        if counts is not None:
+            # scFoundation-style soft binning for counts
+            counts = counts.unsqueeze(-1)  # now B x H x 1
+            
+            # Step 1: Transform count values into bin distribution
+            bin_weights = self.count_encoder(counts)  # B x H x 10
+            bin_weights = F.softmax(bin_weights, dim=-1)  # Convert to probabilities over bins
+            
+            # Step 2: Get bin embeddings
+            bin_indices = torch.arange(10, device=self.device)  # 10 bins
+            bin_embeddings = self.bin_encoder(bin_indices)  # 10 x d_model
+            
+            # Step 3: Compute weighted sum of bin embeddings
+            count_emb = torch.matmul(bin_weights, bin_embeddings)
+            
+            # Add count embeddings to token embeddings
+            src = src + count_emb  # should both be B x H x self.d_model
+
         mask = mask.to(self.device)
         output = self.transformer_encoder(src, src_key_padding_mask=mask)
         gene_output = self.decoder(output) # batch x seq_len x 128

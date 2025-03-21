@@ -294,6 +294,7 @@ class VCIDatasetSentenceCollator(object):
     def __call__(self, batch):
         batch_size = len(batch)
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
+        batch_sentences_counts = torch.zeros((batch_size, self.pad_length))
         masks = torch.zeros((batch_size, self.pad_length), dtype=torch.bool)
 
         idxs = torch.zeros(batch_size, dtype=torch.int32)
@@ -322,7 +323,7 @@ class VCIDatasetSentenceCollator(object):
         max_len = 0
         datasets = []
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
-            (bs, xx, yy, batch_weight, mask, cell_total_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores, shared_genes)
+            (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores, shared_genes)
             datasets.append(dataset)
 
             batch_sentences[i, :] = bs
@@ -338,6 +339,8 @@ class VCIDatasetSentenceCollator(object):
             dataset_nums[i] = dataset_num
             if self.cfg.model.rda and cell_total_counts is not None:
                 total_counts_all[i] = cell_total_counts[0]
+            if self.cfg.model.counts and cell_sentence_counts is not None:
+                batch_sentences_counts[i, :] = cell_sentence_counts
             i += 1
 
         return (
@@ -348,6 +351,7 @@ class VCIDatasetSentenceCollator(object):
             batch_weights,
             masks,
             total_counts_all if self.cfg.model.rda else None,
+            batch_sentences_counts if self.cfg.model.counts else None,
         )
 
     def softmax(self, x):
@@ -369,13 +373,14 @@ class VCIDatasetSentenceCollator(object):
         if counts.sum() == 0:
             expression_weights = F.softmax(counts, dim=0)
         else:
-            expression_weights = (counts / torch.sum(counts))
+            expression_weights = counts / torch.sum(counts, dim=0, keepdim=True)
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         if isinstance(ds_emb_idxs, np.ndarray):
             ds_emb_idxs = torch.tensor(ds_emb_idxs)
 
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
+        cell_sentence_counts = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         mask = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length), dtype=torch.bool)
 
         if self.cfg.loss.name == "tabular":
@@ -397,16 +402,38 @@ class VCIDatasetSentenceCollator(object):
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
-            start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), num_pos_genes)
-            genes_ranked_exp = torch.argsort(cell, descending=True)
+            if self.cfg.model.counts:
+                # shuffle before argsort - randomly break ties so we select random permuted genes
+                indices = torch.randperm(cell.shape[-1])
+                shuffled_cell = cell[indices]
+                shuffled_genes_ranked_exp = torch.argsort(shuffled_cell, descending=True)
+                genes_ranked_exp = indices[shuffled_genes_ranked_exp]
+                cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
+                if len(genes_ranked_exp) >= self.cfg.dataset.pad_length - 1:
+                    cell_sentences[c, 1:] = genes_ranked_exp[:self.cfg.dataset.pad_length-1]
+                else:
+                    # take the nonzero genes first
+                    num_nonzero = min(num_pos_genes, self.cfg.dataset.pad_length - 1)
+                    cell_sentences[c, 1:num_nonzero+1] = genes_ranked_exp[:num_nonzero]
 
-            # Combine into final sequence
-            cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
-            # paste the most expressed genes first
-            cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
-            # sample with replacement weighted by normalized log counts
-            cell_sentences[c, start_sentence + 1:] = torch.multinomial(
-                    expression_weights, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+                    # sample the unexpressed genes with replacement
+                    remaining_slots = self.cfg.dataset.pad_length - 1 - num_nonzero
+                    unexpressed_genes = genes_ranked_exp[num_nonzero:]
+                    cell_sentences[c, num_nonzero+1:] = unexpressed_genes[torch.randint(len(unexpressed_genes), (remaining_slots,))]
+            else:
+                start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), num_pos_genes)
+                genes_ranked_exp = torch.argsort(cell, descending=True)
+
+                # Combine into final sequence
+                cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
+                # paste the most expressed genes first
+                cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
+                # sample with replacement weighted by normalized log counts
+                cell_sentences[c, start_sentence + 1:] = torch.multinomial(
+                        expression_weights, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+
+            if self.cfg.model.counts:
+                cell_sentence_counts[c, :] = 100 * expression_weights[c, cell_sentences[c, :].to(torch.int32)]
 
             # Convert tokens to Embeddings - local to global
             # this also includes the cls token, but we will override it later with a learnable torch vector
@@ -530,4 +557,12 @@ class VCIDatasetSentenceCollator(object):
             # make sure that the CLS token is never masked out.
             mask[c, 0] = False
 
-        return cell_sentences, task_sentence, task_counts, counts, mask, cell_total_counts if self.cfg.model.rda else None
+        return (
+            cell_sentences,
+            task_sentence,
+            task_counts,
+            counts,
+            mask,
+            cell_total_counts if self.cfg.model.rda else None,
+            cell_sentence_counts if self.cfg.model.counts else None,
+        )
