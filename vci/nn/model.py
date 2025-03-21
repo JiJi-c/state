@@ -180,6 +180,8 @@ class LitUCEModel(L.LightningModule):
         mask = batch[5]
         mask = mask.to(torch.bool)
         batch_sentences_counts = batch[7]
+        if batch_sentences_counts:
+            batch_sentences_counts = batch_sentences_counts.to(self.device)
 
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences)

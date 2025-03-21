@@ -85,7 +85,7 @@ class MMDLoss(nn.Module):
         self.mmd_loss = SamplesLoss(loss=kernel, blur=blur, scaling=scaling)
 
     def forward(self, input, target):
-        return self.mmd_loss(input, target)
+        return self.mmd_loss(input.unsqueeze(1), target.unsqueeze(1)).mean()
 
 class TabularLoss(nn.Module):
     def __init__(self, shared=128):
