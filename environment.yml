@@ -33,3 +33,4 @@ dependencies:
     - flash-attn
     - triton
     - biopython
+    - plotly
