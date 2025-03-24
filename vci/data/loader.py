@@ -351,6 +351,9 @@ class VCIDatasetSentenceCollator(object):
             expression_weights = (counts / torch.sum(counts))
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
+        if isinstance(ds_emb_idxs, np.ndarray):
+            ds_emb_idxs = torch.tensor(ds_emb_idxs)
+
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         task_counts = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))
         task_sentence = torch.zeros((counts.shape[0], self.cfg.dataset.P + self.cfg.dataset.N))

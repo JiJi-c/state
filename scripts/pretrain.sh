@@ -25,13 +25,12 @@ python3 -m vci.tools.slurm \
 
 
 python3 -m vci.tools.slurm \
-    --exp_name vci_scbase_esm2_human_all_mse_loss_normalized \
+    --exp_name vci_scbase_esm2_human_all_bce \
     -n 1 -g 1 \
     --set embeddings.current=esm2-scbasecamp \
           dataset.current=scbasecamp \
           dataset.scbasecamp.filter_by_species=Homo_sapiens \
-          loss.name=mse \
-          loss.apply_normalization=True
+          loss.name=cross_entropy
 
 
 
