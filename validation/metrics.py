@@ -197,11 +197,13 @@ def compute_metrics(
 
                 # Compute overlap for fold change-based DE
                 DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert)
-                metrics[celltype]['DE_fc'] = np.mean(list(DE_metrics_fc.values()))
+                metrics[celltype]['DE_fc'] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_fc_avg'] = np.mean(list(DE_metrics_fc.values()))
                 
                 # Compute overlap for p-value-based DE  
                 DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert)
-                metrics[celltype]['DE_pval'] = np.mean(list(DE_metrics_pval.values()))
+                metrics[celltype]['DE_pval'] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_avg'] = np.mean(list(DE_metrics_pval.values()))
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
