@@ -7,10 +7,11 @@ from typing import List
 
 import hydra
 import torch
-from omegaconf import DictConfig, OmegaConf
+
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, Callback
+from omegaconf import DictConfig, OmegaConf
 
 from data.utils.modules import get_datamodule
 from data.data_modules.tasks import parse_dataset_specs  # TODO-Abhi: Should this move?
