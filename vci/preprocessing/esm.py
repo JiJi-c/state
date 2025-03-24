@@ -72,7 +72,7 @@ class BaseEmbedding(object):
             logging.info(f'creating checkpoint {ctr}...')
             chk_dir = os.path.join(output_dir, 'chk')
             if chk_dir:
-                os.makedirs(os.path.join(output_dir, 'chk'), exist_ok=True)
+                os.makedirs(chk_dir, exist_ok=True)
             checkpoint_file = os.path.join(chk_dir,
                                            f'{self.name}_emb_{self.species}.{time.time()}.torch')
             shutil.copyfile(output_file, checkpoint_file)
@@ -101,6 +101,7 @@ class ESM3Embedding(BaseEmbedding):
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species}.torch')
         if os.path.exists(output_file):
+            logging.info(f"Loading existing embeddings for {output_file}...")
             self.gene_emb_mapping = torch.load(output_file)
 
         ctr = 0
