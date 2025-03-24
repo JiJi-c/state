@@ -4,8 +4,8 @@
 ##SBATCH --nodes=1
 ##SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=100G
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=10G
 #SBATCH --time=1-00:00:00
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/e_gene_map/%x_%j.log
@@ -25,8 +25,8 @@ export ESM_API_TOKEN=$(cat ~/.esm_token)
 # srun python3 ./scripts/preprocess_scbasecamp.py \
 #     dataset_embedding_mapping_by_species --emb_model ESM2 --species_dirs $1
 
-srun python3 ./scripts/preprocess_scbasecamp.py \
-    inferESM3 --species_dirs $1
+echo "sbatch scripts/emb/esm2/slurm.sh $1"
+srun  python3 ./scripts/preprocess_scbasecamp.py inferESM3 --species $1
 
 
 ## ls /scratch/ctc/ML/uce/scBasecamp -1 | xargs -I{} sbatch scripts/emb/esm2/slurm.sh {}
