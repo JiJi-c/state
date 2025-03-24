@@ -6,10 +6,7 @@ from validation.metric_utils import (
     compute_mse,
     compute_pearson_delta,
     compute_pearson_delta_separate_controls,
-    compute_wasserstein,
-    compute_mmd,
     compute_cosine_similarity,
-    compute_cosine_similarity_v2,
     compute_gene_overlap_cross_pert,
     compute_DE_for_truth_and_pred,
     compute_perturbation_ranking_score,
@@ -88,10 +85,12 @@ def compute_metrics(
                 celltype_col=celltype_col,
             )
 
+            # only evaluate on perturbations that are shared between the train and test sets
             if shared_perts:
                 all_perts = shared_perts & pred_celltype_pert_dict[celltype]
             else:
                 all_perts = pred_celltype_pert_dict[celltype]
+
             for pert in all_perts:
                 try:
                     if pert == control_pert:
@@ -162,7 +161,7 @@ def compute_metrics(
 
                         for k, v in batched_metrics.items():
                             metrics[celltype][k].append(v)
-                        
+
                 except:
                     print(f"Failed for {celltype} {pert}")
                     pass
@@ -170,6 +169,7 @@ def compute_metrics(
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
 
+            # gene level metrics may not be available if the output_space was specified to be latent
             adata_real_gene_ct = None
             adata_pred_gene_ct = None
             if adata_real_gene is not None:
@@ -183,22 +183,27 @@ def compute_metrics(
                 ## Compute differential expression at the full adata level for speed
 
                 # 2) Actually compute DE for both truth & pred
-                num_de = 50
-                logger.info(f"Computing DE for {num_de} genes")
-                DE_true, DE_pred = compute_DE_for_truth_and_pred(
+                logger.info(f"Computing DE for 50 genes")
+                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval = compute_DE_for_truth_and_pred(
                     adata_real_gene_ct or adata_real_ct,
                     adata_pred_gene_ct or adata_pred_ct,
                     control_pert=control_pert,
                     pert_col=pert_col,
                     n_top_genes=2000,  # default HVG
-                    k_de_genes=num_de,
+                    k_de_genes=50,
                     output_space=output_space,
                     model_decoder=decoder,
                 )
 
-                DE_metrics = compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert=control_pert)
-                # why does the above print 0.02 but the output prints 0.005?
-                metrics[celltype]['DE_50'] = np.mean(list(DE_metrics.values()))
+                # Compute overlap for fold change-based DE
+                DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert)
+                metrics[celltype]['DE_fc'] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_fc_avg'] = np.mean(list(DE_metrics_fc.values()))
+                
+                # Compute overlap for p-value-based DE  
+                DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert)
+                metrics[celltype]['DE_pval'] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_avg'] = np.mean(list(DE_metrics_pval.values()))
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
@@ -211,13 +216,13 @@ def compute_metrics(
                         continue
 
                     # Retrieve predicted and true DE genes for p, if available
-                    if p in DE_pred.index:
-                        pred_genes = list(DE_pred.loc[p].values)
+                    if p in DE_pred_pval.index:
+                        pred_genes = list(DE_pred_pval.loc[p].values)
                     else:
                         pred_genes = []
 
-                    if p in DE_true.index:
-                        true_genes = list(DE_true.loc[p].values)
+                    if p in DE_true_pval.index:
+                        true_genes = list(DE_true_pval.loc[p].values)
                     else:
                         true_genes = []
 
