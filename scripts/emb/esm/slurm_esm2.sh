@@ -8,7 +8,7 @@
 #SBATCH --mem=100G
 #SBATCH --time=2-00:00:00
 #SBATCH --signal=B:SIGINT@300
-#SBATCH --output=outputs/emb/esm2_3B/%x_%j.log
+#SBATCH --output=outputs/emb/esm2_3B/%j.log
 #SBATCH --open-mode=append
 #SBATCH --partition=gpu_batch,gpu_high_mem,gpu_batch_high_mem,preemptible,vci_gpu_priority
 #SBATCH --exclude=GPU115A

@@ -64,7 +64,7 @@ class BaseEmbedding(object):
             yield self.species, gene, sequences
 
     def save_gene_emb_mapping(self, ctr, output_file, output_dir):
-        if ctr % (10) == 0:
+        if ctr % (100) == 0:
             logging.info(f'Saving after {ctr} batches...')
             torch.save(self.gene_emb_mapping, output_file)
 
@@ -136,6 +136,7 @@ class ESM3Embedding(BaseEmbedding):
                     break
 
         torch.save(self.gene_emb_mapping, output_file)
+        logging.info("Done Processing")
 
 
 class ESM2Embedding(BaseEmbedding):
@@ -188,3 +189,4 @@ class ESM2Embedding(BaseEmbedding):
             torch.cuda.empty_cache()
 
         torch.save(self.gene_emb_mapping, output_file)
+        logging.info("Done Processing")
