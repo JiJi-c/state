@@ -384,7 +384,7 @@ class LitUCEModel(L.LightningModule):
 
         # add in the independence loss for cell embeddings
         if self.cfg.loss.get('uniformity', False):
-            uniformity = 10 * uniformity_loss(embs)
+            uniformity = uniformity_loss(embs)
             self.log("trainer/uniformity_loss", uniformity)
             loss = loss + uniformity
 
@@ -421,16 +421,16 @@ class LitUCEModel(L.LightningModule):
             current_step = self.global_step
             if self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                current_step = current_step - (current_step % 10)
-                if current_step >= interval and current_step % interval == 0:
+                if current_step - self._last_val_de_check >= interval:
                     self._compute_val_de()
+                    self._last_val_de_check = current_step
 
             self.trainer.strategy.barrier()
             if self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                current_step = current_step - (current_step % 10)
-                if current_step >= interval and current_step % interval == 0:
+                if current_step - self._last_val_perturbation_check >= interval:
                     self._compute_val_perturbation(current_step)
+                    self._last_val_perturbation_check = current_step
         finally:
             self.train()
 

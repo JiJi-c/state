@@ -125,7 +125,7 @@ model:
   counts: false
   dataset_correction: false
   num_datasets: 1139
-  ema: true
+  ema: false
   ema_decay: 0.999
   ema_update_interval: 1000
 

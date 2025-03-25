@@ -114,6 +114,12 @@ def main(cfg):
         # update_interval = getattr(cfg.model, "ema_update_interval", 1000)
         # callbacks.append(EMAUpdateCallback(update_interval=update_interval))
 
+    if getattr(cfg.model, "ema", False):
+        ema_decay = getattr(cfg.model, "ema_decay", 0.999)
+        callbacks.append(EMACallback(decay=ema_decay))
+        update_interval = getattr(cfg.model, "ema_update_interval", 1000)
+        callbacks.append(EMAUpdateCallback(update_interval=update_interval))
+
     max_steps = -1
     if cfg.experiment.profile.enable_profiler:
         callbacks.append(ProfilerCallback(cfg=cfg))
