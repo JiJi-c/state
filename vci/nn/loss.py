@@ -101,3 +101,65 @@ class TabularLoss(nn.Module):
         # mmd should only be on the shared genes, and match scale to mse loss
         mmd = self.mmd_loss(input[:, -self.shared:], target[:, -self.shared:])
         return mse + mmd / 10.0
+
+class IndependenceLoss(nn.Module):
+    """
+    Modified independence loss that maintains informativeness of cell embeddings
+    while ensuring orthogonality with dataset embeddings.
+    """
+    def __init__(self, orthogonality_weight=1.0, distribution_weight=1.0):
+        super(IndependenceLoss, self).__init__()
+        self.orthogonality_weight = orthogonality_weight
+        self.distribution_weight = distribution_weight
+        
+    def compute_kernel(self, x, y):
+        """Compute the kernel matrix between two sets of samples."""
+        x_size = x.size(0)
+        y_size = y.size(0)
+        dim = x.size(1)
+        
+        x = x.unsqueeze(1)
+        y = y.unsqueeze(0)
+        
+        tiled_x = x.expand(x_size, y_size, dim)
+        tiled_y = y.expand(x_size, y_size, dim)
+        
+        kernel_input = (tiled_x - tiled_y).pow(2).mean(2) / float(dim)
+        return torch.exp(-kernel_input)
+            
+    def compute_mmd(self, x, y):
+        """Compute Maximum Mean Discrepancy between two distributions."""
+        x_kernel = self.compute_kernel(x, x)
+        y_kernel = self.compute_kernel(y, y)
+        xy_kernel = self.compute_kernel(x, y)
+        
+        return x_kernel.mean() + y_kernel.mean() - 2 * xy_kernel.mean()
+    
+    def orthogonality_loss(self, embs, dataset_embs):
+        """
+        Compute orthogonality loss between cell embeddings and dataset embeddings.
+        This ensures they capture different aspects of the data.
+        """
+        # Normalize embeddings for numerical stability
+        embs_norm = F.normalize(embs, p=2, dim=1)
+        dataset_embs_norm = F.normalize(dataset_embs, p=2, dim=1)
+        
+        # Calculate cosine similarity (should be close to zero for orthogonality)
+        cosine_sim = torch.abs(torch.sum(embs_norm * dataset_embs_norm, dim=1))
+        return cosine_sim.mean()
+    
+    def forward(self, embs, dataset_embs):
+        """
+        Compute independence loss that preserves informativeness of cell embeddings.
+        """
+        # Orthogonality component to ensure different information is captured
+        ortho_loss = self.orthogonality_loss(embs, dataset_embs)
+        return ortho_loss
+        
+        # # Combined embedding should follow a distribution centered at dataset_embs
+        # combined_embs = embs + dataset_embs
+        # true_samples = dataset_embs + torch.randn_like(embs) * 0.5
+        # distribution_loss = self.compute_mmd(combined_embs, true_samples)
+        
+        # return (self.orthogonality_weight * ortho_loss + 
+        #         self.distribution_weight * distribution_loss)

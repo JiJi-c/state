@@ -275,6 +275,9 @@ class VCIDatasetSentenceCollator(object):
         self.S = cfg.dataset.S
         self.cfg = cfg
 
+        # Load the dataset mappings
+        self.use_dataset_info = getattr(cfg.model, "dataset_correction", False)
+
         self.dataset_to_protein_embeddings = torch.load(
             utils.get_embedding_cfg(self.cfg).ds_emb_mapping.format(
                 utils.get_embedding_cfg(self.cfg).size
@@ -305,8 +308,6 @@ class VCIDatasetSentenceCollator(object):
         Xs = torch.zeros((batch_size, (task_num)), dtype=torch.int32)
         Ys = torch.zeros((batch_size, (task_num)))
 
-        dataset_nums = torch.zeros(batch_size, dtype=torch.int32)
-
         largest_cnt = max([x[0].shape[1] for x in batch])
         batch_weights = torch.zeros((batch_size, largest_cnt))
 
@@ -319,6 +320,8 @@ class VCIDatasetSentenceCollator(object):
         else:
             shared_genes = None
 
+        dataset_nums = torch.zeros(batch_size, dtype=torch.int32)
+    
         i = 0
         max_len = 0
         datasets = []
@@ -337,6 +340,7 @@ class VCIDatasetSentenceCollator(object):
             Xs[i] = xx  # [pn_idx]
             Ys[i] = yy.squeeze()  # [pn_idx]
             dataset_nums[i] = dataset_num
+
             if self.cfg.model.rda and cell_total_counts is not None:
                 total_counts_all[i] = cell_total_counts[0]
             if self.cfg.model.counts and cell_sentence_counts is not None:
@@ -352,6 +356,7 @@ class VCIDatasetSentenceCollator(object):
             masks,
             total_counts_all if self.cfg.model.rda else None,
             batch_sentences_counts if self.cfg.model.counts else None,
+            dataset_nums if self.use_dataset_info else None,
         )
 
     def softmax(self, x):
@@ -403,7 +408,7 @@ class VCIDatasetSentenceCollator(object):
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
             if self.cfg.model.counts:
-                # shuffle before argsort - randomly break ties so we select random permuted genes
+                # shuffle before argsort - randomly break ties so we select random unexpressed genes each time, if pad_length > num_non_zero genes
                 indices = torch.randperm(cell.shape[-1])
                 shuffled_cell = cell[indices]
                 shuffled_genes_ranked_exp = torch.argsort(shuffled_cell, descending=True)

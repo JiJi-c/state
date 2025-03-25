@@ -117,7 +117,7 @@ class Inference():
 
                 batch_sentences = self.model.pe_embedding(batch_sentences.long())
                 batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-                gene_output, embedding = self.model(batch_sentences, mask=mask)
+                gene_output, embedding, dataset_embedding = self.model(batch_sentences, mask=mask)
                 embeddings = embedding.detach().cpu().numpy()
 
                 yield embeddings
