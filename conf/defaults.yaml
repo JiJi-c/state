@@ -145,3 +145,4 @@ loss:
   name: "cross_entropy" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
   apply_normalization: False
   kernel: "energy"
+  uniformity: False

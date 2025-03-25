@@ -163,3 +163,31 @@ class IndependenceLoss(nn.Module):
         
         # return (self.orthogonality_weight * ortho_loss + 
         #         self.distribution_weight * distribution_loss)
+
+
+def uniformity_loss(embeddings: torch.Tensor, t: float = 2.0) -> torch.Tensor:
+    """
+    Compute the uniformity loss over a batch of embeddings.
+    
+    Args:
+        embeddings (torch.Tensor): A tensor of shape (batch_size, embedding_dim).
+        t (float): Temperature parameter controlling the penalty (default: 2.0).
+    
+    Returns:
+        torch.Tensor: A scalar tensor representing the uniformity loss.
+    """
+    batch_size = embeddings.size(0)
+    
+    # Compute pairwise squared Euclidean distances:
+    # ||z_i - z_j||^2 = ||z_i||^2 + ||z_j||^2 - 2 * z_i^T z_j
+    squared_norms = (embeddings ** 2).sum(dim=1, keepdim=True)  # shape: (batch_size, 1)
+    distances = squared_norms + squared_norms.t() - 2 * embeddings @ embeddings.t()
+    distances = torch.clamp(distances, min=0.0)  # Ensure numerical stability
+
+    # Exclude diagonal elements (i == j)
+    mask = ~torch.eye(batch_size, dtype=torch.bool, device=embeddings.device)
+    exp_term = torch.exp(-t * distances)[mask]
+    
+    # Compute the mean over the off-diagonals and take the log.
+    loss = torch.log(exp_term.mean())
+    return loss

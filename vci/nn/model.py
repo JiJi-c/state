@@ -28,7 +28,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
-from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss
+from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss, uniformity_loss
 
 
 # if flash-attn package is installed and available
@@ -381,6 +381,12 @@ class LitUCEModel(L.LightningModule):
             self.log("trainer/independence_loss", independence_loss)
             self.log("trainer/reconstruction_loss", loss)
             loss = loss + sparsity_loss + 10 * independence_loss
+
+        # add in the independence loss for cell embeddings
+        if self.cfg.loss.get('uniformity', False):
+            uniformity = 10 * uniformity_loss(embs)
+            self.log("trainer/uniformity_loss", uniformity)
+            loss = loss + uniformity
 
         sch = self.lr_schedulers()
 
