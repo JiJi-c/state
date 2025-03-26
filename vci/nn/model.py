@@ -312,8 +312,11 @@ class LitUCEModel(L.LightningModule):
             # Add count embeddings to token embeddings
             src = src + count_emb  # should both be B x H x self.d_model
 
-        mask = mask.to(self.device)
-        output = self.transformer_encoder(src, src_key_padding_mask=mask)
+        if self.training:
+            mask = mask.to(self.device)
+            output = self.transformer_encoder(src, src_key_padding_mask=mask)
+        else:
+            output = self.transformer_encoder(src, src_key_padding_mask=None)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
         embedding = gene_output[:, 0, :] # select only the CLS token.
@@ -384,7 +387,7 @@ class LitUCEModel(L.LightningModule):
 
         # add in the independence loss for cell embeddings
         if self.cfg.loss.get('uniformity', False):
-            uniformity = uniformity_loss(embs)
+            uniformity = self.cfg.loss.get('uniformity_weight', 1.0) * uniformity_loss(embs)
             self.log("trainer/uniformity_loss", uniformity)
             loss = loss + uniformity
 

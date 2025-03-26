@@ -37,7 +37,10 @@ def create_dataloader(cfg,
         if data_dir:
             utils.get_dataset_cfg(cfg).data_dir = data_dir
 
-        dataset = H5adSentenceDataset(cfg,
+        # THIS WAS PREVIOUSLY H5AD DATASET, but changed to 
+        # FilteredGenesCounts from previous commit to embed tahoe
+        # Ideally we want to set this on the fly. is it safe to always be filtered?
+        dataset = FilteredGenesCounts(cfg,
                                       datasets=datasets,
                                       shape_dict=shape_dict,
                                       adata=adata,
@@ -182,20 +185,28 @@ class H5adSentenceDataset(data.Dataset):
     def __getitem__(self, idx):
         if self.adata is not None:
             # block is only used during validation
-            counts = torch.tensor(self.adata.X[idx].todense())
+            # if .X is a numpy.ndarray
+            if isinstance(self.adata.X, np.ndarray):
+                counts = torch.tensor(self.adata.X[idx]).reshape(1, -1)
+            else:
+                counts = torch.tensor(self.adata.X[idx].todense())
+
             dataset = self.adata_name
             dataset_num = 0
 
-            de_group = 'leiden'
-            group_id = self.adata.obs[de_group][idx]
-            ranked_genes = self.adata.uns['ranked_genes']['gene_indices'].columns
+            if self.cfg.experiment.deaware:
+                de_group = 'leiden'
+                group_id = self.adata.obs[de_group][idx]
+                ranked_genes = self.adata.uns['ranked_genes']['gene_indices'].columns
 
-            if group_id not in ranked_genes:
-                raise KeyError(f"Gene '{group_id}' missing in ranked_genes.")
+                if group_id not in ranked_genes:
+                    raise KeyError(f"Gene '{group_id}' missing in ranked_genes.")
 
-            gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][group_id].to_numpy())
-            gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][group_id].to_numpy())
-            gene_scores = torch.nn.functional.softmax(gene_scores)
+                gene_indices = torch.tensor(self.adata.uns['ranked_genes']['gene_indices'][group_id].to_numpy())
+                gene_scores = torch.tensor(self.adata.uns['ranked_genes']['gene_scores'][group_id].to_numpy())
+                gene_scores = torch.nn.functional.softmax(gene_scores)
+            else:
+                gene_indices, gene_scores = None, None
             return counts, idx, dataset, dataset_num, gene_indices, gene_scores
 
         dataset, ds_idx = self._compute_index(idx)
@@ -242,6 +253,28 @@ class H5adSentenceDataset(data.Dataset):
     def get_dim(self) -> Dict[str, int]:
         return self.num_genes
 
+class FilteredGenesCounts(H5adSentenceDataset):
+    def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
+        super(FilteredGenesCounts, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
+        self.valid_gene_index = {}
+        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict('/scratch/ctc/ML/uce/h5ad_train_dataset_tahoe.csv')
+        if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
+            esm_data = torch.load(utils.get_embedding_cfg(self.cfg)['all_embeddings'])
+            valid_genes_list = list(esm_data.keys())
+            for name in self.datasets:
+                if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
+                    a = self.dataset_file(name)
+                    gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
+                    valid_mask = np.isin(gene_names, valid_genes_list)
+                    self.valid_gene_index[name] = valid_mask
+                    num_valid_genes = np.sum(valid_mask)
+
+    def __getitem__(self, idx):
+        counts, idx, dataset, dataset_num, gene_indices, gene_scores = super().__getitem__(idx)
+        if dataset in self.valid_gene_index and not utils.is_valid_uuid(dataset):
+            valid_mask = self.valid_gene_index[dataset]
+            counts = counts[:, valid_mask]
+        return counts, idx, dataset, dataset_num, gene_indices, gene_scores
 
 class GeneFilterDataset(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
@@ -372,7 +405,8 @@ class VCIDatasetSentenceCollator(object):
             counts = F.relu(counts)
 
         # if the data has not already been log transformed
-        if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
+        # if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
+        if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
 
         if counts.sum() == 0:
