@@ -126,12 +126,13 @@ task:
   mask: 0.2
 
 optimizer:
-  max_lr: 0.00024
+  max_lr: 1e-4
   weight_decay: 0.01
-  start: 1e-4
+  start: 0.33
   end: 1.0
   max_grad_norm: 0.8
   gradient_accumulation_steps: 1
+  reset_lr_on_restart: false # LR is reset to start value on restart
 
 loss:
   name: "cross_entropy" # cross_entropy, kl_divergence, mse, wasserstein
