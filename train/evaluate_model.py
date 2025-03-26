@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument(
         "--map_type",
         type=str,
-        default=None,
+        default="random",
         choices=[
             "batch",
             "random",
@@ -312,6 +312,15 @@ def main():
     if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
         adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs.copy())
 
+    # # save out adata_real to the output directory
+    # adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
+    # adata_real.write_h5ad(adata_real_out)
+    # logger.info(f"Saved adata_real to {adata_real_out}")
+    #
+    # adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
+    # adata_pred.write_h5ad(adata_pred_out)
+    # logger.info(f"Saved adata_pred to {adata_pred_out}")
+
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
     metrics = compute_metrics(
@@ -330,6 +339,7 @@ def main():
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         shared_perts=data_module.get_shared_perturbations(),
         decoder=decoder,
+        outdir=args.output_dir,
     )
 
     # 7. Summarize results

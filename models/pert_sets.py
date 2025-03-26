@@ -145,7 +145,13 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         # Build the distributional loss from geomloss
         blur = kwargs.get("blur", 0.05)
-        self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
+        loss_name = kwargs.get("loss", "energy")
+        if loss_name == "energy":
+            self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
+        elif loss_name == "mse":
+            self.loss_fn = nn.MSELoss()
+        else:
+            raise ValueError(f"Unknown loss function: {loss_name}")
 
         # Build the underlying neural OT network
         self._build_networks()
