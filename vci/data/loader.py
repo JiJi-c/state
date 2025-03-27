@@ -37,7 +37,7 @@ def create_dataloader(cfg,
         if data_dir:
             utils.get_dataset_cfg(cfg).data_dir = data_dir
 
-        # THIS WAS PREVIOUSLY H5AD DATASET, but changed to 
+        # THIS WAS PREVIOUSLY H5AD DATASET, but changed to
         # FilteredGenesCounts from previous commit to embed tahoe
         # Ideally we want to set this on the fly. is it safe to always be filtered?
         dataset = FilteredGenesCounts(cfg,
@@ -319,9 +319,12 @@ class VCIDatasetSentenceCollator(object):
 
         self.global_to_local = {}
         for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
+            if isinstance(ds_emb_idxs, np.ndarray):
+                ds_emb_idxs = torch.tensor(ds_emb_idxs)
+
             # Create a tensor filled with -1 (indicating not present in this dataset)
             reverse_mapping = torch.full((19790,), -1, dtype=torch.int64)
-            
+
             local_indices = torch.arange(ds_emb_idxs.size(0), dtype=torch.int64)
             mask = (ds_emb_idxs >= 0) & (ds_emb_idxs < 19790)
             reverse_mapping[ds_emb_idxs[mask]] = local_indices[mask]
@@ -354,7 +357,7 @@ class VCIDatasetSentenceCollator(object):
             shared_genes = None
 
         dataset_nums = torch.zeros(batch_size, dtype=torch.int32)
-    
+
         i = 0
         max_len = 0
         datasets = []
