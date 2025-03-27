@@ -121,6 +121,12 @@ model:
   output_dim:  512 # TODO: Is emsize different from this?
   use_flash_attention: true
   rda: false
+  counts: false
+  dataset_correction: false
+  num_datasets: 1139
+  ema: true
+  ema_decay: 0.999
+  ema_update_interval: 1000
 
 task:
   mask: 0.2
@@ -135,5 +141,5 @@ optimizer:
   reset_lr_on_restart: false # LR is reset to start value on restart
 
 loss:
-  name: "cross_entropy" # cross_entropy, kl_divergence, mse, wasserstein
+  name: "cross_entropy" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
   apply_normalization: False

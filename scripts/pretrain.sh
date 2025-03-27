@@ -36,23 +36,9 @@ python3 -m vci.tools.slurm \
 
 
 python3 -m vci.tools.slurm \
-    --exp_name vci_scbasecamp_human \
+    --exp_name vci_scbasecamp_human_mmd \
     -n 1 -g 1 \
-    --set validations.diff_exp.eval_interval_multiple=1 \
-          embeddings.current=evo2-scbasecamp \
+    --set embeddings.current=evo2-scbasecamp \
           dataset.current=scbasecamp \
-          dataset.scbasecamp.filter_by_species=Homo_sapiens
-
-
-python3 -m vci.tools.slurm \
-    --exp_name vci_2048-1024_1024_16_4 \
-    -n 1 -g 1 \
-    --set embeddings.current=esm2-cellxgene \
-          dataset.current=cellxgene \
-          model.d_hid=2048 \
-          model.emsize=1024 \
-          model.output_dim=1024 \
-          model.nhead=16 \
-          model.nlayers=4 \
-          model.rda=true\
-          loss.name=mse
+          dataset.scbasecamp.filter_by_species=Homo_sapiens \
+          loss.name=mmd

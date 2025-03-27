@@ -69,3 +69,39 @@ class ProfilerCallback(L.Callback):
         if batch_idx == self.profile_steps[1]:
             logging.info(f"Stopping NSys profiling at step {batch_idx}")
             torch.cuda.nvtx.range_pop()
+
+
+class ResumeCallback(L.Callback):
+    def __init__(self, cfg):
+        super().__init__()
+        self._cfg = cfg
+
+    def on_train_start(self, trainer, pl_module):
+        if self._cfg.optimizer.get('reset_lr_on_restart', False):
+            for optimizer in trainer.optimizers:
+                for param_group in optimizer.param_groups:
+                    original_lr = param_group.get('lr', None)
+                    param_group['lr'] = self._cfg.optimizer.max_lr
+                    logging.info(f"Reset learning rate from {original_lr} to {param_group['lr']}")
+
+
+class EMACallback(L.Callback):
+    def __init__(self, decay: float = 0.999):
+        super().__init__()
+        self.decay = decay
+        self.velocity = {}
+
+    def on_before_optimizer_step(self, trainer: L.Trainer, pl_module: L.LightningModule, optimizer):
+        # Check if EMA is enabled via the config flag.
+        if pl_module.cfg.model.get("ema", False):
+            with torch.no_grad():
+                for param in pl_module.parameters():
+                    if param.grad is None:
+                        continue
+
+                    param_id = id(param)
+                    if param_id not in self.velocity:
+                        self.velocity[param_id] = torch.zeros_like(param.grad)
+
+                    self.velocity[param_id] = self.beta * self.velocity[param_id] + (1 - self.beta) * param.grad
+                    param.grad = self.velocity[param_id].clone()

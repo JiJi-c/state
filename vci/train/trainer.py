@@ -12,7 +12,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
 from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilterDataset, NpzMultiDataset
-from vci.train.callbacks import LogLR, ProfilerCallback
+from vci.train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback
 from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
 
@@ -105,7 +105,14 @@ def main(cfg):
 
     callbacks = [checkpoint_callback,
                  LogLR(100),
-                 RichProgressBar()]
+                 RichProgressBar(),
+                 ResumeCallback(cfg)]
+
+    if getattr(cfg.model, "ema", False):
+        ema_decay = getattr(cfg.model, "ema_decay", 0.999)
+        callbacks.append(EMACallback(decay=ema_decay))
+        # update_interval = getattr(cfg.model, "ema_update_interval", 1000)
+        # callbacks.append(EMAUpdateCallback(update_interval=update_interval))
 
     max_steps = -1
     if cfg.experiment.profile.enable_profiler:
