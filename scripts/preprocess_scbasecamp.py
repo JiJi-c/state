@@ -276,7 +276,7 @@ def inferESM2(species=None,
              mapping_output_loc=mapping_output_loc):
     logging.info(f'Generating ESM2 embedding for {species}')
     emb_generator = ESM2Embedding(species, mapping_output_loc=mapping_output_loc)
-    emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2_3B_ensemble'))
+    emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2_15B_ensemble'))
 
 
 def inferESM3(species=None,

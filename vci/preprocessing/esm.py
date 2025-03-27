@@ -155,7 +155,7 @@ class ESM2Embedding(BaseEmbedding):
         from transformers import AutoTokenizer, AutoModel
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_name = "facebook/esm2_t36_3B_UR50D"
+        model_name = "facebook/esm2_t48_15B_UR50D"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModel.from_pretrained(model_name)
         model = model.to(device)
