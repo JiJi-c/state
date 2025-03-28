@@ -175,11 +175,19 @@ class LitUCEModel(L.LightningModule):
         if getattr(self.cfg.model, "dataset_correction", False):
             # Assume self.cfg.model.num_datasets is set to the number of unique datasets.
             self.dataset_encoder = nn.Sequential(
-                nn.Embedding(self.cfg.model.num_datasets, d_model),       # Lookup table for 1139 datasets
-                nn.LayerNorm(d_model),             # Normalize for stability
-                nn.Dropout(0.1),                   # Dropout for regularization
-                nn.Linear(d_model, d_model),       # Projection layer
-                nn.SiLU()                         # Non-linear activation (SiLU works well here)
+                nn.Embedding(self.cfg.model.num_datasets, d_model),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
             )
 
             self.independence_loss = IndependenceLoss()
