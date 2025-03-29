@@ -5,9 +5,11 @@ import logging
 import argparse
 import pandas as pd
 import torch
+import anndata
 
 from pathlib import Path
 from vci.data.preprocess import Preprocessor
+from vci.data.gene_emb import convert_symbols_to_ensembl
 '''
 Creates a CSV file with following columns.
     #,path,species,num_cells,num_genes,names
@@ -43,13 +45,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--emb_idx_file",
         type=str,
-        default='/large_storage/ctc/projects/vci/scbasecamp/dataset_emb_idx_Evo2_fixed.torch',
+        default='/large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/dataset_emb_idx.torch',
         help="Path to save the output summary file",
     )
     parser.add_argument(
         "--embedding_file",
         type=str,
-        default='/large_storage/ctc/projects/vci/scbasecamp/all_species_Evo2.torch',
+        default='/large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/all_species.torch',
         help="Path to save the output summary file",
     )
 
@@ -60,6 +62,9 @@ if __name__ == '__main__':
 
     filetype = Path(args.dataset_file).suffix
     if filetype == '.h5ad':
+        adata = anndata.read_h5ad(args.dataset_file)
+        adata = convert_symbols_to_ensembl(adata)
+        adata.write(args.dataset_file)
         preprocess.update_dataset_emb_idx(args.dataset_file, args.dataset_name)
     elif filetype == '.csv':
         df = pd.read_csv(args.dataset_file)

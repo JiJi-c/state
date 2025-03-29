@@ -139,7 +139,7 @@ task:
   mask: 0.2
 
 optimizer:
-  max_lr: 1e-4
+  max_lr: 1e-5
   weight_decay: 0.01
   start: 0.33
   end: 1.0

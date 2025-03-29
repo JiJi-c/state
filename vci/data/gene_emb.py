@@ -1,12 +1,33 @@
 import gzip
 import logging
 import requests
-
-from functools import partial
-from typing import List
+import mygene
+import numpy as np
 
 from Bio import SeqIO, Entrez
 from Bio.Seq import Seq
+
+
+def convert_symbols_to_ensembl(adata):
+    gene_symbols = adata.var_names.tolist()
+
+    mg = mygene.MyGeneInfo()
+    results = mg.querymany(gene_symbols, scopes='symbol', fields='ensembl.gene', species='human')
+
+    symbol_to_ensembl = {}
+    for result in results:
+        if 'ensembl' in result and not result.get('notfound', False):
+            if isinstance(result['ensembl'], list):
+                symbol_to_ensembl[result['query']] = result['ensembl'][0]['gene']
+            else:
+                symbol_to_ensembl[result['query']] = result['ensembl']['gene']
+
+    for symbol in gene_symbols:
+        if symbol_to_ensembl.get(symbol) is None:
+            logging.info(f"{symbol} -> {symbol_to_ensembl.get(symbol, np.nan)}")
+
+    adata.var['gene_symbols'] = [symbol_to_ensembl.get(symbol, np.nan) for symbol in gene_symbols]
+    return adata
 
 
 def resolve_genes(ensemble_id,
