@@ -633,7 +633,6 @@ def dataset_embedding_mapping(
 def dataset_embedding_mapping_by_species(
         emb_model='Evo2',
         species_dirs=None,
-        dataset_path=summary_file,
         embedding_paths=mapping_output_loc,
         data_file_loc=data_file_loc):
     if species_dirs is None:

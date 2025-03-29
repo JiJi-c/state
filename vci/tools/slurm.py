@@ -27,7 +27,6 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/{{ exp_name }}/training.log
 #SBATCH --open-mode=append
-#SBATCH --exclude=GPU115A
 #SBATCH --account=ctc
 #SBATCH --partition={{ partition }}
 {{ sbatch_overrides }}

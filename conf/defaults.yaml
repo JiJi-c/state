@@ -42,6 +42,12 @@ embeddings:
     valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/ESM2/valid_gene_index_ESM2.torch
     size: 1280
 
+  esm2_3B-scbasecamp:
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/all_species.torch
+    ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/dataset_emb_idx.torch
+    valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/valid_gene_index.torch
+    size: 2560
+
 validations:
   diff_exp:
     enable: true
@@ -103,6 +109,7 @@ dataset:
   chrom_token_right_idx: 2
   P: 512
   N: 512
+  S: 512
   num_cells:  36238464 # TODO: Is this required
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
@@ -124,7 +131,7 @@ model:
   counts: false
   dataset_correction: false
   num_datasets: 1139
-  ema: true
+  ema: false
   ema_decay: 0.999
   ema_update_interval: 1000
 
@@ -143,3 +150,5 @@ optimizer:
 loss:
   name: "cross_entropy" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
   apply_normalization: False
+  kernel: "energy"
+  uniformity: False

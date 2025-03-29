@@ -3,6 +3,7 @@ import logging
 import torch
 import anndata
 import h5py as h5
+import numpy as np
 
 from pathlib import Path
 from omegaconf import OmegaConf
@@ -108,16 +109,31 @@ class Inference():
         protein_embeds = torch.stack(protein_embeds).to(self.model.device)
         return self.model.gene_embedding_layer(protein_embeds)
 
-    def encode(self, dataloader):
+    def encode(self, dataloader, rda=None):
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
                 torch.cuda.empty_cache()
                 batch_sentences = batch[0].to(self.model.device)
-                mask = batch[5].to(self.model.device)
+
+                batch_sentences_counts = batch[7]  # Get counts for scFoundation-style binning
+                if batch_sentences_counts is not None:
+                    batch_sentences_counts = batch_sentences_counts.to(self.model.device)
+                
+                dataset_nums = batch[8]  # Get dataset numbers for dataset correction
+                if dataset_nums is not None:
+                    dataset_nums = dataset_nums.to(self.model.device)
 
                 batch_sentences = self.model.pe_embedding(batch_sentences.long())
                 batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-                gene_output, embedding = self.model(batch_sentences, mask=mask)
+                batch_sentences[:, 0, :] = self.model.cls_token.expand(batch_sentences.size(0), -1)
+
+                gene_output, embedding, dataset_emb = self.model.forward(
+                    batch_sentences, 
+                    mask=None,  # During inference, we don't use the mask
+                    counts=batch_sentences_counts,
+                    dataset_nums=dataset_nums
+                )
+
                 embeddings = embedding.detach().cpu().numpy()
 
                 yield embeddings
@@ -126,34 +142,58 @@ class Inference():
                      input_adata_path: str,
                      output_adata_path: str,
                      emb_key: str = 'X_emb',
+                     dataset_name = None,
                      batch_size: int = 32,):
         shape_dict = self.__load_dataset_meta(input_adata_path)
-        datasets = list(shape_dict.keys())
         adata = anndata.read(input_adata_path)
+        if dataset_name is None:
+            dataset_name = Path(input_adata_path).stem
 
         dataloader = create_dataloader(self._vci_conf,
                                        adata=adata,
-                                       adata_name=Path(input_adata_path).stem,
+                                       adata_name=dataset_name,
                                        shape_dict=shape_dict,
                                        data_dir=os.path.dirname(input_adata_path),
                                        shuffle=False)
 
-        for embeddings in self.encode(dataloader):
-            self._save_data(input_adata_path, output_adata_path, emb_key, embeddings)
+        all_embeddings = []
+        for embeddings in tqdm(self.encode(dataloader),
+                            total=len(dataloader),
+                            desc='Encoding'):
+            all_embeddings.append(embeddings)
 
-        return output_adata_path
+        # attach this as a numpy array to the adata and write it out
+        all_embeddings = np.concatenate(all_embeddings, axis=0)
+        adata.obsm[emb_key] = all_embeddings
+        adata.write_h5ad(output_adata_path)
 
-    def decode(self, adata_path: str, emb_key: str, batch_size=32):
+        # This streaming approach was not working (h5 files could not be opened)
+        # for embeddings in tqdm(self.encode(dataloader),
+        #                        total=len(dataloader),
+        #                        desc='Encoding'):
+        #     self._save_data(input_adata_path, output_adata_path, emb_key, embeddings)
+
+        # return output_adata_path
+
+    def decode(self, adata_path: str, emb_key: str, read_depth=None, batch_size=64):
         adata = anndata.read_h5ad(adata_path)
         genes = adata.var.index
         cell_embs = adata.obsm[emb_key]
         cell_embs = torch.Tensor(cell_embs).to(self.model.device)
 
+        use_rda = getattr(self.model.cfg.model, "rda", False)
+        if use_rda and read_depth is None:
+            read_depth = 1000.0
+
         gene_embeds = self.get_gene_embedding(genes)
         for i in tqdm(range(0, cell_embs.size(0), batch_size),
                       total=int(cell_embs.size(0) // batch_size)):
             cell_embeds_batch = cell_embs[i:i + batch_size]
-            merged_embs = LitUCEModel.resize_batch(cell_embeds_batch, gene_embeds)
+            if use_rda:
+                task_counts = torch.full((batch_size,), read_depth, device=self.model.device)
+            else:
+                task_counts = None
+            merged_embs = LitUCEModel.resize_batch(cell_embeds_batch, gene_embeds, task_counts)
             logprobs_batch = self.model.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
             yield logprobs_batch.squeeze()

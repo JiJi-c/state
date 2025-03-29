@@ -1,3 +1,4 @@
+import copy
 import time
 import logging
 
@@ -70,7 +71,6 @@ class ProfilerCallback(L.Callback):
             logging.info(f"Stopping NSys profiling at step {batch_idx}")
             torch.cuda.nvtx.range_pop()
 
-
 class ResumeCallback(L.Callback):
     def __init__(self, cfg):
         super().__init__()
@@ -84,11 +84,10 @@ class ResumeCallback(L.Callback):
                     param_group['lr'] = self._cfg.optimizer.max_lr
                     logging.info(f"Reset learning rate from {original_lr} to {param_group['lr']}")
 
-
 class EMACallback(L.Callback):
     def __init__(self, decay: float = 0.999):
         super().__init__()
-        self.decay = decay
+        self.beta = decay
         self.velocity = {}
 
     def on_before_optimizer_step(self, trainer: L.Trainer, pl_module: L.LightningModule, optimizer):
@@ -105,3 +104,4 @@ class EMACallback(L.Callback):
 
                     self.velocity[param_id] = self.beta * self.velocity[param_id] + (1 - self.beta) * param.grad
                     param.grad = self.velocity[param_id].clone()
+

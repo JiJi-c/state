@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 from torch import nn, Tensor
+import torch.nn.functional as F
 from torch.nn import (TransformerEncoder,
                       TransformerEncoderLayer,
                       BCEWithLogitsLoss)
@@ -27,7 +28,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
 from vci.data import create_dataloader
 from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
-from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss
+from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss, uniformity_loss
 
 
 # if flash-attn package is installed and available
@@ -46,7 +47,7 @@ class SkipBlock(nn.Module):
         self.dim = in_features
         self.intermediate_dense = nn.Linear(in_features, in_features*2, bias=True)
         self.dense = nn.Linear(in_features*2, in_features, bias=True)
-        self.activation = nn.SiLU()
+        self.activation = nn.ReLU()
         self.layer_norm = nn.LayerNorm(in_features)
 
     def forward(self, x):
@@ -145,6 +146,14 @@ class LitUCEModel(L.LightningModule):
             nn.Linear(output_dim + d_model + count_info, 1, bias=True)
         )
 
+        if self.cfg.model.counts:
+            self.bin_encoder = nn.Embedding(10, d_model)
+            self.count_encoder = nn.Sequential(
+                nn.Linear(1, 512, bias=True),
+                nn.LeakyReLU(),
+                nn.Linear(512, 10),
+            )
+
         if compiled:
             self.binary_decoder = torch.compile(self.binary_decoder)
 
@@ -163,6 +172,28 @@ class LitUCEModel(L.LightningModule):
         self._last_val_de_check = 0
         self._last_val_perturbation_check = 0
 
+        if getattr(self.cfg.model, "dataset_correction", False):
+            # Assume self.cfg.model.num_datasets is set to the number of unique datasets.
+            self.dataset_encoder = nn.Sequential(
+                nn.Embedding(self.cfg.model.num_datasets, d_model),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
+                nn.LayerNorm(d_model),
+                nn.Dropout(0.1),
+                nn.Linear(d_model, d_model),
+                nn.SiLU(),
+            )
+
+            self.independence_loss = IndependenceLoss()
+        else:
+            self.dataset_embedding = None
+
     def _compute_embedding_for_batch(self, batch):
         batch_sentences = batch[0].to(self.device)
         X = batch[1].to(self.device)
@@ -170,6 +201,12 @@ class LitUCEModel(L.LightningModule):
         batch_weights = batch[4]
         mask = batch[5]
         mask = mask.to(torch.bool)
+        batch_sentences_counts = batch[7]
+        if batch_sentences_counts is not None:
+            batch_sentences_counts = batch_sentences_counts.to(self.device)
+        dataset_nums = batch[8]
+        if dataset_nums is not None:
+            dataset_nums = dataset_nums.to(self.device)
 
         # convert the cell sentence and task sentence into embeddings
         batch_sentences = self.pe_embedding(batch_sentences)
@@ -182,10 +219,10 @@ class LitUCEModel(L.LightningModule):
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
         # mask out the genes embeddings that appear in the task sentence
-        _, embedding = self.forward(batch_sentences, mask=mask)
+        _, embedding, dataset_emb = self.forward(batch_sentences, mask=mask, counts=batch_sentences_counts, dataset_nums=dataset_nums)
 
         X = self.gene_embedding_layer(X)
-        return X, Y, batch_weights, embedding
+        return X, Y, batch_weights, embedding, dataset_emb
 
     def get_gene_embedding(self, genes):
         if self.protein_embeds is None:
@@ -226,7 +263,7 @@ class LitUCEModel(L.LightningModule):
                           desc=f"Embeddings for {dataset_name}",):
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
-            _, _, _, emb = self._compute_embedding_for_batch(batch)
+            _, _, _, emb, _ = self._compute_embedding_for_batch(batch)
             if self.cfg.model.rda:
                 task_counts = batch[6].to(self.device)
             else:
@@ -257,7 +294,7 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
-    def forward(self, src: Tensor, mask: Tensor):
+    def forward(self, src: Tensor, mask: Tensor, counts=None, dataset_nums=None):
         """
         Args:
             src: Tensor, shape [batch_size, seq_len, ntoken]
@@ -265,28 +302,62 @@ class LitUCEModel(L.LightningModule):
             output Tensor of shape [batch_size, seq_len, ntoken]
         """
         src = self.encoder(src) * math.sqrt(self.d_model)
-        mask = mask.to(self.device)
-        output = self.transformer_encoder(src, src_key_padding_mask=mask)
+        if counts is not None:
+            # scFoundation-style soft binning for counts
+            counts = counts.unsqueeze(-1)  # now B x H x 1
+            
+            # Step 1: Transform count values into bin distribution
+            bin_weights = self.count_encoder(counts)  # B x H x 10
+            bin_weights = F.softmax(bin_weights, dim=-1)  # Convert to probabilities over bins
+            
+            # Step 2: Get bin embeddings
+            bin_indices = torch.arange(10, device=self.device)  # 10 bins
+            bin_embeddings = self.bin_encoder(bin_indices)  # 10 x d_model
+            
+            # Step 3: Compute weighted sum of bin embeddings
+            count_emb = torch.matmul(bin_weights, bin_embeddings)
+            
+            # Add count embeddings to token embeddings
+            src = src + count_emb  # should both be B x H x self.d_model
+
+        if self.training:
+            mask = mask.to(self.device)
+            output = self.transformer_encoder(src, src_key_padding_mask=mask)
+        else:
+            output = self.transformer_encoder(src, src_key_padding_mask=None)
         gene_output = self.decoder(output) # batch x seq_len x 128
         # In the new format, the cls token, which is at the 0 index mark, is the output.
         embedding = gene_output[:, 0, :] # select only the CLS token.
         embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
-        return gene_output, embedding
+
+        # we must be in train mode to use dataset correction
+        if dataset_nums is not None and self.dataset_encoder is not None and self.training:
+            dataset_emb = self.dataset_encoder(dataset_nums)
+        else:
+            dataset_emb = None
+
+        return gene_output, embedding, dataset_emb
 
     def shared_step(self, batch, batch_idx):
-        X, Y, batch_weights, embs = self._compute_embedding_for_batch(batch)
+        X, Y, batch_weights, embs, dataset_embs = self._compute_embedding_for_batch(batch)
         total_counts = batch[6] if self.cfg.model.rda else None
 
-        embs = embs.unsqueeze(1).repeat(1, X.shape[1], 1)
+        if dataset_embs is not None and self.training:
+            z = embs + dataset_embs
+        else:
+            z = embs
+
+        z = z.unsqueeze(1).repeat(1, X.shape[1], 1)
+
         if total_counts is not None:
             reshaped_counts = total_counts.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
 
             # Concatenate all three tensors along the third dimension
-            combine = torch.cat((X, embs, reshaped_counts), dim=2)
+            combine = torch.cat((X, z, reshaped_counts), dim=2)
         else:
             # Original behavior if total_counts is None
-            combine = torch.cat((X, embs), dim=2)
+            combine = torch.cat((X, z), dim=2)
 
         # concatenate the counts
         decs = self.binary_decoder(combine)
@@ -304,12 +375,30 @@ class LitUCEModel(L.LightningModule):
             criterion = KLDivergenceLoss(apply_normalization=self.cfg.loss.normalization)
             target = batch_weights
         elif self.cfg.loss.name == 'mmd':
-            criterion = MMDLoss(kernel="energy")
+            kernel = self.cfg.loss.get('kernel', 'energy')
+            criterion = MMDLoss(kernel=kernel)
+            target = Y
+        elif self.cfg.loss.name == 'tabular':
+            criterion = TabularLoss(shared=self.cfg.dataset.S)
             target = Y
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
 
         loss = criterion(decs.squeeze(), target)
+        if dataset_embs is not None and self.training:
+            sparsity_loss = torch.mean(torch.abs(dataset_embs))
+            independence_loss = self.independence_loss(embs, dataset_embs)
+            self.log("trainer/sparsity_loss", sparsity_loss)
+            self.log("trainer/independence_loss", independence_loss)
+            self.log("trainer/reconstruction_loss", loss)
+            loss = loss + sparsity_loss + 10 * independence_loss
+
+        # add in the independence loss for cell embeddings
+        if self.cfg.loss.get('uniformity', False):
+            uniformity = self.cfg.loss.get('uniformity_weight', 1.0) * uniformity_loss(embs)
+            self.log("trainer/uniformity_loss", uniformity)
+            loss = loss + uniformity
+
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:
@@ -343,16 +432,16 @@ class LitUCEModel(L.LightningModule):
             current_step = self.global_step
             if self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                current_step = current_step - (current_step % 10)
-                if current_step >= interval and current_step % interval == 0:
+                if current_step - self._last_val_de_check >= interval:
                     self._compute_val_de()
+                    self._last_val_de_check = current_step
 
             self.trainer.strategy.barrier()
             if self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                current_step = current_step - (current_step % 10)
-                if current_step >= interval and current_step % interval == 0:
+                if current_step - self._last_val_perturbation_check >= interval:
                     self._compute_val_perturbation(current_step)
+                    self._last_val_perturbation_check = current_step
         finally:
             self.train()
 
@@ -374,7 +463,7 @@ class LitUCEModel(L.LightningModule):
                           desc=f"Embeddings for {self.cfg.validations.perturbation.dataset_name}",):
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-            _, _, _, emb = self._compute_embedding_for_batch(batch)
+            _, _, _, emb, _ = self._compute_embedding_for_batch(batch)
             all_embs.append(emb.cpu().detach().numpy())
 
         all_embs = np.concatenate(all_embs, axis=0)

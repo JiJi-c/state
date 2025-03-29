@@ -93,6 +93,7 @@ def get_latest_checkpoint(cfg):
     chk_dir = os.path.join(cfg.experiment.checkpoint.path,
                            cfg.experiment.name)
     chk = os.path.join(chk_dir, f'last.ckpt')
+    # chk = os.path.join(chk_dir, 'exp_rda_mmd_counts_1024_layers_4_dmodel_512_samples_1024_max_lr_0.00024_op_dim_512-epoch=1-step=581000.ckpt')
     if not os.path.exists(chk) or len(chk) == 0:
         chk = None
 
