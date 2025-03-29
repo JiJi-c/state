@@ -92,15 +92,21 @@ class TabularLoss(nn.Module):
         super().__init__()
         self.shared = shared
 
-        self.mse_loss = nn.MSELoss()
-        self.mmd_loss = SamplesLoss(loss="energy")
+        self.gene_loss = SamplesLoss(loss="energy")
+        self.cell_loss = SamplesLoss(loss="energy")
 
     def forward(self, input, target):
-        mse = self.mse_loss(input, target)
+        gene_mmd = self.gene_loss(input.unsqueeze(1), target.unsqueeze(1)).mean()
 
-        # mmd should only be on the shared genes, and match scale to mse loss
-        mmd = self.mmd_loss(input[:, -self.shared:], target[:, -self.shared:])
-        return mse + mmd / 10.0
+        # cell_mmd should only be on the shared genes, and match scale to mse loss
+        cell_inputs = input[:, -self.shared:]
+        cell_targets = target[:, -self.shared:]
+        
+        # need to reshape each from (B, F) to (F, 1, B)
+        cell_inputs = cell_inputs.permute(1, 0).unsqueeze(1)
+        cell_targets = cell_targets.permute(1, 0).unsqueeze(1)
+        cell_mmd = self.cell_loss(cell_inputs, cell_targets).mean()
+        return gene_mmd + cell_mmd
 
 class IndependenceLoss(nn.Module):
     """

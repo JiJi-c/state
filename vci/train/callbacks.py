@@ -87,7 +87,7 @@ class ResumeCallback(L.Callback):
 class EMACallback(L.Callback):
     def __init__(self, decay: float = 0.999):
         super().__init__()
-        self.decay = decay
+        self.beta = decay
         self.velocity = {}
 
     def on_before_optimizer_step(self, trainer: L.Trainer, pl_module: L.LightningModule, optimizer):

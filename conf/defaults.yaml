@@ -109,7 +109,7 @@ dataset:
   chrom_token_right_idx: 2
   P: 512
   N: 512
-  S: 128
+  S: 512
   num_cells:  36238464 # TODO: Is this required
   overrides:
     rpe1_top5000_variable: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
