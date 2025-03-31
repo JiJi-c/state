@@ -100,12 +100,20 @@ class Preprocessor:
 
     def _update_dataset_emb_idx(self, dataset_file, feature_field):
         with h5.File(dataset_file, mode='r') as h5f:
-            cat_data = pd.Categorical.from_codes(h5f[f'var/{feature_field}/codes'][:],
-                                                 categories=h5f[f'var/{feature_field}/categories'][:])
+            try:
+                cat_data = pd.Categorical.from_codes(h5f[f'var/{feature_field}/codes'][:],
+                                                     categories=h5f[f'var/{feature_field}/categories'][:])
+                lower = True
+            except KeyError:
+                cat_data = h5f[f'var/{feature_field}'][:]
+                lower = False
             try:
                 idxs = []
                 for k in cat_data:
-                    k = k.decode('utf-8').lower()
+                    k = k.decode('utf-8')
+                    if lower:
+                        k = k.lower()
+
                     if k in self.gene_filter:
                         idx = self.gene_filter.index(k) + self.emb_offset
                     else:

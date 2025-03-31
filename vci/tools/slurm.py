@@ -48,6 +48,8 @@ PYTHONFAULTHANDLER=1
 #export TORCH_DISTRIBUTED_DEBUG=DETAIL
 #export TORCH_CPP_LOG_LEVEL=INFO
 
+git log --pretty=format:'%h' -n 1
+
 srun \\
     python -m vci.train --config {{ traing_config_file }}
 """
