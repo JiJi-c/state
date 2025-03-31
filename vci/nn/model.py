@@ -305,18 +305,18 @@ class LitUCEModel(L.LightningModule):
         if counts is not None:
             # scFoundation-style soft binning for counts
             counts = counts.unsqueeze(-1)  # now B x H x 1
-            
+
             # Step 1: Transform count values into bin distribution
             bin_weights = self.count_encoder(counts)  # B x H x 10
             bin_weights = F.softmax(bin_weights, dim=-1)  # Convert to probabilities over bins
-            
+
             # Step 2: Get bin embeddings
             bin_indices = torch.arange(10, device=self.device)  # 10 bins
             bin_embeddings = self.bin_encoder(bin_indices)  # 10 x d_model
-            
+
             # Step 3: Compute weighted sum of bin embeddings
             count_emb = torch.matmul(bin_weights, bin_embeddings)
-            
+
             # Add count embeddings to token embeddings
             src = src + count_emb  # should both be B x H x self.d_model
 
@@ -339,6 +339,7 @@ class LitUCEModel(L.LightningModule):
         return gene_output, embedding, dataset_emb
 
     def shared_step(self, batch, batch_idx):
+        logging.info(f"Step {self.global_step} - Batch {batch_idx}")
         X, Y, batch_weights, embs, dataset_embs = self._compute_embedding_for_batch(batch)
         total_counts = batch[6] if self.cfg.model.rda else None
 
@@ -428,7 +429,7 @@ class LitUCEModel(L.LightningModule):
         self.eval()
         current_step = self.global_step
         try:
-            self.trainer.strategy.barrier()
+            # self.trainer.strategy.barrier()
             current_step = self.global_step
             if self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
@@ -436,7 +437,7 @@ class LitUCEModel(L.LightningModule):
                     self._compute_val_de()
                     self._last_val_de_check = current_step
 
-            self.trainer.strategy.barrier()
+            # self.trainer.strategy.barrier()
             if self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
                 if current_step - self._last_val_perturbation_check >= interval:
@@ -446,7 +447,6 @@ class LitUCEModel(L.LightningModule):
             self.train()
 
     def _compute_val_perturbation(self, current_step):
-        self.trainer.strategy.barrier()
 
         adata = sc.read_h5ad(self.cfg.validations.perturbation.dataset)
         adata.X = np.log1p(adata.X)
