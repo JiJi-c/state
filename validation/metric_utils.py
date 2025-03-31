@@ -210,6 +210,7 @@ def compute_DE_for_truth_and_pred(
     k_de_genes: int = 50,
     output_space: str = "gene",
     model_decoder: Optional[DecoderInterface] = None,
+    outdir=None,
 ):
     """
     Unify logic for computing DE from both the ground truth and model predictions.
@@ -228,23 +229,24 @@ def compute_DE_for_truth_and_pred(
 
     if 'DMSO_TF' in control_pert: # only for tahoe dataset for now
         # attach var names to adata_real_ct, which consists of HVGs
-        hvg_gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
-        adata_real_ct.var.index = hvg_gene_names
-
+        if adata_real_ct.X.shape[1] == 2000:
+            hvg_gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
+            adata_real_ct.var.index = hvg_gene_names
+        else:
+            gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
+            adata_real_ct.var.index = gene_names
+    
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.
-    sc.pp.highly_variable_genes(adata_real_ct, n_top_genes=n_top_genes)
-    hvg_mask = adata_real_ct.var["highly_variable"].values
-    adata_real_hvg = adata_real_ct[:, hvg_mask]
-    adata_real_hvg.obs["pert_name"] = adata_real_hvg.obs["pert_name"].astype('category')
+    adata_real_hvg = adata_real_ct
+    adata_real_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
     start_true = time.time()
-    # DE_true = _compute_topk_DE(adata_real_hvg, control_pert, pert_col, k_de_genes)
-    # DE_true = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes)
-    DE_true_fc, DE_true_pval = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes)
+    DE_true_fc, DE_true_pval, DE_true_pval_fc = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='real')
     print("Time taken for true DE: ", time.time() - start_true)
 
     start_pred = time.time()
     if model_decoder is not None:
+        # This needs to be update to compute all 3 types of de
         DE_pred = model_decoder.compute_de_genes(
             adata_pred_ct,
             pert_col=pert_col,
@@ -257,56 +259,13 @@ def compute_DE_for_truth_and_pred(
         adata_pred_ct.var.index = adata_real_ct.var.index
         adata_pred_gene = adata_pred_ct
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
-        adata_pred_hvg = adata_pred_gene[:, hvg_mask]
-        adata_pred_hvg.obs["pert_name"] = adata_pred_hvg.obs["pert_name"].astype('category')
-        # DE_pred = _compute_topk_DE(adata_pred_hvg, control_pert, pert_col, k_de_genes)
-        # DE_pred = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes)
-        DE_pred_fc, DE_pred_pval = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes)
+        adata_pred_hvg = adata_pred_gene
+        adata_pred_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
+        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='pred')
     print("Time taken for predicted DE: ", time.time() - start_pred)
 
     # return DE_true, DE_pred
-    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval
-
-def _compute_topk_DE(adata_gene, control_pert, pert_col, k):
-    """
-    Convenience: runs rank_genes_groups (with standard log1p if needed),
-    returns a DataFrame: row=pert_name, columns=top genes in descending order
-    """
-
-    import time
-
-    # rank Genes
-    start_time = time.time()
-    group_counts = adata_gene.obs[pert_col].value_counts()
-    valid_groups = group_counts[group_counts > 1].index.tolist()
-    adata_gene = adata_gene[adata_gene.obs[pert_col].isin(valid_groups)]
-
-    sc.tl.rank_genes_groups(
-        adata_gene,
-        groupby=pert_col,
-        reference=control_pert,
-        rankby_abs=True,
-        n_genes=k,
-        method="wilcoxon",
-    )
-    print("Time taken for rank_genes_groups: ", time.time() - start_time)
-    # Extract results to DataFrame
-    de_genes = pd.DataFrame(adata_gene.uns["rank_genes_groups"]["names"])
-    
-    # transpose so each row=pert, columns=the top K genes
-    return de_genes.T
-
-
-def compute_DE(adata, pert_col="gene", control_pert="non-targeting", k=50):
-    """
-    Compute DE in gene space.
-    """
-
-    sc.tl.rank_genes_groups(adata, groupby=pert_col, reference=control_pert, rankby_abs=True, n_genes=k)
-    de_genes = pd.DataFrame(adata.uns["rank_genes_groups"]["names"])
-
-    return de_genes.T
-
+    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc
 
 def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transform=None):
     """
@@ -389,7 +348,7 @@ def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", 
 
 # PASTED FROM ARC SEQ #
 
-def parallel_compute_de(adata_gene, control_pert, pert_col, k):
+def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, split='real'):
     """
     Compute differential expression using parallel_differential_expression,
     returns two DataFrames: one sorted by fold change and one by p-value
@@ -435,16 +394,29 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, k):
         num_workers=120,  # Adjust based on your system
         batch_size=1000  # Adjust based on memory constraints
     )
+
+    celltype = adata_gene.obs["celltype_name"].values[0]
+
+    # # Save out the de results
+    # if outdir is not None:
+    #     outfile = os.path.join(outdir, f"{celltype}_{split}_de_results_{control_pert}.csv")
+    #     # if it doesn't already exist, write it out
+    #     if not os.path.exists(outfile):
+    #         de_results.to_csv(outfile, index=False)
+    #     logger.info(f"Saved DE results to {outfile}")
+    # #
     
-    print(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
+    logger.info(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
     
     # Get top DE genes sorted by fold change
     de_genes_fc = vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change')
     
     # Get top DE genes sorted by p-value
     de_genes_pval = vectorized_topk_de(de_results, control_pert, k, sort_by='p_value')
+
+    de_genes_pval_fc = vectorized_topk_de_filtered(de_results, control_pert, k, pvalue_threshold=0.05)
     
-    return de_genes_fc, de_genes_pval
+    return de_genes_fc, de_genes_pval, de_genes_pval_fc
 
 def _build_shared_matrix(
     data: np.ndarray,
@@ -722,7 +694,7 @@ def vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change'):
         DataFrame with rows as perturbations and columns as top K genes
     """
     # Filter out the control perturbation rows
-    df = de_results[de_results['target'] != control_pert].copy()
+    df = de_results[de_results['target'] != control_pert]
     
     # Compute absolute fold change (if not already computed)
     df['abs_fold_change'] = df['fold_change'].abs()
@@ -747,3 +719,58 @@ def vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change'):
     de_genes = de_genes.sort_index(axis=1)
     
     return de_genes
+
+def vectorized_topk_de_filtered(de_results, control_pert, k, pvalue_threshold=0.05):
+    """
+    Create a DataFrame with top k DE genes for each perturbation:
+    - First filter genes by p-value < threshold and sort by absolute fold change (descending)
+    - If fewer than k genes pass the threshold, append remaining genes sorted by p-value (ascending)
+    
+    Parameters
+    ----------
+    de_results : pd.DataFrame
+        DataFrame with differential expression results
+    control_pert : str
+        Name of the control perturbation
+    k : int
+        Number of top genes to return for each perturbation
+    pvalue_threshold : float, optional
+        p-value cutoff for significance (default is 0.05)
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with rows as perturbations and columns as the top k genes.
+    """
+    # Remove control perturbation rows and compute absolute fold change
+    df = de_results[de_results['target'] != control_pert]
+    df['abs_fold_change'] = df['fold_change'].abs()
+
+    # Convert types if necessary
+    if df['abs_fold_change'].dtype == 'float16':
+        df['abs_fold_change'] = df['abs_fold_change'].astype('float32')
+    if df['p_value'].dtype == 'float16':
+        df['p_value'] = df['p_value'].astype('float32')
+    
+    # Assign group: 0 for significant genes, 1 for non-significant ones
+    df['group'] = np.where(df['p_value'] < pvalue_threshold, 0, 1)
+    
+    # Define sort metric:
+    # For significant genes (group 0), use -abs_fold_change so that higher values come first.
+    # For non-significant genes (group 1), use p_value so that lower p-values come first.
+    df['sort_metric'] = np.where(df['group'] == 0, -df['abs_fold_change'], df['p_value'])
+    
+    # Sort by target, then group (ensuring group 0 comes first), then by the custom sort metric.
+    df_sorted = df.sort_values(['target', 'group', 'sort_metric'], ascending=[True, True, True])
+    
+    # Within each target, assign a rank and take the top k rows.
+    df_sorted['rank'] = df_sorted.groupby('target').cumcount()
+    df_topk = df_sorted[df_sorted['rank'] < k]
+    
+    # Pivot the results so that rows are targets and columns are the top ranked genes.
+    result_df = df_topk.pivot(index='target', columns='rank', values='feature')
+    
+    # Optional: ensure column names are 0, 1, 2, ... up to k-1
+    result_df = result_df.sort_index(axis=1)
+    
+    return result_df

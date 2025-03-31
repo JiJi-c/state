@@ -5,6 +5,7 @@ import os
 import sys
 import pickle
 import re
+import gc
 import yaml
 import logging
 import anndata
@@ -15,6 +16,7 @@ import lightning.pytorch as pl
 import torch
 import wandb
 
+from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
 # Import the relevant modules from your repository
@@ -56,7 +58,7 @@ def parse_args():
     parser.add_argument(
         "--map_type",
         type=str,
-        default=None,
+        default="random",
         choices=[
             "batch",
             "random",
@@ -189,6 +191,8 @@ def main():
     model_init_kwargs = {
         "input_dim": var_dims["input_dim"],
         "hidden_dim": model_kwargs["hidden_dim"],
+        "gene_dim": var_dims["gene_dim"],
+        "hvg_dim": var_dims["hvg_dim"],
         "output_dim": var_dims["output_dim"],
         "pert_dim": var_dims["pert_dim"],
         # other model_kwargs keys to pass along:
@@ -211,15 +215,20 @@ def main():
         logger.warning("No test dataloader found. Exiting.")
         sys.exit(0)
 
+    num_cells = test_loader.batch_sampler.tot_num
+    output_dim = var_dims["output_dim"]
+
     logger.info("Generating predictions on test set using manual loop...")
     device = next(model.parameters()).device
 
+    final_preds = np.empty((num_cells, output_dim), dtype=np.float16)
+    final_reals = np.empty((num_cells, output_dim), dtype=np.float16)
+    current_idx = 0
+
     # Initialize aggregation variables directly
-    all_preds = []
     all_pert_names = []
     all_celltypes = []
     all_gem_groups = []
-    all_reals = []
     all_X_hvg = []
     all_gene_preds = []
 
@@ -253,9 +262,12 @@ def main():
             else:
                 all_gem_groups.append(batch_preds["gem_group"])
             
-            # Handle predictions and ground truth
-            all_preds.append(batch_preds["preds"].cpu().numpy().astype(np.float16))
-            all_reals.append(batch_preds["X"].cpu().numpy().astype(np.float16))
+            batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
+            batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
+            batch_size = batch_pred_np.shape[0]
+            final_preds[current_idx:current_idx+batch_size, :] = batch_pred_np
+            final_reals[current_idx:current_idx+batch_size, :] = batch_real_np
+            current_idx += batch_size
             
             # Handle X_hvg for HVG space ground truth
             if "X_hvg" in batch_preds and batch_preds["X_hvg"] is not None:
@@ -271,10 +283,6 @@ def main():
 
     logger.info("Aggregating predictions from manual loop...")
 
-    # Concatenate all predictions and ground truth data
-    final_preds = np.concatenate(all_preds, axis=0)
-    final_reals = np.concatenate(all_reals, axis=0)
-
     # Handle HVG ground truth if available
     if any(x is not None for x in all_X_hvg):
         final_X_hvg = np.concatenate([x for x in all_X_hvg if x is not None], axis=0)
@@ -287,13 +295,16 @@ def main():
     else:
         final_gene_preds = None
 
+    del all_X_hvg, all_gene_preds
+    gc.collect()
+
     # Build pandas DataFrame for obs
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
 
     # Create adata for predictions
-    adata_pred = anndata.AnnData(X=final_preds, obs=obs.copy())
+    adata_pred = anndata.AnnData(X=final_preds, obs=obs)
     # Create adata for real
-    adata_real = anndata.AnnData(X=final_reals, obs=obs.copy())
+    adata_real = anndata.AnnData(X=final_reals, obs=obs)
 
     if args.use_uce_decoder:
         assert data_module.embed_key == "X_uce", "UCELogProbDecoder can only be used with UCE embeddings."
@@ -305,12 +316,21 @@ def main():
     # Create adata for real data in gene space (if available)
     adata_real_gene = None
     if final_X_hvg is not None: # either this is available, or we are already working in gene space
-        adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs.copy())
+        adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs)
 
     # Create adata for gene predictions (if available)
     adata_pred_gene = None
     if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
-        adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs.copy())
+        adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
+
+    # # save out adata_real to the output directory
+    # adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
+    # adata_real.write_h5ad(adata_real_out)
+    # logger.info(f"Saved adata_real to {adata_real_out}")
+    #
+    # adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
+    # adata_pred.write_h5ad(adata_pred_out)
+    # logger.info(f"Saved adata_pred to {adata_pred_out}")
 
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
@@ -330,6 +350,7 @@ def main():
         output_space=cfg["data"]["kwargs"]["output_space"],  # "gene" or "latent"
         shared_perts=data_module.get_shared_perturbations(),
         decoder=decoder,
+        outdir=args.output_dir,
     )
 
     # 7. Summarize results

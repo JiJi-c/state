@@ -636,7 +636,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             input_dim = underlying_ds.n_genes
 
         gene_dim = underlying_ds.n_genes
-        hvg_dim = underlying_ds.get_num_hvgs()
+        # gene_dim = underlying_ds.get_num_hvgs()
+        try:
+            hvg_dim = underlying_ds.get_num_hvgs()
+        except:
+            assert self.embed_key is None, "No X_hvg detected, using raw .X"
+            hvg_dim = gene_dim
 
         if self.embed_key:
             output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)

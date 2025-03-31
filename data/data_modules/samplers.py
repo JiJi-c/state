@@ -44,11 +44,13 @@ class PerturbationBatchSampler(Sampler):
         # Create batches using the code-based grouping.
         self.sentences = self._create_sentences()
         avg_num = np.average([len(sentence) for sentence in self.sentences])
-        logger.info(f"Average # cells per perturbation per cell type: {avg_num}.")
+        tot_num = np.sum([len(sentence) for sentence in self.sentences])
+        logger.info(f"Total # cells {tot_num}.")
 
         # combine sentences into batches that are flattened
         logger.info(f"Creating meta-batches with cell_sentence_len={cell_sentence_len}...")
         self.batches = self._create_batches()
+        self.tot_num = tot_num
 
         end_time = time.time()
         logger.info(

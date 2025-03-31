@@ -47,6 +47,7 @@ def compute_metrics(
     output_space="gene",
     decoder=None,
     shared_perts=None,
+    outdir=None, # output directory to store raw de results
 ):
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
@@ -91,27 +92,41 @@ def compute_metrics(
             else:
                 all_perts = pred_celltype_pert_dict[celltype]
 
-            for pert in all_perts:
+            pred_groups = adata_pred.obs[adata_pred.obs[celltype_col] == celltype].groupby(pert_col).indices
+            real_groups = adata_real.obs[adata_real.obs[celltype_col] == celltype].groupby(pert_col).indices
+
+            # for pert in all_perts:
+            # use tqdm to track progress
+            for pert in tqdm(all_perts, desc=f"Computing metrics for {celltype}", leave=False):
                 try:
                     if pert == control_pert:
                         continue
 
                     with time_it(f"compute_metrics_pert_{pert}"):
-                        adata_pred_pert = get_samples_by_pert_and_celltype(
-                            adata_pred,
-                            pert=pert,
-                            celltype=celltype,
-                            pert_col=pert_col,
-                            celltype_col=celltype_col,
-                        )
+                        # adata_pred_pert = get_samples_by_pert_and_celltype(
+                        #     adata_pred,
+                        #     pert=pert,
+                        #     celltype=celltype,
+                        #     pert_col=pert_col,
+                        #     celltype_col=celltype_col,
+                        # )
 
-                        adata_real_pert = get_samples_by_pert_and_celltype(
-                            adata_real,
-                            pert=pert,
-                            celltype=celltype,
-                            pert_col=pert_col,
-                            celltype_col=celltype_col,
-                        )
+                        # adata_real_pert = get_samples_by_pert_and_celltype(
+                        #     adata_real,
+                        #     pert=pert,
+                        #     celltype=celltype,
+                        #     pert_col=pert_col,
+                        #     celltype_col=celltype_col,
+                        # )
+
+                        pred_idx = pred_groups.get(pert, [])
+                        true_idx = real_groups.get(pert, [])
+                        if len(pred_idx) == 0 or len(true_idx) == 0:
+                            continue
+
+                        # Extract data slices in a vectorized way
+                        adata_pred_pert = adata_pred[pred_idx]
+                        adata_real_pert = adata_real[true_idx]
 
                         ## Use softmap to generate artificial control distributions
                         pert_idx = adata_pred_pert.obs.index.astype("int").tolist()
@@ -124,8 +139,8 @@ def compute_metrics(
                         pert_true = to_dense(adata_real_pert.X)
                         control_true = to_dense(adata_real_control.X)
                         control_preds = to_dense(adata_pred_control.X)
-                        pred_batches = adata_real_pert.obs[batch_col].values
-                        ctrl_batches = adata_real_control.obs[batch_col].values
+                        # pred_batches = adata_real_pert.obs[batch_col].values
+                        # ctrl_batches = adata_real_control.obs[batch_col].values
 
                         ## If matrix is sparse convert to dense
                         try:
@@ -134,16 +149,16 @@ def compute_metrics(
                         except:
                             pass
 
-                        ## Compute metrics at the batch level
-                        batched_metrics = _compute_metrics_dict_batched(
-                            pert_preds,
-                            pert_true,
-                            control_true,
-                            control_preds,
-                            pred_batches,
-                            ctrl_batches,
-                            include_dist_metrics=include_dist_metrics,
-                        )
+                        # ## Compute metrics at the batch level
+                        # batched_metrics = _compute_metrics_dict_batched(
+                        #     pert_preds,
+                        #     pert_true,
+                        #     control_true,
+                        #     control_preds,
+                        #     pred_batches,
+                        #     ctrl_batches,
+                        #     include_dist_metrics=include_dist_metrics,
+                        # )
 
                         ## Compute metrics across all batches for a specific perturbation
                         curr_metrics = _compute_metrics_dict(
@@ -159,8 +174,8 @@ def compute_metrics(
                         for k, v in curr_metrics.items():
                             metrics[celltype][k].append(v)
 
-                        for k, v in batched_metrics.items():
-                            metrics[celltype][k].append(v)
+                        # for k, v in batched_metrics.items():
+                        #     metrics[celltype][k].append(v)
 
                 except:
                     print(f"Failed for {celltype} {pert}")
@@ -184,7 +199,7 @@ def compute_metrics(
 
                 # 2) Actually compute DE for both truth & pred
                 logger.info(f"Computing DE for 50 genes")
-                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval = compute_DE_for_truth_and_pred(
+                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc = compute_DE_for_truth_and_pred(
                     adata_real_gene_ct or adata_real_ct,
                     adata_pred_gene_ct or adata_pred_ct,
                     control_pert=control_pert,
@@ -193,6 +208,7 @@ def compute_metrics(
                     k_de_genes=50,
                     output_space=output_space,
                     model_decoder=decoder,
+                    outdir=outdir,
                 )
 
                 # Compute overlap for fold change-based DE
@@ -204,6 +220,10 @@ def compute_metrics(
                 DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert)
                 metrics[celltype]['DE_pval'] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_pval_avg'] = np.mean(list(DE_metrics_pval.values()))
+
+                DE_metrics_pval_fc = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert)
+                metrics[celltype]['DE_pval_fc'] = [DE_metrics_pval_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_fc_avg'] = np.mean(list(DE_metrics_pval_fc.values()))
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
