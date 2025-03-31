@@ -158,7 +158,8 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         # if the model is outputting to counts space, apply softplus
         # otherwise its in embedding space and we don't want to
-        if 'softplus' in kwargs and kwargs['softplus'] and kwargs['embed_key'] == 'X_hvg':
+        is_gene_space = kwargs['embed_key'] == 'X_hvg' or kwargs['embed_key'] is None
+        if kwargs.get('softplus', False) and is_gene_space:
             # actually just set this to a relu for now
             self.softplus = torch.nn.ReLU()
 
@@ -257,7 +258,8 @@ class PertSetsPerturbationModel(PerturbationModel):
             out_pred = self.project_out(res_pred)
 
         # apply softplus if specified and we output to HVG space
-        if 'softplus' in self.hparams and self.hparams['softplus'] and self.hparams['embed_key'] == 'X_hvg':
+        is_gene_space = self.hparams['embed_key'] == 'X_hvg' or self.hparams['embed_key'] is None
+        if self.hparams.get('softplus', False) and is_gene_space:
             out_pred = self.softplus(out_pred)
 
         output = out_pred.reshape(-1, self.output_dim)
