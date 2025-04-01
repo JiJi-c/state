@@ -28,6 +28,7 @@ embeddings:
   esm2-cellxgene:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
     ds_emb_mapping: /large_storage/ctc/datasets/vci/training/gene_embidx_mapping.torch
+    valid_genes_masks: null
     size: 5120
 
   evo2-scbasecamp:
