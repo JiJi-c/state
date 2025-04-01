@@ -5,7 +5,7 @@
 ##SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=10G
+#SBATCH --mem=5G
 #SBATCH --time=7-00:00:00
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/esm3/%j.log
@@ -15,9 +15,9 @@
 
 unset SLURM_GPUS
 unset SLURM_CPUS_PER_TASK
-#echo "$(set)"
 
-export ESM_API_TOKEN=$(cat ~/.esm_token)
+num_tokens=2
+export ESM_API_TOKEN=$(cat ~/.esm_token_$(($1 % num_tokens)))
 
 ## ls /large_storage/ctc/projects/vci/ref_genome -1 | xargs -I{} sbatch scripts/emb/esm2/slurm.sh {}
 
@@ -25,9 +25,9 @@ export ESM_API_TOKEN=$(cat ~/.esm_token)
 #     dataset_embedding_mapping_by_species --emb_model ESM2 --species_dirs $1
 
 ## ls /scratch/ctc/ML/uce/scBasecamp -1 | xargs -I{} sbatch scripts/emb/esm/slurm_ems3.sh {}
-echo "sbatch scripts/emb/esm/slurm_ems3.sh $1"
-srun  python3 ./scripts/preprocess_scbasecamp.py inferESM3 --species $1
-
+## ls /scratch/ctc/ML/uce/scBasecamp -1 | awk '{print NR, $0}' | xargs -n 2 sbatch scripts/emb/esm/slurm_ems3.sh
+echo "sbatch scripts/emb/esm/slurm_ems3.sh $@"
+srun  python3 ./scripts/preprocess_scbasecamp.py inferESM3 --species $2
 
 ## ls /scratch/ctc/ML/uce/scBasecamp -1 | xargs -I{} sbatch scripts/emb/esm2/slurm.sh {}
 # srun python3 ./scripts/preprocess_scbasecamp.py resolve_gene_symbols --species_dir $1
