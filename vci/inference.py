@@ -175,8 +175,11 @@ class Inference():
 
         # return output_adata_path
 
-    def decode(self, adata_path: str, emb_key: str, read_depth=None, batch_size=64):
+    def decode_from_file(self, adata_path, emb_key: str, read_depth=None, batch_size=64):
         adata = anndata.read_h5ad(adata_path)
+        yield from self.decode_from_adata(adata, emb_key, read_depth, batch_size)
+
+    def decode_from_adata(self, adata, emb_key: str, read_depth=None, batch_size=64):
         genes = adata.var.index
         cell_embs = adata.obsm[emb_key]
         cell_embs = torch.Tensor(cell_embs).to(self.model.device)
