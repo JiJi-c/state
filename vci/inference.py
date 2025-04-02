@@ -177,11 +177,15 @@ class Inference():
 
     def decode_from_file(self, adata_path, emb_key: str, read_depth=None, batch_size=64):
         adata = anndata.read_h5ad(adata_path)
-        yield from self.decode_from_adata(adata, emb_key, read_depth, batch_size)
-
-    def decode_from_adata(self, adata, emb_key: str, read_depth=None, batch_size=64):
         genes = adata.var.index
-        cell_embs = adata.obsm[emb_key]
+        yield from self.decode_from_adata(adata, genes, emb_key, read_depth, batch_size)
+
+    @torch.no_grad()
+    def decode_from_adata(self, adata, genes, emb_key: str, read_depth=None, batch_size=64):
+        try:
+            cell_embs = adata.obsm[emb_key]
+        except:
+            cell_embs = adata.X
         cell_embs = torch.Tensor(cell_embs).to(self.model.device)
 
         use_rda = getattr(self.model.cfg.model, "rda", False)
@@ -193,7 +197,7 @@ class Inference():
                       total=int(cell_embs.size(0) // batch_size)):
             cell_embeds_batch = cell_embs[i:i + batch_size]
             if use_rda:
-                task_counts = torch.full((batch_size,), read_depth, device=self.model.device)
+                task_counts = torch.full((cell_embeds_batch.shape[0],), read_depth, device=self.model.device)
             else:
                 task_counts = None
             merged_embs = LitUCEModel.resize_batch(cell_embeds_batch, gene_embeds, task_counts)
