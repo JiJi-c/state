@@ -170,6 +170,19 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.confidence_head = None
             self.confidence_loss_fn = None
 
+        self.freeze_pert = kwargs.get("freeze_pert", False)
+        if self.freeze_pert:
+            modules_to_freeze = [
+                self.pert_encoder,
+                self.basal_encoder,
+                self.transformer_backbone,
+                self.project_out,
+                self.convolve,
+            ]
+            for module in modules_to_freeze:
+                for param in module.parameters():
+                    param.requires_grad = False
+
     def _build_networks(self):
         """
         Here we instantiate the actual GPT2-based model.

@@ -42,10 +42,15 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     module_config["batch_size"] = training_config["batch_size"]
     module_config["control_pert"] = data_config.get("control_pert", "non-targeting")
 
+    if data_config["output_space"] == "gene":
+        gene_dim = var_dims["hvg_dim"]
+    else:
+        gene_dim = var_dims["gene_dim"]
+
     if model_type.lower() == "embedsum":
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -53,7 +58,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "old_neuralot":
         return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -61,7 +66,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
         return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -69,7 +74,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "simplesum":
         return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -77,7 +82,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "globalsimplesum":
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -85,7 +90,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "celltypemean":
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -93,7 +98,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "decoder_only":
         return DecoderOnlyPerturbationModel(
             input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
+            gene_dim=gene_dim,
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -334,12 +339,41 @@ def train(cfg: DictConfig) -> None:
 
     logger.info('Starting trainer fit.')
 
-    # Train
-    trainer.fit(
-        model,
-        datamodule=data_module,
-        ckpt_path=checkpoint_path,
-    )
+    # if we are training with freeze pert param, manually load the checkpoint
+    # if no last.ckpt, start training using the seed file
+    if checkpoint_path is None and cfg["model"]["kwargs"].get("freeze_pert", False):
+        checkpoint_path = join(ckpt_callbacks[0].dirpath, "seed.ckpt")
+        checkpoint = torch.load(checkpoint_path)
+        model_state = model.state_dict()
+        checkpoint_state = checkpoint['state_dict']
+        
+        # Filter out mismatched size parameters
+        filtered_state = {}
+        for name, param in checkpoint_state.items():
+            if name in model_state:
+                if param.shape == model_state[name].shape:
+                    filtered_state[name] = param
+                else:
+                    print(f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, model={model_state[name].shape}")
+            else:
+                print(f"Skipping parameter {name} as it doesn't exist in the current model")
+        
+        # Load the filtered state dict
+        model.load_state_dict(filtered_state, strict=False)
+
+        # Train - for clarity we pass None
+        trainer.fit(
+            model,
+            datamodule=data_module,
+            ckpt_path=None,
+        )
+    else:
+        # Train
+        trainer.fit(
+            model,
+            datamodule=data_module,
+            ckpt_path=checkpoint_path,
+        )
 
     # at this point if checkpoint_path does not exist, manually create one
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "final.ckpt")

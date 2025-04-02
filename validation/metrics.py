@@ -95,7 +95,6 @@ def compute_metrics(
             pred_groups = adata_pred.obs[adata_pred.obs[celltype_col] == celltype].groupby(pert_col).indices
             real_groups = adata_real.obs[adata_real.obs[celltype_col] == celltype].groupby(pert_col).indices
 
-            # for pert in all_perts:
             # use tqdm to track progress
             for pert in tqdm(all_perts, desc=f"Computing metrics for {celltype}", leave=False):
                 try:
@@ -103,22 +102,6 @@ def compute_metrics(
                         continue
 
                     with time_it(f"compute_metrics_pert_{pert}"):
-                        # adata_pred_pert = get_samples_by_pert_and_celltype(
-                        #     adata_pred,
-                        #     pert=pert,
-                        #     celltype=celltype,
-                        #     pert_col=pert_col,
-                        #     celltype_col=celltype_col,
-                        # )
-
-                        # adata_real_pert = get_samples_by_pert_and_celltype(
-                        #     adata_real,
-                        #     pert=pert,
-                        #     celltype=celltype,
-                        #     pert_col=pert_col,
-                        #     celltype_col=celltype_col,
-                        # )
-
                         pred_idx = pred_groups.get(pert, [])
                         true_idx = real_groups.get(pert, [])
                         if len(pred_idx) == 0 or len(true_idx) == 0:
@@ -139,8 +122,6 @@ def compute_metrics(
                         pert_true = to_dense(adata_real_pert.X)
                         control_true = to_dense(adata_real_control.X)
                         control_preds = to_dense(adata_pred_control.X)
-                        # pred_batches = adata_real_pert.obs[batch_col].values
-                        # ctrl_batches = adata_real_control.obs[batch_col].values
 
                         ## If matrix is sparse convert to dense
                         try:
@@ -148,17 +129,6 @@ def compute_metrics(
                             control_true = control_true.toarray()
                         except:
                             pass
-
-                        # ## Compute metrics at the batch level
-                        # batched_metrics = _compute_metrics_dict_batched(
-                        #     pert_preds,
-                        #     pert_true,
-                        #     control_true,
-                        #     control_preds,
-                        #     pred_batches,
-                        #     ctrl_batches,
-                        #     include_dist_metrics=include_dist_metrics,
-                        # )
 
                         ## Compute metrics across all batches for a specific perturbation
                         curr_metrics = _compute_metrics_dict(
@@ -173,9 +143,6 @@ def compute_metrics(
                         metrics[celltype]["pert"].append(pert)
                         for k, v in curr_metrics.items():
                             metrics[celltype][k].append(v)
-
-                        # for k, v in batched_metrics.items():
-                        #     metrics[celltype][k].append(v)
 
                 except:
                     print(f"Failed for {celltype} {pert}")
@@ -273,7 +240,6 @@ def compute_metrics(
         print(e)
         return metrics
 
-
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):
     metrics = {}
     metrics["mse_" + suffix] = compute_mse(pert_pred, pert_true, ctrl_true, ctrl_pred)
@@ -282,31 +248,6 @@ def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="",
         pert_pred, pert_true, ctrl_true, ctrl_pred
     )
     metrics["cosine_" + suffix] = compute_cosine_similarity(pert_pred, pert_true, ctrl_true, ctrl_pred)
-    return metrics
-
-
-def _compute_metrics_dict_batched(
-    pert_pred,
-    pert_true,
-    ctrl_true,
-    ctrl_pred,
-    pred_batches,
-    ctrl_batches,
-    include_dist_metrics=False,
-):
-    batched_means = {}
-
-    if pert_pred.shape[1] == pert_true.shape[1] + 1:
-        pert_pred = np.delete(pert_pred, pert_pred.shape[1] - 1, 1)
-
-    batched_means["pert_pred"] = get_batched_mean(pert_pred, pred_batches)
-    batched_means["pert_true"] = get_batched_mean(pert_true, pred_batches)
-    batched_means["ctrl_true"] = get_batched_mean(ctrl_true, ctrl_batches)
-    batched_means["ctrl_pred"] = get_batched_mean(ctrl_pred, ctrl_batches)
-    weightings = {b: sum(np.array(pred_batches) == b) for b in pred_batches}
-
-    metrics = {}
-    metrics["pearson_delta_batched_controls"] = compute_pearson_delta_batched(batched_means, weightings)
     return metrics
 
 def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_col):
