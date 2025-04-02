@@ -295,18 +295,18 @@ def inferESM3(species=None,
 
 
 #TODO: inferEvo2 needs to be updated to use the mapping files in Evo2Embedding dataloader.
-def inferEvo2(ref_genome=None,
-              ref_genome_loc=ref_genome_loc,
-              mapping_output_loc=mapping_output_loc):
-    if ref_genome is None:
-        ref_genomes = [f.name for f in Path(ref_genome_loc).iterdir() if f.is_file()]
+def inferEvo2(species=None,
+              mapping_output_loc=mapping_output_loc,
+              data_file_loc=data_file_loc):
+    if species is None:
+        species = [f.name for f in Path(data_file_loc).iterdir() if f.is_dir()]
     else:
-        ref_genomes = [ref_genome]
+        species = [species]
 
-    for genome in ref_genomes:
-        logging.info(f'Generating Evo2 embedding for {genome}')
-        emb_generator = Evo2Embedding(genome, ref_genome_loc=ref_genome_loc)
-        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM2_ensemble'))
+    for specie in species:
+        logging.info(f'Generating Evo2 embedding for {specie}')
+        emb_generator = Evo2Embedding(specie, mapping_output_loc=mapping_output_loc, name_suffix='_layer26')
+        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'Evo2_ensemble_layer26'))
 
 
 # TODO: This is meant to fix a bug without having to reprocess the entire dataset. Remove it after the bug is fixed

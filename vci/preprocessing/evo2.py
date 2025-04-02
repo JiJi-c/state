@@ -14,7 +14,7 @@ from os import getenv
 from pathlib import Path
 
 from vci.data.gene_emb import parse_genome_for_gene_seq_map
-
+from .base import BaseEmbedding
 
 @lru_cache
 def is_fp8_supported():
@@ -140,44 +140,21 @@ class LayerHook:
         self.store[self.layer_name + ".output"] = output.cpu()
 
 
-class Evo2Embedding(object):
+class Evo2Embedding(BaseEmbedding):
 
     def __init__(self,
                  species,
-                 geneome_loc = '/large_storage/ctc/projects/vci/ref_genome',
+                 name_suffix='',
+                 mapping_output_loc=None,
                  seq_generator_fn=None):
-        self.geneome_loc = geneome_loc
-        self.species = species
+        super().__init__(species,
+                         mapping_output_loc=mapping_output_loc,
+                         seq_generator_fn=seq_generator_fn,
+                         seq_type='dna',
+                         name='Evo2',
+                         name_suffix=name_suffix)
 
-        self.seq_type = 'dna'
-        self.name = 'Evo2'
-
-        self.gene_emb_mapping = {}
-        if seq_generator_fn is None:
-            self.seq_generator_fn = self._generate_gene_emb_mapping
-        else:
-            self.seq_generator_fn = seq_generator_fn
-
-    def _generate_gene_emb_mapping(self):
-        ref_genome_file = Path(os.path.join(self.geneome_loc, self.ref_genome))
-        gene_seq_mapping, _ = parse_genome_for_gene_seq_map(self.species,
-                                                         ref_genome_file,
-                                                         return_type=self.seq_type)
-        for gene, (chroms, sequences) in gene_seq_mapping.items():
-            if '.' in gene:
-                gene = gene.split('.')[0]
-            if gene in self.gene_emb_mapping:
-                logging.info(f"Skipping {gene}...")
-                continue
-            yield self.species, gene, sequences
-
-    def generate_gene_emb_mapping(self,
-                                  output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species.lower()}.torch')
-        if os.path.exists(output_file):
-            self.gene_emb_mapping = torch.load(output_file)
-
+    def generate_gene_emb_mapping(self, output_dir):
         ctr = 0
         for species, gene, sequences in self.seq_generator_fn():
             # Ideally dataloader should be already skipping the processed genes
@@ -204,20 +181,8 @@ class Evo2Embedding(object):
             self.gene_emb_mapping[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
             logging.debug(f'Embedding of {gene} is {emb}')
 
-            if ctr % (100) == 0:
-                logging.info(f'Saving after {ctr} batches...')
-                torch.save(self.gene_emb_mapping, output_file)
-
-            if ctr % (1000) == 0:
-                logging.info(f'creating checkpoint {ctr}...')
-                chk_dir = os.path.join(output_dir, 'chk')
-                if chk_dir:
-                    os.makedirs(os.path.join(output_dir, 'chk'), exist_ok=True)
-
-                checkpoint_file = os.path.join(chk_dir, f'{self.name}_emb_{self.species}.{time.time()}.torch')
-
-                shutil.copyfile(output_file, checkpoint_file)
+            self.save_gene_emb_mapping(ctr, self.output_file, output_dir)
             torch.cuda.empty_cache()
 
         logging.info(f'Saving final mapping...')
-        torch.save(self.gene_emb_mapping, output_file)
+        torch.save(self.gene_emb_mapping, self.output_file)

@@ -35,7 +35,7 @@
 #
 # srun python3 ./scripts/preprocess_scbasecamp.py create_genelist --ref_genome $1
 # srun python3 ./scripts/preprocess_scbasecamp.py create_gene_seq_mapping --species $1
-# srun python3 ./scripts/preprocess_scbasecamp.py inferEvo2 $1
+srun python3 ./scripts/preprocess_scbasecamp.py inferEvo2 $1
 # srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping --emb_model Evo2 --start $1 --end $2
 
 # srun python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping_by_species --species_dirs $1
