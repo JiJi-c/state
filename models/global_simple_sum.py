@@ -101,7 +101,8 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         
         with torch.no_grad():
             for batch in train_loader:
-                if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene":
+                if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene" \
+                    or self.embed_key and self.output_space == "all":
                     X_vals = batch["X_hvg"]
                 else:
                     X_vals = batch["X"]
@@ -204,7 +205,8 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         We'll compute MSE vs. the ground truth. (Though no real learnable offsets.)
         """
         pred = self(batch)
-        if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene":
+        if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") or \
+            (self.embed_key and self.output_space == "all"):
             target = batch["X_hvg"]
         else:
             target = batch["X"]

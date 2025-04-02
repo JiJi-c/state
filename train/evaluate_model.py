@@ -16,11 +16,19 @@ import lightning.pytorch as pl
 import torch
 import wandb
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
 # Import the relevant modules from your repository
 from models.decoders import UCELogProbDecoder
+try:
+    from models.decoders import VCICountsDecoder
+except ImportError:
+    logger.warning("Could not import VCICountsDecoder from models.decoders, submodule may be missing.")
+
 from data.mapping_strategies import (
     BatchMappingStrategy,
     RandomMappingStrategy,
@@ -29,8 +37,6 @@ from data.mapping_strategies import (
 from data.data_modules import MultiDatasetPerturbationDataModule
 from validation.metrics import compute_metrics
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def parse_args():
@@ -54,6 +60,16 @@ def parse_args():
         "--use_uce_decoder",
         action="store_true",
         help="Use the UCELogProbDecoder for decoding the model output (if applicable).",
+    )
+    parser.add_argument(
+        "--use_vci_decoder",
+        action="store_true",
+        help="Use the VCICountsDecoder for decoding the model output (if applicable).",
+    )
+    parser.add_argument(
+        "--read_depth",
+        type=int,
+        default=10000,
     )
     parser.add_argument(
         "--map_type",
@@ -310,6 +326,10 @@ def main():
         assert data_module.embed_key == "X_uce", "UCELogProbDecoder can only be used with UCE embeddings."
         logger.info("Using UCELogProbDecoder for decoding.")
         decoder = UCELogProbDecoder()
+    elif args.use_vci_decoder:
+        assert data_module.embed_key == "X_vci", "VCICountsDecoder can only be used with VCI embeddings."
+        logger.info("Using VCICountsDecoder for decoding.")
+        decoder = VCICountsDecoder(read_depth=args.read_depth)
     else:
         decoder = None
 

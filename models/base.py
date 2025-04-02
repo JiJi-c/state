@@ -117,6 +117,7 @@ class PerturbationModel(ABC, LightningModule):
         gene_names: Optional[List[str]] = None,
         batch_size: int = 64,
         gene_dim: int = 5000,
+        hvg_dim: int = 2000,
         **kwargs,
     ):
         super().__init__()
@@ -138,13 +139,25 @@ class PerturbationModel(ABC, LightningModule):
         self.lr = lr
         self.loss_fn = get_loss_fn(loss_fn)
 
+        # this will either decode to hvg space if output space is a gene,
+        # or to transcriptome space if output space is all. done this way to maintain
+        # backwards compatibility with the old models
         self.gene_decoder = None
-        self.gene_decoder_relu = None
-        if embed_key and embed_key != "X_hvg" and output_space == "gene":
+        gene_dim = hvg_dim if output_space == "gene" else gene_dim
+        if (embed_key and embed_key != "X_hvg" and output_space == "gene") or \
+            (embed_key and output_space == "all"): # we should be able to decode from hvg to all
             if embed_key == "X_scfound":
-                hidden_dims = [512, 1024]
+                if gene_dim > 18000:
+                    hidden_dims = [512, 1024, 256]
+                else:
+                    hidden_dims = [512, 1024]
+            elif gene_dim > 18000:
+                hidden_dims = [1024, 512, 256]
             else:
-                hidden_dims = [hidden_dim * 2, hidden_dim * 4]
+                if gene_dim > 18000:
+                    hidden_dims = [hidden_dim * 4, hidden_dim * 2, 256]
+                else:
+                    hidden_dims = [hidden_dim * 2, hidden_dim * 4]
 
             self.gene_decoder = LatentToGeneDecoder(
                 latent_dim=self.output_dim,
@@ -221,18 +234,12 @@ class PerturbationModel(ABC, LightningModule):
             self.log("decoder_val_loss", decoder_loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        pred = self(batch)
-        if self.embed_key and self.output_space == "gene":
-            if "X_hvg" not in batch:
-                raise ValueError("We expected 'X_hvg' to be in batch for gene-level output!")
-            target = batch["X_hvg"]
-            loss = self.loss_fn(pred, target)
-        else:
-            loss = self.loss_fn(pred, batch["X"])
+        latent_output = self(batch)
+        target = batch[self.embed_key]
+        loss = self.loss_fn(latent_output, target)
 
-        self.log("test_loss", loss, prog_bar=True)
-        return {
-            "preds": pred,  # The distribution's sample
+        output_dict = {
+            "preds": latent_output,  # The distribution's sample
             "X": batch.get("X", None),  # The target gene expression or embedding
             "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
@@ -240,6 +247,14 @@ class PerturbationModel(ABC, LightningModule):
             "gem_group": batch.get("gem_group", None),
             "basal": batch.get("basal", None),
         }
+
+        if self.gene_decoder is not None:
+            gene_preds = self.gene_decoder(latent_output)
+            output_dict["gene_preds"] = gene_preds
+            decoder_loss = self.loss_fn(gene_preds, batch["X_hvg"])
+            self.log("test_decoder_loss", decoder_loss, prog_bar=True)
+
+        self.log("test_loss", loss, prog_bar=True)
 
     def predict_step(self, batch, batch_idx, **kwargs):
         """

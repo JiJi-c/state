@@ -149,10 +149,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "neighborhood_fraction", 0.0
         )  # move this to a mapping strategy specific config
 
-        self.store_raw_expression = False
-        if self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene":
+        self.store_raw_expression = False # this is for decoding to hvg space
+        if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") \
+            or (self.embed_key and self.output_space == "all"):
             self.store_raw_expression = True
-        
+
         # TODO-Abhi: is there a way to detect if the transform is needed?
         self.transform = False
         if embed_key == "X_hvg" or embed_key is None:
@@ -389,6 +390,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     random_state=self.random_seed,
                     should_yield_control_cells=self.should_yield_control_cells,
                     store_raw_expression=self.store_raw_expression,
+                    output_space=self.output_space,
                 )
 
                 train_sum = 0
@@ -643,7 +645,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             assert self.embed_key is None, "No X_hvg detected, using raw .X"
             hvg_dim = gene_dim
 
-        if self.embed_key:
+        if self.embed_key is not None:
             output_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
         else:
             output_dim = input_dim # training on raw gene expression

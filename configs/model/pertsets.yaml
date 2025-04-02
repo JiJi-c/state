@@ -12,6 +12,7 @@ kwargs:
   n_decoder_layers: 4
   predict_residual: True
   softplus: True
+  freeze_pert: False
   distributional_loss: energy
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:

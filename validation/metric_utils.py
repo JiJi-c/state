@@ -229,12 +229,18 @@ def compute_DE_for_truth_and_pred(
 
     if 'DMSO_TF' in control_pert: # only for tahoe dataset for now
         # attach var names to adata_real_ct, which consists of HVGs
-        if adata_real_ct.X.shape[1] == 2000:
+        # real data is either just hvgs, or full transcriptome
+        if adata_real_ct.X.shape[1] == 2000: # tahoe hvg
             hvg_gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
             adata_real_ct.var.index = hvg_gene_names
-        else:
+        else: # tahoe transcriptome
             gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
             adata_real_ct.var.index = gene_names
+    else: # genetic dataset
+        if 'non-targeting' in control_pert and adata_real_ct.X.shape[1] == 3609: # I hate this. replogle hvg
+            temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5')
+            adata_real_ct.var.index = temp.var.index.values
+        # add more for replogle gene space, and other datasets, etc
     
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.
@@ -247,13 +253,15 @@ def compute_DE_for_truth_and_pred(
     start_pred = time.time()
     if model_decoder is not None:
         # This needs to be update to compute all 3 types of de
-        DE_pred = model_decoder.compute_de_genes(
+        pred_de_genes_ranked = model_decoder.compute_de_genes(
             adata_pred_ct,
             pert_col=pert_col,
             control_pert=control_pert,
             genes=adata_real_hvg.var.index.values,
-            k=k_de_genes,
         )
+        DE_pred_fc = pred_de_genes_ranked.iloc[:, :k_de_genes]
+        DE_pred_pval = DE_pred_fc
+        DE_pred_pval_fc = DE_pred_fc
     else:
         # assume adata_pred_ct is already in gene space
         adata_pred_ct.var.index = adata_real_ct.var.index

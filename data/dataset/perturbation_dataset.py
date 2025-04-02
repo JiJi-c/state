@@ -111,6 +111,8 @@ class PerturbationDataset(Dataset):
         # Also track the number of cells (after filtering)
         self.n_cells = len(self.all_indices)
 
+        self.output_space = kwargs.get("output_space", "gene")
+
         # We'll store the indices for each split.
         self.split_perturbed_indices = {
             "train": set(),
@@ -199,8 +201,11 @@ class PerturbationDataset(Dataset):
             "gem_group": batch,
         }
         # Optionally, if raw gene expression is needed:
-        if self.store_raw_expression:
+        # backwards compatibility for old cktps
+        if 'output_space' not in self.__dict__ or (self.store_raw_expression and self.output_space == 'gene'):
             sample["X_hvg"] = self.fetch_obsm_expression(underlying_idx, 'X_hvg')
+        elif self.store_raw_expression and self.output_space == "all":
+            sample["X_hvg"] = self.fetch_gene_expression(underlying_idx)
         return sample
 
     def get_batch(self, idx: int) -> torch.Tensor:
