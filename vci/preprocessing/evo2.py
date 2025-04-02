@@ -101,7 +101,7 @@ def get_model(*,
 def run_forward(
     input_string,
     *,
-    layers=["embedding_layer", "unembed", "blocks.0.mlp.l1"],
+    layers=["blocks.26.pre_norm", "embedding_layer", "unembed", "blocks.0.mlp.l1"],
     config_path="/scratch/hielab/gbrixi/evo2/vortex_interleaved/7b_1m/shc-evo2-7b-8k-2T-1m.yml",
     checkpoint_path='/scratch/hielab/gbrixi/evo2/vortex_interleaved/7b_1m/iter_12500.pt'
 ):
@@ -190,16 +190,16 @@ class Evo2Embedding(object):
             logging.info(f"Processing {species} {gene}  {len(sequences[0])}...")
             sequences = sequences[0]
 
-            if len(sequences) > 70000:
-                sequences = sequences[:70000]
+            # if len(sequences) > 70000:
+            #     sequences = sequences[:70000]
 
             octs = run_forward(sequences)
             dna_sequence = Seq(sequences)
             reverse_complement_seq = str(dna_sequence.reverse_complement())
             rev_octs = run_forward(reverse_complement_seq)
 
-            emb = octs['embedding_layer.output'].squeeze().mean(0)
-            rev_emb = rev_octs['embedding_layer.output'].squeeze().mean(0)
+            emb = octs['blocks.26.pre_norm.output'].squeeze().mean(0)
+            rev_emb = rev_octs['blocks.26.pre_norm.output'].squeeze().mean(0)
 
             self.gene_emb_mapping[gene] = torch.mean(torch.stack([emb, rev_emb]), dim=0)
             logging.debug(f'Embedding of {gene} is {emb}')

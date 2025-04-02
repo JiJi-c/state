@@ -25,11 +25,13 @@ class BaseEmbedding(object):
         self.max_seq_len = max_seq_len
 
         self.gene_emb_mapping = {}
-        output_file = os.path.join(mapping_output_loc,
-                                   f'{self.name}_ensemble',
-                                   f'{self.name}_emb_{self.species.lower()}.torch')
-        if os.path.exists(output_file):
-            self.gene_emb_mapping = torch.load(output_file)
+
+        if self.species:
+            output_file = os.path.join(mapping_output_loc,
+                                    f'{self.name}_ensemble',
+                                    f'{self.name}_emb_{self.species.lower()}.torch')
+            if os.path.exists(output_file):
+                self.gene_emb_mapping = torch.load(output_file)
 
         if seq_generator_fn is None:
             self.seq_generator_fn = self._generate_gene_emb_mapping
@@ -143,6 +145,7 @@ class ESM2Embedding(BaseEmbedding):
 
     def __init__(self,
                  species,
+                 esm2_model = "facebook/esm2_t36_3B_UR50D",
                  mapping_output_loc=None,
                  seq_generator_fn=None):
         super().__init__(species,
@@ -150,14 +153,14 @@ class ESM2Embedding(BaseEmbedding):
                          seq_generator_fn=seq_generator_fn,
                          seq_type='protein',
                          name='ESM2')
+        self.esm_model_name = esm2_model
 
     def generate_gene_emb_mapping(self, output_dir):
         from transformers import AutoTokenizer, AutoModel
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_name = "facebook/esm2_t48_15B_UR50D"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModel.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(self.esm_model_name)
+        model = AutoModel.from_pretrained(self.esm_model_name)
         model = model.to(device)
         model.eval()
 
@@ -190,3 +193,24 @@ class ESM2Embedding(BaseEmbedding):
 
         torch.save(self.gene_emb_mapping, output_file)
         logging.info("Done Processing")
+
+    def fetch_emb(self, sequence, esm2_model = "facebook/esm2_t36_3B_UR50D"):
+        from transformers import AutoTokenizer, AutoModel
+
+        if not esm2_model:
+            esm_model_name = self.esm_model_name
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = AutoTokenizer.from_pretrained(esm_model_name)
+        model = AutoModel.from_pretrained(esm_model_name)
+        model = model.to(device)
+        model.eval()
+
+        # Tokenize the sequence
+        inputs = tokenizer(sequence, return_tensors="pt", padding=True).to(device)
+
+        # Generate embeddings
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        return outputs.last_hidden_state.mean(1).cpu()[0]

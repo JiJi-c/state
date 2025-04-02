@@ -5,7 +5,7 @@
 ##SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=5G
+#SBATCH --mem=10G
 #SBATCH --time=7-00:00:00
 #SBATCH --signal=B:SIGINT@300
 #SBATCH --output=outputs/emb/esm3/%j.log

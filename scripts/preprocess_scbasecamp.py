@@ -289,7 +289,6 @@ def inferESM3(species=None,
     else:
         species = [species]
 
-
     for specie in species:
         emb_generator = ESM3Embedding(specie, mapping_output_loc=mapping_output_loc)
         emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM3_ensemble'))
@@ -736,6 +735,21 @@ def add_new_dataset(dataset_name,
     torch.save(valid_gene_index, valid_gene_index_path)
     torch.save(dataset_emb_idx, dataset_emb_idx_path)
 
+
+def add_embedding_mapping(gene,
+                          emb_mapping_file='/large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/all_species.torch'):
+    sequence = resolve_genes(gene, return_type='protein')
+    if sequence[1] is None:
+        logging.warning(f"Could not resolve {gene}")
+        return
+    logging.info(f'{gene}: {sequence}')
+    emb_generator = ESM2Embedding(None, mapping_output_loc=mapping_output_loc)
+    emb = emb_generator.fetch_emb(sequence[1])
+    logging.info(f'{gene}: {emb}')
+
+    mapping = torch.load(emb_mapping_file)
+    mapping[gene] = emb
+    torch.save(mapping, emb_mapping_file)
 
 
 if __name__ == '__main__':

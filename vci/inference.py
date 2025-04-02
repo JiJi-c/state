@@ -118,7 +118,7 @@ class Inference():
                 batch_sentences_counts = batch[7]  # Get counts for scFoundation-style binning
                 if batch_sentences_counts is not None:
                     batch_sentences_counts = batch_sentences_counts.to(self.model.device)
-                
+
                 dataset_nums = batch[8]  # Get dataset numbers for dataset correction
                 if dataset_nums is not None:
                     dataset_nums = dataset_nums.to(self.model.device)
@@ -128,7 +128,7 @@ class Inference():
                 batch_sentences[:, 0, :] = self.model.cls_token.expand(batch_sentences.size(0), -1)
 
                 gene_output, embedding, dataset_emb = self.model.forward(
-                    batch_sentences, 
+                    batch_sentences,
                     mask=None,  # During inference, we don't use the mask
                     counts=batch_sentences_counts,
                     dataset_nums=dataset_nums

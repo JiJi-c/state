@@ -81,6 +81,8 @@ def convert_symbols_to_ensembl(adata):
             logging.info(f"{symbol} -> {symbol_to_ensembl.get(symbol, np.nan)}")
             symbol_to_ensembl[symbol] = GENE_NAME_ENSEMPLE_MAP[symbol]
 
+    # Add the remaining or errored ones manually
+    symbol_to_ensembl['PBK'] = 'ENSG00000168078'
     adata.var['gene_symbols'] = [symbol_to_ensembl.get(symbol, np.nan) for symbol in gene_symbols]
     return adata
 
@@ -93,11 +95,12 @@ def resolve_genes(ensemble_id,
     Entrez.tool = "vci_gene_symbol_resolver"
 
     logging.info(f"Processing {ensemble_id}...")
-    server = "https://rest.ensembl.org"
+    server = "https://grch37.rest.ensembl.org"
     ext = f"/sequence/id/{ensemble_id}"
 
     r = requests.get(server + ext, headers={"Content-Type": "text/plain"})
     if not r.ok:
+        logging.info(f"Response: {r.status_code} {r.text}")
         return None, None
 
     if return_type == 'dna':

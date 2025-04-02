@@ -92,8 +92,8 @@ class Preprocessor:
 
         emb_idxs = self._update_dataset_emb_idx(dataset_file, feature_field)
 
-        if dataset in dataset_emb_idx:
-            raise ValueError(f'{dataset} already exists in the emb_idx_file')
+        # if dataset in dataset_emb_idx:
+        #     raise ValueError(f'{dataset} already exists in the emb_idx_file')
 
         dataset_emb_idx[dataset] = emb_idxs
         torch.save(dataset_emb_idx, self.emb_idx_file)
@@ -117,13 +117,14 @@ class Preprocessor:
                     if k in self.gene_filter:
                         idx = self.gene_filter.index(k) + self.emb_offset
                     else:
-                        idx = -1
+                        log.warning(f'Gene not found in the embedding file: {dataset_file} {k}')
+                        # raise ValueError(f'Gene not found in the embedding file: {dataset_file} {k}')
                     idxs.append(idx)
 
                 emb_idxs = torch.tensor(idxs).long()
             except ValueError as ex:
-                log.error(f'Gene not found in the embedding file: {dataset_file} {ex}')
-                return
+                log.exception(f'Gene not found in the embedding file: {dataset_file} {ex}')
+                raise ex
         return emb_idxs
 
     def process(self):
