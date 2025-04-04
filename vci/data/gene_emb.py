@@ -11,7 +11,8 @@ import time
 
 GENE_NAME_ENSEMPLE_MAP = {
     'GATD3A': 'ENSMUSG00000053329',
-    'GATD3B': 'ENSG00000160221'
+    'GATD3B': 'ENSG00000160221',
+    'PBK': 'ENSG00000168078',
 }
 
 def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):

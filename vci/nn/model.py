@@ -429,7 +429,7 @@ class LitUCEModel(L.LightningModule):
         self.eval()
         current_step = self.global_step
         try:
-            # self.trainer.strategy.barrier()
+            self.trainer.strategy.barrier()
             current_step = self.global_step
             if self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
@@ -437,7 +437,7 @@ class LitUCEModel(L.LightningModule):
                     self._compute_val_de()
                     self._last_val_de_check = current_step
 
-            # self.trainer.strategy.barrier()
+            self.trainer.strategy.barrier()
             if self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
                 if current_step - self._last_val_perturbation_check >= interval:
@@ -477,6 +477,7 @@ class LitUCEModel(L.LightningModule):
         all_correlations = []
         all_ranking_scores = []
 
+        self.trainer.strategy.barrier()
         for holdout_cell_type in adata.obs['cell_type'].unique():
             train_adata = adata[adata.obs['cell_type'] != holdout_cell_type]
             test_adata = adata[adata.obs['cell_type'] == holdout_cell_type]
