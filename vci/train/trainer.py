@@ -12,7 +12,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 from vci.nn.model import LitUCEModel
 from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilterDataset, NpzMultiDataset
-from vci.train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback
+from vci.train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback, PerfProfilerCallback
 from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
 
@@ -106,7 +106,8 @@ def main(cfg):
     callbacks = [checkpoint_callback,
                  LogLR(100),
                  RichProgressBar(),
-                 ResumeCallback(cfg)]
+                 ResumeCallback(cfg),
+                 PerfProfilerCallback()]
 
     if getattr(cfg.model, "ema", False):
         ema_decay = getattr(cfg.model, "ema_decay", 0.999)

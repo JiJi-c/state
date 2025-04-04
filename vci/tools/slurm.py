@@ -31,17 +31,16 @@ sbatch_script_template = """#!/bin/bash
 #SBATCH --partition={{ partition }}
 {{ sbatch_overrides }}
 
-NUM_GPUS_PER_NODE={{ num_gpus_per_node }}
+unset SLURM_TRES_PER_TASK
 
 # Get the names of all nodes involved in training.
 scontrol show hostname ${SLURM_JOB_NODELIST} > hostfile
 sed -i "s/$/ slots=${NUM_GPUS_PER_NODE}/" hostfile
 
-MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
+export MASTER_ADDR=$(scontrol show hostname ${SLURM_JOB_NODELIST} | head -n 1)
+export MASTER_PORT='12357'
 
-NCCL_DEBUG=INFO
-PYTHONFAULTHANDLER=1
-
+#export PYTHONFAULTHANDLER=1
 #export NCCL_DEBUG=INFO
 #export NCCL_DEBUG_SUBSYS=ALL
 #export NCCL_VERBOSE_MARK=100
