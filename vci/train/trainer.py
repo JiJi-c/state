@@ -129,7 +129,8 @@ def main(cfg):
                         gradient_clip_val=cfg.optimizer.max_grad_norm,
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
                         precision="bf16-mixed",
-                        strategy=DDPStrategy(process_group_backend="nccl",
+                        strategy=DDPStrategy(process_group_backend="nccl" if cfg.experiment.num_nodes == 1 else "gloo",
+                                             find_unused_parameters=False,
                                              timeout=timedelta(seconds=cfg.experiment.get('ddp_timeout', 3600))),
                         val_check_interval=val_interval,
                         # Logging
