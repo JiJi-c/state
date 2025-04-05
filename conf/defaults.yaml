@@ -13,6 +13,7 @@ experiment:
   port: 12399
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 100
+  ddp_timeout: 3600
   checkpoint:
     path: /scratch/ctc/ML/vci/checkpoint/pretrain
     save_top_k: 4

@@ -4,6 +4,7 @@ import lightning as L
 
 from torch import nn
 from torch.utils.data import DataLoader
+from datetime import timedelta
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import RichProgressBar
@@ -128,7 +129,8 @@ def main(cfg):
                         gradient_clip_val=cfg.optimizer.max_grad_norm,
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
                         precision="bf16-mixed",
-                        strategy=DDPStrategy(process_group_backend="nccl"),
+                        strategy=DDPStrategy(process_group_backend="nccl",
+                                             timeout=timedelta(seconds=cfg.experiment.get('ddp_timeout', 3600))),
                         val_check_interval=val_interval,
                         # Logging
                         logger=exp_logger,

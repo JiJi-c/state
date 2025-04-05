@@ -423,26 +423,24 @@ class LitUCEModel(L.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        if self.global_rank != 0:
-            return
-
         self.eval()
         current_step = self.global_step
         try:
-            # self.trainer.strategy.barrier()
             current_step = self.global_step
-            if self.cfg.validations.diff_exp.enable:
+            if self.global_rank == 0 and self.cfg.validations.diff_exp.enable:
                 interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
                 if current_step - self._last_val_de_check >= interval:
                     self._compute_val_de()
                     self._last_val_de_check = current_step
+            self.trainer.strategy.barrier()
 
-            # self.trainer.strategy.barrier()
-            if self.cfg.validations.perturbation.enable:
+            if self.global_rank == 0 and self.cfg.validations.perturbation.enable:
                 interval = self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
                 if current_step - self._last_val_perturbation_check >= interval:
                     self._compute_val_perturbation(current_step)
                     self._last_val_perturbation_check = current_step
+            self.trainer.strategy.barrier()
+
         finally:
             self.train()
 
