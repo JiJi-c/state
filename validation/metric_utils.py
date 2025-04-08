@@ -30,6 +30,14 @@ from tqdm import tqdm
 
 from models.base import DecoderInterface
 
+import pandas as pd
+import numpy as np
+from scipy.stats import spearmanr
+from sklearn.metrics import precision_recall_curve, roc_curve
+from tqdm import tqdm
+import multiprocessing as mp
+from functools import partial
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -294,6 +302,56 @@ def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transfo
     # Extract results
     de_genes = pd.DataFrame(decoded_adata.uns["rank_genes_groups"]["names"])
     return de_genes.T
+
+def compute_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
+    true_target = true_df[true_df['target'] == target_gene]
+    pred_target = pred_df[pred_df['target'] == target_gene]
+
+    sig_genes = true_target[true_target['p_value'] < p_value_threshold]['feature'].tolist()
+
+    result = {
+        'target_gene': target_gene,
+        'spearman': np.nan,
+        'pr_auc': np.nan,
+        'roc_auc': np.nan,
+        'significant_genes_count': len(sig_genes)
+    }
+
+    if not sig_genes:
+        return result
+
+    true_filtered = true_target[true_target['feature'].isin(sig_genes)]
+    pred_filtered = pred_target[pred_target['feature'].isin(sig_genes)]
+
+    merged = pd.merge(
+        true_filtered[['feature', 'fold_change']],
+        pred_filtered[['feature', 'fold_change']],
+        on='feature',
+        suffixes=('_true', '_pred')
+    )
+
+    if len(merged) > 1:
+        try:
+            result['spearman'] = spearmanr(merged['fold_change_true'], merged['fold_change_pred'])[0]
+        except:
+            pass
+
+    true_target = true_target.assign(label=(true_target['p_value'] < p_value_threshold).astype(int))
+    merged_curve = pd.merge(true_target[['feature', 'label']], pred_target[['feature', 'p_value']], on='feature')
+
+    if len(merged_curve) > 1 and 0 < merged_curve['label'].sum() < len(merged_curve):
+        y_true = merged_curve['label']
+        y_scores = -np.log10(merged_curve['p_value'])
+
+        try:
+            precision, recall, _ = precision_recall_curve(y_true, y_scores)
+            fpr, tpr, _ = roc_curve(y_true, y_scores)
+            result['pr_auc'] = np.trapz(precision, recall)
+            result['roc_auc'] = np.trapz(tpr, fpr)
+        except:
+            pass
+
+    return result
 
 
 def compute_mean_perturbation_effect(adata, pert_col="gene", ctrl_pert="non-targeting"):
