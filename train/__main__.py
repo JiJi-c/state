@@ -4,6 +4,8 @@ import pickle
 import re
 from os.path import join, exists
 from typing import List
+import sys
+sys.path.append('./vci_pretrain')
 
 import hydra
 import torch
