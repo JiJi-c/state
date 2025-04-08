@@ -11,6 +11,7 @@ from validation.metric_utils import (
     compute_DE_for_truth_and_pred,
     compute_perturbation_ranking_score,
     compute_pearson_delta_batched,
+    compute_DE_metrics
 )
 from tqdm.auto import tqdm
 import numpy as np
@@ -255,6 +256,40 @@ def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_c
     celltype_idx = (adata.obs[celltype_col] == celltype).to_numpy()
     out = adata[pert_idx & celltype_idx]
     return out
+
+def init_parallel_worker(global_pred_df, global_true_df):
+    global PRED_DF
+    global TRUE_DF
+    PRED_DF = global_pred_df
+    TRUE_DF = global_true_df
+
+def compute_DE_metrics_parallel(target_gene, p_value_threshold):
+    return compute_DE_metrics(target_gene, PRED_DF, TRUE_DF, p_value_threshold)
+
+def get_DE_metrics(pred_path, true_path, output_path, n_workers=None, p_value_threshold=0.05):
+    if n_workers is None:
+        n_workers = max(1, mp.cpu_count() - 1)
+
+    pred_df = pd.read_csv(pred_path, dtype={'target': 'category', 'feature': 'category'})
+    true_df = pd.read_csv(true_path, dtype={'target': 'category', 'feature': 'category'})
+
+    for df in (pred_df, true_df):
+        df['abs_fold_change'] = np.abs(df['fold_change'])
+        with np.errstate(divide='ignore'):
+            df['log_fold_change'] = np.log10(df['fold_change'])
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        df['abs_log_fold_change'] = np.abs(df['log_fold_change'].fillna(0))
+    
+    target_genes = true_df['target'].unique()
+
+    with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(pred_df, true_df)) as pool:
+        func = partial(compute_DE_metrics_parallel, p_value_threshold=p_value_threshold)
+        results = list(tqdm(pool.imap(func, target_genes), total=len(target_genes)))
+
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(output_path, index=False)
+
+    return results_df
 
 
 def get_batched_mean(X, batches):
