@@ -1,3 +1,4 @@
+name: vci
 channels:
   - conda-forge
   - bioconda
