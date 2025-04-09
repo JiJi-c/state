@@ -255,7 +255,7 @@ def compute_DE_for_truth_and_pred(
     adata_real_hvg = adata_real_ct
     adata_real_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
     start_true = time.time()
-    DE_true_fc, DE_true_pval, DE_true_pval_fc = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='real')
+    DE_true_fc, DE_true_pval, DE_true_pval_fc, DE_true_df = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='real')
     print("Time taken for true DE: ", time.time() - start_true)
 
     start_pred = time.time()
@@ -277,11 +277,11 @@ def compute_DE_for_truth_and_pred(
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
         adata_pred_hvg = adata_pred_gene
         adata_pred_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
-        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='pred')
+        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc, DE_pred_df = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='pred')
     print("Time taken for predicted DE: ", time.time() - start_pred)
 
     # return DE_true, DE_pred
-    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc
+    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc, DE_true_df, DE_pred_df
 
 def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transform=None):
     """
@@ -303,7 +303,7 @@ def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transfo
     de_genes = pd.DataFrame(decoded_adata.uns["rank_genes_groups"]["names"])
     return de_genes.T
 
-def compute_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
+def compute_downstream_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
     true_target = true_df[true_df['target'] == target_gene]
     pred_target = pred_df[pred_df['target'] == target_gene]
 
@@ -314,7 +314,8 @@ def compute_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
         'spearman': np.nan,
         'pr_auc': np.nan,
         'roc_auc': np.nan,
-        'significant_genes_count': len(sig_genes)
+        'significant_genes_count': len(sig_genes),
+        'directionality': np.nan ## Not implemented
     }
 
     if not sig_genes:
@@ -464,12 +465,12 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, spli
     celltype = adata_gene.obs["celltype_name"].values[0]
 
     # # Save out the de results
-    # if outdir is not None:
-    #     outfile = os.path.join(outdir, f"{celltype}_{split}_de_results_{control_pert}.csv")
-    #     # if it doesn't already exist, write it out
-    #     if not os.path.exists(outfile):
-    #         de_results.to_csv(outfile, index=False)
-    #     logger.info(f"Saved DE results to {outfile}")
+    if outdir is not None:
+        outfile = os.path.join(outdir, f"{celltype}_{split}_de_results_{control_pert}.csv")
+        # if it doesn't already exist, write it out
+        if not os.path.exists(outfile):
+            de_results.to_csv(outfile, index=False)
+        logger.info(f"Saved DE results to {outfile}")
     # #
     
     logger.info(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
@@ -482,7 +483,7 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, spli
 
     de_genes_pval_fc = vectorized_topk_de_filtered(de_results, control_pert, k, pvalue_threshold=0.05)
     
-    return de_genes_fc, de_genes_pval, de_genes_pval_fc
+    return de_genes_fc, de_genes_pval, de_genes_pval_fc, de_results
 
 def _build_shared_matrix(
     data: np.ndarray,

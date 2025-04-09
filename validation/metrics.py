@@ -11,7 +11,7 @@ from validation.metric_utils import (
     compute_DE_for_truth_and_pred,
     compute_perturbation_ranking_score,
     compute_pearson_delta_batched,
-    compute_DE_metrics
+    compute_downstream_DE_metrics
 )
 from tqdm.auto import tqdm
 import numpy as np
@@ -26,6 +26,9 @@ from utils import time_it
 
 # setup logger
 import logging
+import os
+import multiprocessing as mp
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,7 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
+
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
@@ -167,7 +171,8 @@ def compute_metrics(
 
                 # 2) Actually compute DE for both truth & pred
                 logger.info(f"Computing DE for 50 genes")
-                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc = compute_DE_for_truth_and_pred(
+                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, \
+                DE_true_pval_fc, DE_pred_pval_fc, DE_true_df, DE_pred_df = compute_DE_for_truth_and_pred(
                     adata_real_gene_ct or adata_real_ct,
                     adata_pred_gene_ct or adata_pred_ct,
                     control_pert=control_pert,
@@ -222,6 +227,11 @@ def compute_metrics(
                 metrics[celltype]["DE_pred_genes"] = de_pred_genes_col
                 metrics[celltype]["DE_true_genes"] = de_true_genes_col
 
+                # Compute additional DE metrics
+                print("Computing additional metrics")
+                get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir='./', 
+                                          celltype=celltype, n_workers=None, p_value_threshold=0.05)
+
             if class_score_flag:
                 ## Compute classification score
                 class_score = compute_perturbation_ranking_score(
@@ -257,37 +267,34 @@ def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_c
     out = adata[pert_idx & celltype_idx]
     return out
 
-def init_parallel_worker(global_pred_df, global_true_df):
+def init_worker(global_pred_df, global_true_df):
     global PRED_DF
     global TRUE_DF
     PRED_DF = global_pred_df
     TRUE_DF = global_true_df
 
-def compute_DE_metrics_parallel(target_gene, p_value_threshold):
-    return compute_DE_metrics(target_gene, PRED_DF, TRUE_DF, p_value_threshold)
+def compute_downstream_DE_metrics_parallel(target_gene, p_value_threshold):
+    return compute_downstream_DE_metrics(target_gene, PRED_DF, TRUE_DF, p_value_threshold)
 
-def get_DE_metrics(pred_path, true_path, output_path, n_workers=None, p_value_threshold=0.05):
-    if n_workers is None:
-        n_workers = max(1, mp.cpu_count() - 1)
+def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
+                              n_workers=10, p_value_threshold=0.05):
 
-    pred_df = pd.read_csv(pred_path, dtype={'target': 'category', 'feature': 'category'})
-    true_df = pd.read_csv(true_path, dtype={'target': 'category', 'feature': 'category'})
-
-    for df in (pred_df, true_df):
+    for df in (DE_pred_df, DE_true_df):
         df['abs_fold_change'] = np.abs(df['fold_change'])
         with np.errstate(divide='ignore'):
             df['log_fold_change'] = np.log10(df['fold_change'])
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
         df['abs_log_fold_change'] = np.abs(df['log_fold_change'].fillna(0))
     
-    target_genes = true_df['target'].unique()
+    target_genes = DE_true_df['target'].unique()
 
-    with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(pred_df, true_df)) as pool:
-        func = partial(compute_DE_metrics_parallel, p_value_threshold=p_value_threshold)
+    with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(DE_pred_df, DE_true_df)) as pool:
+        func = partial(compute_downstream_DE_metrics_parallel, p_value_threshold=p_value_threshold)
         results = list(tqdm(pool.imap(func, target_genes), total=len(target_genes)))
 
     results_df = pd.DataFrame(results)
-    results_df.to_csv(output_path, index=False)
+    outpath = os.path.join(outdir, f"{celltype}_downstream_de_results.csv")
+    results_df.to_csv(outpath, index=False)
 
     return results_df
 
