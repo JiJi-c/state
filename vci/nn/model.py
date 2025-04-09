@@ -26,6 +26,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
+from vci.data.gene_emb import convert_symbols_to_ensembl
 from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss, uniformity_loss
@@ -247,14 +248,16 @@ class LitUCEModel(L.LightningModule):
             # Original behavior if total_counts is None
             mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
         return mlp_input
-
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
                                        adata_name=dataset_name,
                                        shuffle=False,
                                        sentence_collator=self.collater,)
-        gene_embeds = self.get_gene_embedding(adata.var.index)
+        if 'gene_symbols' in adata.var:
+            gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
+        else:
+            gene_embeds = self.get_gene_embedding(adata.var.index)
         logprobs_batchs = []
         for batch in tqdm(dataloader,
                           position=0,
@@ -275,6 +278,9 @@ class LitUCEModel(L.LightningModule):
             logprobs_batchs.append(logprobs_batch.squeeze())
 
         logprobs_batchs = np.vstack(logprobs_batchs)
+        # Save full logprobs array once processing is complete
+        np.save(f'logprobs_{dataset_name}_full.npy', logprobs_batchs)
+        
         probs_df = pd.DataFrame(logprobs_batchs)
         probs_df[pert_col] = adata.obs[pert_col].values
 
@@ -288,7 +294,6 @@ class LitUCEModel(L.LightningModule):
         pert_effects = np.abs(probs_df - ctrl)
         top_k_indices = np.argsort(pert_effects.values, axis=1)[:, -k:][:, ::-1]
         top_k_genes = np.array(adata.var.index)[top_k_indices]
-
         de_genes = pd.DataFrame(top_k_genes)
         de_genes.index = pert_effects.index.values
 
@@ -579,7 +584,6 @@ class LitUCEModel(L.LightningModule):
             self.true_top_genes = pd.DataFrame(de_val_adata.uns['rank_genes_groups']['names'])
             self.true_top_genes = self.true_top_genes.T
             del de_val_adata
-
         tmp_adata = sc.read_h5ad(self.cfg.validations.diff_exp.dataset)
         pred_exp = self._predict_exp_for_adata(tmp_adata,
                                                self.cfg.validations.diff_exp.dataset_name,
