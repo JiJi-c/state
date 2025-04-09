@@ -26,7 +26,6 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
-from vci.data.gene_emb import convert_symbols_to_ensembl
 from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
 from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss, uniformity_loss
@@ -278,8 +277,6 @@ class LitUCEModel(L.LightningModule):
             logprobs_batchs.append(logprobs_batch.squeeze())
 
         logprobs_batchs = np.vstack(logprobs_batchs)
-        # Save full logprobs array once processing is complete
-        np.save(f'logprobs_{dataset_name}_full.npy', logprobs_batchs)
         
         probs_df = pd.DataFrame(logprobs_batchs)
         probs_df[pert_col] = adata.obs[pert_col].values
