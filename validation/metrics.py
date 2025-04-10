@@ -56,11 +56,6 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
-    outdir = '/home/yhr/pert-sets'
-    relevant_perts = adata_pred.obs[pert_col].unique().tolist()[:5]
-    relevant_perts = relevant_perts + ['non-targeting']
-    adata_pred = adata_pred[adata_pred.obs[pert_col].isin(relevant_perts)]
-    adata_real = adata_real[adata_real.obs[pert_col].isin(relevant_perts)]
     
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
@@ -104,6 +99,7 @@ def compute_metrics(
                 all_perts = shared_perts & pred_celltype_pert_dict[celltype]
             else:
                 all_perts = pred_celltype_pert_dict[celltype]
+            only_perts = [x for x in all_perts if x != control_pert]
 
             pred_groups = adata_pred.obs[adata_pred.obs[celltype_col] == celltype].groupby(pert_col).indices
             real_groups = adata_real.obs[adata_real.obs[celltype_col] == celltype].groupby(pert_col).indices
@@ -234,27 +230,25 @@ def compute_metrics(
 
 
                 # Compute recall for significant genes
-                breakpoint()
                 DE_metrics_sig_genes = compute_gene_overlap_cross_pert(DE_true_sig_genes, DE_pred_sig_genes, control_pert=control_pert)
                 metrics[celltype]['DE_sig_genes_recall'] = [DE_metrics_sig_genes.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_sig_genes_recall_avg'] = np.mean(list(DE_metrics_sig_genes.values()))
 
                 # Record effect sizes
-                true_counts, pred_counts = compute_sig_gene_counts(DE_true_sig_genes, DE_pred_sig_genes, perturbations)
-                metrics[celltype]['DE_sig_genes_count_true'] = [true_counts.get(p, 0) for p in perturbations]
-                metrics[celltype]['DE_sig_genes_count_pred'] = [pred_counts.get(p, 0) for p in perturbations]
+                true_counts, pred_counts = compute_sig_gene_counts(DE_true_sig_genes, DE_pred_sig_genes, only_perts)
+                metrics[celltype]['DE_sig_genes_count_true'] = [true_counts.get(p, 0) for p in only_perts]
+                metrics[celltype]['DE_sig_genes_count_pred'] = [pred_counts.get(p, 0) for p in only_perts]
 
 
                 # Compute the Spearman correlation between the counts.
-                spearman_corr = compute_sig_gene_spearman(true_counts, pred_counts, perturbations)
+                spearman_corr = compute_sig_gene_spearman(true_counts, pred_counts, only_perts)
                 metrics[celltype]['DE_sig_genes_spearman'] = spearman_corr
 
 
                 # 3. Compute the directionality agreement.
-                directionality_agreement = compute_directionality_agreement(DE_true_pval_fc_df, DE_pred_pval_fc_df, perturbations)
-                metrics[celltype]['DE_direction_match'] = [directionality_agreement.get(p, np.nan) for p in perturbations]
+                directionality_agreement = compute_directionality_agreement(DE_true_df, DE_pred_df, only_perts)
+                metrics[celltype]['DE_direction_match'] = [directionality_agreement.get(p, np.nan) for p in only_perts]
                 metrics[celltype]['DE_direction_match_avg'] = np.nanmean(list(directionality_agreement.values()))
-
 
 
                 # Compute the actual top-k gene lists per perturbation
