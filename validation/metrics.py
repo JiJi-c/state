@@ -11,7 +11,10 @@ from validation.metric_utils import (
     compute_DE_for_truth_and_pred,
     compute_perturbation_ranking_score,
     compute_pearson_delta_batched,
-    compute_downstream_DE_metrics
+    compute_downstream_DE_metrics,
+    compute_sig_gene_counts,
+    compute_sig_gene_spearman,
+    compute_directionality_agreement
 )
 from tqdm.auto import tqdm
 import numpy as np
@@ -53,7 +56,12 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
-
+    outdir = '/home/yhr/pert-sets'
+    relevant_perts = adata_pred.obs[pert_col].unique().tolist()[:5]
+    relevant_perts = relevant_perts + ['non-targeting']
+    adata_pred = adata_pred[adata_pred.obs[pert_col].isin(relevant_perts)]
+    adata_real = adata_real[adata_real.obs[pert_col].isin(relevant_perts)]
+    
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
@@ -171,8 +179,9 @@ def compute_metrics(
 
                 # 2) Actually compute DE for both truth & pred
                 logger.info(f"Computing DE for 50 genes")
-                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, \
-                DE_true_pval_fc, DE_pred_pval_fc, DE_true_df, DE_pred_df = compute_DE_for_truth_and_pred(
+                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval,\
+                DE_true_pval_fc, DE_pred_pval_fc, DE_true_sig_genes, DE_pred_sig_genes,\
+                DE_true_df, DE_pred_df = compute_DE_for_truth_and_pred(
                     adata_real_gene_ct or adata_real_ct,
                     adata_pred_gene_ct or adata_pred_ct,
                     control_pert=control_pert,
@@ -185,18 +194,68 @@ def compute_metrics(
                 )
 
                 # Compute overlap for fold change-based DE
-                DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert)
+                DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert, k=50)
                 metrics[celltype]['DE_fc'] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_fc_avg'] = np.mean(list(DE_metrics_fc.values()))
                 
                 # Compute overlap for p-value-based DE  
-                DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert)
+                DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert, k=50)
                 metrics[celltype]['DE_pval'] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_pval_avg'] = np.mean(list(DE_metrics_pval.values()))
 
-                DE_metrics_pval_fc = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert)
-                metrics[celltype]['DE_pval_fc'] = [DE_metrics_pval_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_fc_avg'] = np.mean(list(DE_metrics_pval_fc.values()))
+
+                # Compute overlap for fold change-based DE thresholded with p-values
+                DE_metrics_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=50)
+                metrics[celltype]['DE_pval_fc_50'] = [DE_metrics_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_fc_avg_50'] = np.mean(list(DE_metrics_pval_fc_50.values()))
+
+                DE_metrics_pval_fc_100 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=100)
+                metrics[celltype]['DE_pval_fc_100'] = [DE_metrics_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_fc_avg_100'] = np.mean(list(DE_metrics_pval_fc_100.values()))
+
+                DE_metrics_pval_fc_200 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=200)
+                metrics[celltype]['DE_pval_fc_200'] = [DE_metrics_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_fc_avg_200'] = np.mean(list(DE_metrics_pval_fc_200.values()))
+
+
+                # Compute precision at k for fold change-based DE thresholded with p-values
+                breakpoint()
+                DE_metrics_patk_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=50)
+                metrics[celltype]['DE_patk_pval_fc_50'] = [DE_metrics_patk_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_patk_pval_fc_avg_50'] = np.mean(list(DE_metrics_patk_pval_fc_50.values()))
+
+                DE_metrics_patk_pval_fc_100 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=100)
+                metrics[celltype]['DE_patk_pval_fc_100'] = [DE_metrics_patk_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_patk_pval_fc_avg_100'] = np.mean(list(DE_metrics_patk_pval_fc_100.values()))
+
+                DE_metrics_patk_pval_fc_200 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=200)
+                metrics[celltype]['DE_patk_pval_fc_200'] = [DE_metrics_patk_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_patk_pval_fc_av_200'] = np.mean(list(DE_metrics_patk_pval_fc_200.values()))
+
+
+                # Compute recall for significant genes
+                breakpoint()
+                DE_metrics_sig_genes = compute_gene_overlap_cross_pert(DE_true_sig_genes, DE_pred_sig_genes, control_pert=control_pert)
+                metrics[celltype]['DE_sig_genes_recall'] = [DE_metrics_sig_genes.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_sig_genes_recall_avg'] = np.mean(list(DE_metrics_sig_genes.values()))
+
+                # Record effect sizes
+                true_counts, pred_counts = compute_sig_gene_counts(DE_true_sig_genes, DE_pred_sig_genes, perturbations)
+                metrics[celltype]['DE_sig_genes_count_true'] = [true_counts.get(p, 0) for p in perturbations]
+                metrics[celltype]['DE_sig_genes_count_pred'] = [pred_counts.get(p, 0) for p in perturbations]
+
+
+                # Compute the Spearman correlation between the counts.
+                spearman_corr = compute_sig_gene_spearman(true_counts, pred_counts, perturbations)
+                metrics[celltype]['DE_sig_genes_spearman'] = spearman_corr
+
+
+                # 3. Compute the directionality agreement.
+                directionality_agreement = compute_directionality_agreement(DE_true_pval_fc_df, DE_pred_pval_fc_df, perturbations)
+                metrics[celltype]['DE_direction_match'] = [directionality_agreement.get(p, np.nan) for p in perturbations]
+                metrics[celltype]['DE_direction_match_avg'] = np.nanmean(list(directionality_agreement.values()))
+
+
 
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
@@ -229,8 +288,10 @@ def compute_metrics(
 
                 # Compute additional DE metrics
                 print("Computing additional metrics")
+                breakpoint()
                 get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir='./', 
                                           celltype=celltype, n_workers=None, p_value_threshold=0.05)
+                breakpoint()
 
             if class_score_flag:
                 ## Compute classification score
