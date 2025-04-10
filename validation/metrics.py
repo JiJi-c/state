@@ -286,10 +286,8 @@ def compute_metrics(
 
                 # Compute additional DE metrics
                 print("Computing additional metrics")
-                breakpoint()
                 get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir='./', 
                                           celltype=celltype, n_workers=None, p_value_threshold=0.05)
-                breakpoint()
 
             if class_score_flag:
                 ## Compute classification score
