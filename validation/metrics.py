@@ -56,6 +56,11 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
+    outdir = '/home/yhr/pert-sets'
+    relevant_perts = adata_pred.obs[pert_col].unique().tolist()[:5]
+    relevant_perts = relevant_perts + ['non-targeting']
+    adata_pred = adata_pred[adata_pred.obs[pert_col].isin(relevant_perts)]
+    adata_real = adata_real[adata_real.obs[pert_col].isin(relevant_perts)]
     
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
@@ -215,7 +220,6 @@ def compute_metrics(
 
 
                 # Compute precision at k for fold change-based DE thresholded with p-values
-                breakpoint()
                 DE_metrics_patk_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=50)
                 metrics[celltype]['DE_patk_pval_fc_50'] = [DE_metrics_patk_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_patk_pval_fc_avg_50'] = np.mean(list(DE_metrics_patk_pval_fc_50.values()))
