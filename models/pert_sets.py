@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import anndata as ad
 
 from collections import defaultdict
 from geomloss import SamplesLoss
@@ -142,6 +143,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.distributional_loss = distributional_loss
         self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
         self.gene_dim = gene_dim
+        self.residual_decoder = kwargs.get("residual_decoder", False)
 
         # Build the distributional loss from geomloss
         blur = kwargs.get("blur", 0.05)
@@ -183,6 +185,41 @@ class PertSetsPerturbationModel(PerturbationModel):
                 for param in module.parameters():
                     param.requires_grad = False
 
+        if kwargs.get("transformer_decoder", False):
+            from models.decoders import TransformerLatentToGeneDecoder
+            self.gene_decoder = TransformerLatentToGeneDecoder(
+                latent_dim=self.output_dim,
+                gene_dim=self.gene_dim,
+                num_layers=self.n_decoder_layers,
+                dropout=self.dropout,
+                cell_sentence_len=self.cell_sentence_len,
+                softplus=kwargs.get("softplus", False),
+            )
+
+        control_pert = kwargs.get("control_pert", "non-targeting")
+        if kwargs.get("finetune_vci_decoder", False):
+            from models.decoders import FinetuneVCICountsDecoder
+            gene_names = []
+
+            if output_space == 'gene':
+                # hvg's but for which dataset?
+                if 'DMSO_TF' in control_pert:
+                    gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
+                elif 'non-targeting' in control_pert:
+                    temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5')
+                    gene_names = temp.var.index.values
+            else:
+                assert output_space == 'all'
+                if 'DMSO_TF' in control_pert:
+                    gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
+                elif 'non-targeting' in control_pert:
+                    temp = ad.read_h5ad('/scratch/ctc/ML/vci/paper_replogle/jurkat.h5')
+                    gene_names = temp.var.index.values
+
+            self.gene_decoder = FinetuneVCICountsDecoder(genes=gene_names,)
+
+        print(self)
+
     def _build_networks(self):
         """
         Here we instantiate the actual GPT2-based model.
@@ -221,8 +258,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         )
 
         self.convolve = torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim)
-
-        print(self)
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
@@ -283,17 +318,23 @@ class PertSetsPerturbationModel(PerturbationModel):
         else:
             return output
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
         """Training step logic for both main model and decoder."""
         # Get model predictions (in latent space)
         confidence_pred = None
         if self.confidence_head is None:
-            pred = self.forward(batch)
+            pred = self.forward(batch, padded=padded)
         else:
-            pred, confidence_pred = self(batch)
-        pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+            pred, confidence_pred = self.forward(batch, padded=padded)
+
         target = batch["X"]
-        target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+
+        if padded:
+            pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
+            target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+        else:
+            pred = pred.reshape(1, -1, self.output_dim)
+            target = target.reshape(1, -1, self.output_dim)
 
         main_loss = self.loss_fn(pred, target).nanmean()
         self.log("train_loss", main_loss)
@@ -308,8 +349,14 @@ class PertSetsPerturbationModel(PerturbationModel):
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
             
             gene_preds = self.gene_decoder(latent_preds)
+            if self.residual_decoder:
+                basal_hvg = batch["basal_hvg"].reshape(gene_preds.shape)
+                gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
             gene_targets = batch["X_hvg"]
-            gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
+            if padded:
+                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
+            else:
+                gene_targets = gene_targets.reshape(1, -1, self.gene_decoder.gene_dim())
             decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
             
             # Log decoder loss
@@ -337,9 +384,11 @@ class PertSetsPerturbationModel(PerturbationModel):
             pred = self.forward(batch)
         else:
             pred, confidence_pred = self(batch)
+
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         target = batch["X"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
+
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
 
@@ -361,6 +410,9 @@ class PertSetsPerturbationModel(PerturbationModel):
 
             # Train decoder to map latent predictions to gene space
             gene_preds = self.gene_decoder(latent_preds) # verify this is automatically detached
+            if self.residual_decoder:
+                basal_hvg = batch["basal_hvg"].reshape(gene_preds.shape)
+                gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
             gene_targets = batch["X_hvg"] 
             
             # Get decoder predictions
@@ -411,8 +463,13 @@ class PertSetsPerturbationModel(PerturbationModel):
             "basal": batch.get("basal", None),
         }
 
+        basal_hvg = batch.get("basal_hvg", None)
+
         if self.gene_decoder is not None:
             gene_preds = self.gene_decoder(latent_output)
+            if self.residual_decoder and basal_hvg is not None:
+                basal_hvg = basal_hvg.reshape(gene_preds.shape)
+                gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
             output_dict["gene_preds"] = gene_preds
 
         return output_dict

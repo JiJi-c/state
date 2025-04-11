@@ -53,6 +53,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -61,6 +62,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -69,6 +71,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -77,6 +80,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -85,6 +89,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -93,6 +98,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -101,6 +107,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         return DecoderOnlyPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
             **module_config,
@@ -270,7 +277,6 @@ def train(cfg: DictConfig) -> None:
                 pickle.dump(data_module, f)
             logger.info(f"Data module saved.")
 
-
     # Create model
     model = get_lightning_module(
         cfg["model"]["name"],
@@ -307,13 +313,19 @@ def train(cfg: DictConfig) -> None:
         cfg["training"]["val_freq"],
         cfg["training"].get("ckpt_every_n_steps", 4000),
     )
-    callbacks = ckpt_callbacks + [GradNormCallback()]
+    # callbacks = ckpt_callbacks + [GradNormCallback()]
+    callbacks = ckpt_callbacks
 
     logger.info('Loggers and callbacks set up.')
 
+    if torch.cuda.is_available():
+        accelerator = "gpu"
+    else:
+        accelerator = "cpu"
+
     # Decide on trainer params
     trainer_kwargs = dict(
-        accelerator="gpu",
+        accelerator=accelerator,
         devices=1,
         max_steps=cfg["training"]["max_steps"],  # for normal models
         check_val_every_n_epoch=None,
@@ -321,6 +333,7 @@ def train(cfg: DictConfig) -> None:
         logger=loggers,
         callbacks=callbacks,
         gradient_clip_val=cfg["training"]["gradient_clip_val"],
+        # profiler='simple',
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
@@ -345,10 +358,30 @@ def train(cfg: DictConfig) -> None:
     # if no last.ckpt, start training using the seed file
     if checkpoint_path is None and cfg["model"]["kwargs"].get("freeze_pert", False):
         checkpoint_path = join(ckpt_callbacks[0].dirpath, "seed.ckpt")
-        checkpoint = torch.load(checkpoint_path)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model_state = model.state_dict()
         checkpoint_state = checkpoint['state_dict']
-        
+
+        pert_encoder_weight_key = "pert_encoder.0.weight"
+        if pert_encoder_weight_key in checkpoint_state:
+            checkpoint_pert_dim = checkpoint_state[pert_encoder_weight_key].shape[1]
+            if checkpoint_pert_dim != model.pert_dim:
+                print(f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder.")
+                # Update the model's pert_dim
+                model.pert_dim = checkpoint_pert_dim
+                # Rebuild the pert_encoder with the new input dimension.
+                # (Assumes that build_mlp is the utility function used by your model)
+                from models.utils import build_mlp
+                model.pert_encoder = build_mlp(
+                    in_dim=model.pert_dim,
+                    out_dim=model.hidden_dim,
+                    hidden_dim=model.hidden_dim,
+                    n_layers=model.n_encoder_layers,
+                    dropout=model.dropout,
+                    activation=model.activation_class,
+                )
+
         # Filter out mismatched size parameters
         filtered_state = {}
         for name, param in checkpoint_state.items():

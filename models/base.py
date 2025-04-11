@@ -72,6 +72,13 @@ class LatentToGeneDecoder(nn.Module):
             layers.append(nn.ReLU())
         
         self.decoder = nn.Sequential(*layers)
+
+    def gene_dim(self):
+        # return the output dimension of the last layer
+        for module in reversed(self.decoder):
+            if isinstance(module, nn.Linear):
+                return module.out_features
+        return None
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -117,7 +124,7 @@ class PerturbationModel(ABC, LightningModule):
         gene_names: Optional[List[str]] = None,
         batch_size: int = 64,
         gene_dim: int = 5000,
-        hvg_dim: int = 2000,
+        hvg_dim: int = 2001,
         **kwargs,
     ):
         super().__init__()
@@ -147,17 +154,16 @@ class PerturbationModel(ABC, LightningModule):
         if (embed_key and embed_key != "X_hvg" and output_space == "gene") or \
             (embed_key and output_space == "all"): # we should be able to decode from hvg to all
             if embed_key == "X_scfound":
-                if gene_dim > 18000:
+                if gene_dim > 10000:
                     hidden_dims = [512, 1024, 256]
                 else:
                     hidden_dims = [512, 1024]
-            elif gene_dim > 18000:
+            elif gene_dim > 18000: # paper tahoe
                 hidden_dims = [1024, 512, 256]
+            elif gene_dim > 10000: # paper replogle
+                hidden_dims = [hidden_dim * 2, hidden_dim * 4] # remove this
             else:
-                if gene_dim > 18000:
-                    hidden_dims = [hidden_dim * 4, hidden_dim * 2, 256]
-                else:
-                    hidden_dims = [hidden_dim * 2, hidden_dim * 4]
+                hidden_dims = [hidden_dim * 2, hidden_dim * 4]
 
             self.gene_decoder = LatentToGeneDecoder(
                 latent_dim=self.output_dim,
@@ -278,7 +284,7 @@ class PerturbationModel(ABC, LightningModule):
 
         return output_dict
 
-    def decode_to_gene_space(self, latent_embeds: torch.Tensor) -> torch.Tensor:
+    def decode_to_gene_space(self, latent_embeds: torch.Tensor, basal_expr: None) -> torch.Tensor:
         """
         Decode latent embeddings to gene expression space.
         
@@ -289,7 +295,11 @@ class PerturbationModel(ABC, LightningModule):
             Gene expression predictions or None if decoder is not available
         """
         if self.gene_decoder is not None:
-            return self.gene_decoder(latent_embeds)
+            gene_preds = self.gene_decoder(latent_embeds)
+            if basal_expr is not None:
+                # Add basal expression if provided
+                gene_preds += basal_expr
+            return gene_preds
         return None
 
     def configure_optimizers(self):
