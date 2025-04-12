@@ -217,9 +217,14 @@ class PerturbationDataset(Dataset):
         elif self.store_raw_expression and self.output_space == "all":
             sample["X_hvg"] = self.fetch_gene_expression(underlying_idx)
 
-        if self.store_raw_basal and self.output_space == 'gene':
+        if 'store_raw_basal' in self.__dict__:
+            store_raw_basal = self.store_raw_basal
+        else:
+            store_raw_basal = False
+
+        if store_raw_basal and self.output_space == 'gene':
             sample["basal_hvg"] = self.fetch_obsm_expression(ctrl_idx, 'X_hvg')
-        elif self.store_raw_basal and self.output_space == "all":
+        elif store_raw_basal and self.output_space == "all":
             sample["basal_hvg"] = self.fetch_gene_expression(ctrl_idx)
 
         return sample
