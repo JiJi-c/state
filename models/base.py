@@ -154,7 +154,7 @@ class PerturbationModel(ABC, LightningModule):
         if (embed_key and embed_key != "X_hvg" and output_space == "gene") or \
             (embed_key and output_space == "all"): # we should be able to decode from hvg to all
             if embed_key == "X_scfound":
-                if gene_dim > 10000:
+                if gene_dim > 18000:
                     hidden_dims = [512, 1024, 256]
                 else:
                     hidden_dims = [512, 1024]

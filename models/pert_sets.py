@@ -13,6 +13,18 @@ from models.base import PerturbationModel, LearnableSoftplus
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
+class ScaledSamplesLoss(nn.Module):
+    """
+    A wrapper around SamplesLoss that scales the output by a given factor.
+    """
+    def __init__(self, base_loss, scale_factor):
+        super(ScaledSamplesLoss, self).__init__()
+        self.base_loss = base_loss
+        self.scale_factor = scale_factor
+
+    def forward(self, x, y):
+        return self.base_loss(x, y) / self.scale_factor
+
 class ConfidenceHead(nn.Module):
     """
     A confidence head that predicts the expected loss value for a set of cells.
@@ -152,6 +164,10 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
         elif loss_name == "mse":
             self.loss_fn = nn.MSELoss()
+        elif loss_name == "scaled_energy":
+            scale_factor = 512.0 / float(self.cell_sentence_len)
+            base_loss = SamplesLoss(loss=self.distributional_loss, blur=blur)
+            self.loss_fn = ScaledSamplesLoss(base_loss, scale_factor)
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 

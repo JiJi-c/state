@@ -1015,8 +1015,8 @@ def vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_thresh
     df['abs_fold_change'] = df['fold_change'].abs()
 
     # Convert types if necessary
-    if df['abs_log_fold_change'].dtype == 'float16':
-        df['abs_log_fold_change'] = df['abs_log_fold_change'].astype('float32')
+    if df['abs_fold_change'].dtype == 'float16':
+        df['abs_fold_change'] = df['abs_fold_change'].astype('float32')
     if df['p_value'].dtype == 'float16':
         df['p_value'] = df['p_value'].astype('float32')
     
