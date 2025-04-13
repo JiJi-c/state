@@ -654,7 +654,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         reset_mapping_strategy.
         """
         # normal usage for e.g. NearestNeighborMappingStrategy, etc.
-        self.basal_mapping_strategy = strategy_cls.name
+        self.basal_mapping_strategy = strategy_cls.name()
         self.mapping_strategy_cls = strategy_cls
         self.mapping_strategy_kwargs = strategy_kwargs
 

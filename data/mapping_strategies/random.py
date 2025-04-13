@@ -19,6 +19,9 @@ class RandomMappingStrategy(BaseMappingStrategy):
             "test": {},
         }
 
+    def name():
+        return "random"
+
     def register_split_indices(self, dataset: "PerturbationDataset", split: str,
                                  perturbed_indices: np.ndarray, control_indices: np.ndarray):
         """

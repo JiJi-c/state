@@ -315,7 +315,7 @@ class PerturbationDataset(Dataset):
 
     def fetch_obsm_expression(self, idx: int, key: str) -> torch.Tensor:
         row_data = self.h5_file[f"/obsm/{key}"][idx]
-        return torch.tensor(row_data)
+        return torch.tensor(row_data, dtype=torch.float32)
 
     def get_gene_names(self) -> List[str]:
         """

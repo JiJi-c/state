@@ -25,6 +25,9 @@ class BatchMappingStrategy(BaseMappingStrategy):
             "test": {},
         }
 
+    def name():
+        return "batch"
+
     def register_split_indices(
         self,
         dataset: "PerturbationDataset",
