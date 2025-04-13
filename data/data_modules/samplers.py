@@ -19,7 +19,7 @@ class PerturbationBatchSampler(Sampler):
     and `pert_codes` in the H5MetadataCache). This avoids repeated string operations.
     """
     
-    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 512, test: bool = False):
+    def __init__(self, dataset: "MetadataConcatDataset", batch_size: int, drop_last: bool = False, cell_sentence_len: int = 512, test: bool = False, use_batch: bool = False):
         logger.info("Creating perturbation batch sampler with metadata caching (using codes)...")
         start_time = time.time()
 
@@ -27,6 +27,7 @@ class PerturbationBatchSampler(Sampler):
         self.dataset = dataset.data_source if hasattr(dataset, "data_source") else dataset
         self.batch_size = batch_size
         self.test = test
+        self.use_batch = use_batch
 
         if self.test and self.batch_size != 1:
             logger.warning('Batch size should be 1 for test mode. Setting batch size to 1.')
@@ -43,9 +44,11 @@ class PerturbationBatchSampler(Sampler):
         
         # Create batches using the code-based grouping.
         self.sentences = self._create_sentences()
-        avg_num = np.average([len(sentence) for sentence in self.sentences])
-        tot_num = np.sum([len(sentence) for sentence in self.sentences])
-        logger.info(f"Total # cells {tot_num}.")
+        sentence_lens = [len(sentence) for sentence in self.sentences]
+        avg_num = np.mean(sentence_lens)
+        std_num = np.std(sentence_lens)
+        tot_num = np.sum(sentence_lens)
+        logger.info(f"Total # cells {tot_num}. Cell set size mean / std before resampling: {avg_num:.2f} / {std_num:.2f}.")
 
         # combine sentences into batches that are flattened
         logger.info(f"Creating meta-batches with cell_sentence_len={cell_sentence_len}...")
@@ -77,10 +80,7 @@ class PerturbationBatchSampler(Sampler):
                 assert len(sentence) == self.cell_sentence_len or self.test
                 num_full += 1
 
-            if self.test:
-                sentence_len = len(sentence)
-            else:
-                sentence_len = self.cell_sentence_len
+            sentence_len = len(sentence) if self.test else self.cell_sentence_len
 
             if len(current_batch) + len(sentence) <= self.batch_size * sentence_len:
                 current_batch.extend(sentence)
@@ -114,15 +114,32 @@ class PerturbationBatchSampler(Sampler):
         # Use codes directly rather than names.
         cell_codes = cache.cell_type_codes[indices]
         pert_codes = cache.pert_codes[indices]
+
+        if 'use_batch' in self.__dict__ and self.use_batch:
+            # If using batch, we need to use the batch codes instead of cell type codes.
+            batch_codes = cache.batch_codes[indices]
+            # Also get batch codes if grouping by batch is desired.
+            batch_codes = cache.batch_codes[indices]
+            dt = np.dtype([
+                ('batch', batch_codes.dtype),
+                ('cell', cell_codes.dtype),
+                ('pert', pert_codes.dtype)
+            ])
+            groups = np.empty(len(indices), dtype=dt)
+            groups['batch'] = batch_codes
+            groups['cell'] = cell_codes
+            groups['pert'] = pert_codes
+        else:
+            dt = np.dtype([
+                ('cell', cell_codes.dtype),
+                ('pert', pert_codes.dtype)
+            ])
+            groups = np.empty(len(indices), dtype=dt)
+            groups['cell'] = cell_codes
+            groups['pert'] = pert_codes
         
         # Create global indices (assuming that indices in each subset refer to a global concatenation).
         global_indices = np.arange(global_offset, global_offset + len(indices))
-        
-        # Build a structured array for grouping.
-        dt = np.dtype([('cell', cell_codes.dtype), ('pert', pert_codes.dtype)])
-        groups = np.empty(len(indices), dtype=dt)
-        groups['cell'] = cell_codes
-        groups['pert'] = pert_codes
         
         subset_batches = []
         # Group by unique (cell, pert) pairs.

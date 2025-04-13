@@ -131,8 +131,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.cell_type_key = cell_type_key
 
         self.map_controls = kwargs.get("map_controls", False)
+        assert self.map_controls, "map_controls must be True for all mapping strategies"
         self.normalize_counts = kwargs.get("normalize_counts", False)
         self.perturbation_features_file = kwargs.get("perturbation_features_file", None)
+        self.store_raw_basal = kwargs.get("store_raw_basal", False)
 
         self.train_datasets: List[Dataset] = []
         self.val_datasets: List[Dataset] = []
@@ -150,8 +152,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         )  # move this to a mapping strategy specific config
 
         self.store_raw_expression = False # this is for decoding to hvg space
-        if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") \
-            or (self.embed_key and self.output_space == "all"):
+        if (self.embed_key is not None and self.embed_key != "X_hvg" and self.output_space == "gene") \
+            or (self.embed_key is not None and self.output_space == "all"):
             self.store_raw_expression = True
 
         # TODO-Abhi: is there a way to detect if the transform is needed?
@@ -224,7 +226,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             # Validate that every perturbation in all_perts is in the featurization dict.
             missing = all_perts - set(featurization_dict.keys())
             if missing:
-                raise ValueError(f"The following perturbations are missing from the featurization file: {missing}")
+                logger.warning(f"The following perturbations are missing from the featurization file: {missing}")
+
+                # set the missing perturbations to 1D zero vectors of the correct size
+                feat_size = next(iter(featurization_dict.values())).shape[0]
+                for pert in missing:
+                    featurization_dict[pert] = torch.zeros(feat_size)
+
             logger.info(f"Loaded custom perturbation featurizations for {len(featurization_dict)} perturbations.")
             self.pert_onehot_map = featurization_dict  # use the custom featurizations
         else:
@@ -332,6 +340,23 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             if spec.task_type == TaskType.ZEROSHOT or spec.task_type == TaskType.FEWSHOT
         ]
 
+        # get a list of all training cell types to iterate over
+        train_cts = []
+        for spec in self.train_specs:
+            if spec.task_type == TaskType.TRAINING:
+                if spec.cell_type is None:
+                    # add all the cell types from this dataset
+                    files = self._find_dataset_files(spec.dataset)
+                    for fname, fpath in files.items():
+                        with h5py.File(fpath, "r") as f:
+                            cats = [x.decode('utf-8') for x in f[f"obs/{self.cell_type_key}/categories"][:]]
+                            train_cts.extend(cats)
+                else:
+                    # add the specific cell type
+                    train_cts.append(spec.cell_type)
+
+        train_cts = set(train_cts) - set(val_test_cts)
+
         # Choose 40% of the fewshot cell types for validation
         num_val_cts = int(len(val_test_cts) * 0.4)
 
@@ -349,7 +374,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # Process each training spec by grouping them by dataset
         train_map = self._group_specs_by_dataset(self.train_specs)
-        for ds_name, specs in train_map.items():
+        test_map = self._group_specs_by_dataset(self.test_specs)
+        # get the union of the keys in train_map and test_map
+        all_datasets = set(train_map.keys()).union(set(test_map.keys()))
+        for ds_name in all_datasets:
             files = self._find_dataset_files(ds_name)
             # Outer progress bar: iterate over plates (files) in the dataset
             for fname, fpath in tqdm(list(files.items()),
@@ -391,6 +419,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     should_yield_control_cells=self.should_yield_control_cells,
                     store_raw_expression=self.store_raw_expression,
                     output_space=self.output_space,
+                    store_raw_basal=self.store_raw_basal,
                 )
 
                 train_sum = 0
@@ -527,7 +556,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                                     test_sum += len(test_subset)
                                     final_test_cts.add(ct)
 
-                    else:
+                    elif ct in train_cts:
                         # Regular training cell type - no perturbation-based splitting needed
                         # Get all cells for this cell type
                         ct_pert_codes = cache.pert_codes[ct_indices]
@@ -584,8 +613,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
-        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
+        return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True, prefetch_factor=4)
 
     def val_dataloader(self):
         if len(self.val_datasets) == 0:
@@ -593,7 +623,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
@@ -602,8 +633,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
+        use_batch = self.basal_mapping_strategy == "batch"
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):
@@ -612,7 +644,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def set_inference_mapping_strategy(self, strategy_cls, **strategy_kwargs):
@@ -621,6 +654,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         reset_mapping_strategy.
         """
         # normal usage for e.g. NearestNeighborMappingStrategy, etc.
+        self.basal_mapping_strategy = strategy_cls.name
         self.mapping_strategy_cls = strategy_cls
         self.mapping_strategy_kwargs = strategy_kwargs
 
