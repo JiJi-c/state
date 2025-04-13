@@ -69,11 +69,12 @@ class BaseMappingStrategy(ABC):
         """
         pass
 
+    @abstractmethod
     def get_control_index(self, dataset, split, perturbed_idx) -> Optional[int]:
         pass
 
     def get_mapped_expressions(
-        self, dataset: "PerturbationDataset", split: str, perturbed_idx: int, get_basal_raw: bool = False
+        self, dataset: "PerturbationDataset", split: str, perturbed_idx: int
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Base implementation where "perturbed_idx" confusingly refers to both control and perturbed cells.
@@ -87,28 +88,18 @@ class BaseMappingStrategy(ABC):
         If get_basal_raw is True, returns the raw expression of the basal cells as well 
         (control_expr, control_expr, control_raw), or (perturbed_expr, control_expr, control_raw) for perturbed cells.
         """
-        pert_name = dataset.get_perturbation_name(perturbed_idx)
-        is_control = (pert_name == dataset.control_pert)
 
         # Get expression(s) based on embed_key
         if dataset.embed_key:
-            if is_control and not self.map_controls:
-                expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
-                return expr, expr, perturbed_idx # both X and basal are same control
+            control_index = self.get_control_index(dataset, split, perturbed_idx)
+            pert_expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
+            if control_index is None:
+                ctrl_expr = torch.zeros_like(pert_expr) # default to zero vector 
             else:
-                control_index = self.get_control_index(dataset, split, perturbed_idx)
-                pert_expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
-                if control_index is None:
-                    ctrl_expr = torch.zeros_like(pert_expr) # default to zero vector 
-                else:
-                    ctrl_expr = dataset.fetch_obsm_expression(control_index, dataset.embed_key) 
-                return pert_expr, ctrl_expr, control_index
+                ctrl_expr = dataset.fetch_obsm_expression(control_index, dataset.embed_key) 
+            return pert_expr, ctrl_expr, control_index
         else:
-            if is_control and not self.map_controls:
-                expr = dataset.fetch_gene_expression(perturbed_idx)
-                return expr, expr, perturbed_idx # both X and basal are same control
-            else:
-                control_index = self.get_control_index(dataset, split, perturbed_idx)
-                ctrl_expr = dataset.fetch_gene_expression(control_index)
-                pert_expr = dataset.fetch_gene_expression(perturbed_idx)
-                return pert_expr, ctrl_expr, control_index
+            control_index = self.get_control_index(dataset, split, perturbed_idx)
+            ctrl_expr = dataset.fetch_gene_expression(control_index)
+            pert_expr = dataset.fetch_gene_expression(perturbed_idx)
+            return pert_expr, ctrl_expr, control_index

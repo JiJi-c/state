@@ -131,6 +131,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.cell_type_key = cell_type_key
 
         self.map_controls = kwargs.get("map_controls", False)
+        assert self.map_controls, "map_controls must be True for all mapping strategies"
         self.normalize_counts = kwargs.get("normalize_counts", False)
         self.perturbation_features_file = kwargs.get("perturbation_features_file", None)
         self.store_raw_basal = kwargs.get("store_raw_basal", False)
@@ -612,7 +613,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.train_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True, prefetch_factor=4)
 
     def val_dataloader(self):
@@ -621,7 +623,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.val_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def test_dataloader(self):
@@ -630,8 +633,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
+        use_batch = self.basal_mapping_strategy == "batch"
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True)
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def predict_dataloader(self):
@@ -640,7 +644,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
         collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
         ds = MetadataConcatDataset(self.test_datasets)
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len)
+        use_batch = self.basal_mapping_strategy == "batch"
+        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     def set_inference_mapping_strategy(self, strategy_cls, **strategy_kwargs):
@@ -649,6 +654,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         reset_mapping_strategy.
         """
         # normal usage for e.g. NearestNeighborMappingStrategy, etc.
+        self.basal_mapping_strategy = strategy_cls.name
         self.mapping_strategy_cls = strategy_cls
         self.mapping_strategy_kwargs = strategy_kwargs
 
