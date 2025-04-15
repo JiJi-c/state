@@ -290,11 +290,8 @@ def inferESM3(species=None,
         species = [species]
 
     for specie in species:
-        # emb_generator = ESM3Embedding(specie, mapping_output_loc=mapping_output_loc)
-        # emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM3_ensemble'))
-        args = ExtractEmbeddingsArgs()
-        extract_embeddings = ExtractEmbeddings(args)
-        extract_embeddings.run()
+        emb_generator = ESM3Embedding(specie, mapping_output_loc=mapping_output_loc)
+        emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'ESM3_ensemble'))
 
 
 #TODO: inferEvo2 needs to be updated to use the mapping files in Evo2Embedding dataloader.

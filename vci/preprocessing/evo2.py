@@ -16,7 +16,6 @@ from pathlib import Path
 from vci.data.gene_emb import parse_genome_for_gene_seq_map
 from .base import BaseEmbedding
 import torch
-from evo2 import Evo2
 
 
 class Evo2Embedding(BaseEmbedding):
@@ -33,6 +32,7 @@ class Evo2Embedding(BaseEmbedding):
                          seq_type='dna',
                          name='Evo2',
                          name_suffix=name_suffix)
+        from evo2 import Evo2
         self.evo2_model = Evo2('evo2_7b')
         # self.layer_name = 'blocks.28.mlp.l3'
         self.layer_name = layer_name
