@@ -22,6 +22,6 @@ unset SLURM_CPUS_PER_TASK
 srun  python3 ./scripts/preprocess_scbasecamp.py inferESM2 $1
 # srun python3 ./scripts/preprocess_scbasecamp.py merge_all_species --model ESM2_3B $1
 # python3 ./scripts/preprocess_scbasecamp.py dataset_embedding_mapping_by_species --emb_model ESM2_3B
-python3 ./scripts/preprocess_scbasecamp.py consolidate --emb_model ESM2_3B
+# python3 ./scripts/preprocess_scbasecamp.py consolidate --emb_model ESM2_3B
 
 

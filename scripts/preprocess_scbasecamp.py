@@ -19,7 +19,7 @@ from ast import literal_eval
 from Bio import SeqIO
 
 from vci.data.preprocess import Preprocessor
-from vci.preprocessing import ESM2Embedding, Evo2Embedding, ESM3Embedding
+from vci.preprocessing import ESM2Embedding, ESM3Embedding, Evo2Embedding
 from vci.data.gene_emb import parse_genome_for_gene_seq_map, resolve_genes
 
 
@@ -308,7 +308,10 @@ def inferEvo2(species=None,
 
     for specie in species:
         logging.info(f'Generating Evo2 embedding for {specie}')
-        emb_generator = Evo2Embedding(specie, mapping_output_loc=mapping_output_loc, name_suffix='_layer26')
+        emb_generator = Evo2Embedding(specie,
+                                      mapping_output_loc=mapping_output_loc,
+                                      name_suffix='_layer26',
+                                      layer_name='blocks.26.pre_norm')
         emb_generator.generate_gene_emb_mapping(os.path.join(mapping_output_loc, 'Evo2_ensemble_layer26'))
 
 
@@ -753,6 +756,55 @@ def add_embedding_mapping(gene,
     mapping = torch.load(emb_mapping_file)
     mapping[gene] = emb
     torch.save(mapping, emb_mapping_file)
+
+
+def compute_count_summary(summary_file='/large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv',
+                          species='Homo_sapiens',
+                          valid_gene_index_path='/large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/valid_gene_index.torch',
+                          report_dir='/large_storage/ctc/projects/vci/scbasecamp/coverage_report',
+                          start: int = 0,
+                          offset: int = 1000):
+    # pd.options.display.max_columns = None
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 100000000000000)
+
+    datasets_df = pd.read_csv(summary_file)
+    datasets_df = datasets_df[datasets_df['species'] == species]
+    datasets_df = datasets_df.iloc[start:start+offset, :]
+    valid_idxs = torch.load(valid_gene_index_path)
+    summary_df = pd.DataFrame()
+
+    report_file = os.path.join(report_dir, f'coverage_report{species}_{start}.csv')
+
+    for i, row in datasets_df.iterrows():
+        name = row["names"]
+        h5f_path = row["path"]
+        valid_idx = valid_idxs[name]
+        with h5.File(h5f_path) as h5f:
+            attrs = dict(h5f['X'].attrs)
+            rows = attrs['shape'][0]
+            hits = []
+            total = []
+            for ds_idx in range(rows):
+                indptrs = h5f["/X/indptr"]
+                start_ptr = indptrs[ds_idx]
+                end_ptr = indptrs[ds_idx + 1]
+                sub_data = torch.tensor(
+                    h5f["/X/data"][start_ptr:end_ptr],
+                    dtype=torch.float)
+                sub_indices = torch.tensor(
+                    h5f["/X/indices"][start_ptr:end_ptr],
+                    dtype=torch.int32)
+
+                hits.append(np.isin(valid_idx, sub_indices).sum())
+                total.append(sub_indices.shape[0])
+
+            file_summary = pd.DataFrame({f'hits_{name}': hits, f'total_{name}': total})
+            summary_df = pd.concat([summary_df, file_summary.describe().T], axis=1)
+
+            logging.info(f'Summary\n{file_summary.describe().T}...')
+
+    summary_df.to_csv(report_file, index=False)
 
 
 if __name__ == '__main__':
