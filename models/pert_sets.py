@@ -229,7 +229,9 @@ class PertSetsPerturbationModel(PerturbationModel):
                 if 'DMSO_TF' in control_pert:
                     gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
                 elif 'non-targeting' in control_pert:
-                    temp = ad.read_h5ad('/scratch/ctc/ML/vci/paper_replogle/jurkat.h5')
+                    # temp = ad.read_h5ad('/scratch/ctc/ML/vci/paper_replogle/jurkat.h5')
+                    # gene_names = temp.var.index.values
+                    temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/cross_dataset/replogle/jurkat.h5')
                     gene_names = temp.var.index.values
 
             self.gene_decoder = FinetuneVCICountsDecoder(genes=gene_names,)
@@ -489,3 +491,21 @@ class PertSetsPerturbationModel(PerturbationModel):
             output_dict["gene_preds"] = gene_preds
 
         return output_dict
+
+    def configure_optimizers(self):
+        read_depth_lr_multiplier = 100
+
+        read_depth_params = []
+        other_params = []
+
+        for name, param in self.named_parameters():
+            if "read_depth" in name:
+                read_depth_params.append(param)
+            else:
+                other_params.append(param)
+        
+        optimizer = torch.optim.Adam([
+            {'params': other_params, 'lr': self.lr},
+            {'params': read_depth_params, 'lr': self.lr * read_depth_lr_multiplier}
+        ])
+        return optimizer

@@ -42,30 +42,32 @@ class TransformerLatentToGeneDecoder(nn.Module):
         self,
         latent_dim: int,
         gene_dim: int,
-        num_layers: int = 2,
+        num_layers: int = 4,
         dropout: float = 0.1,
         cell_sentence_len: int = 128,
         softplus: bool = False,
-        inner_dim=512,
+        inner_dim=256,
     ):
         super().__init__()
         # Create a transformer encoder layer.
         # Linear layer mapping 
         self.input_layer = nn.Linear(latent_dim, inner_dim)
 
-        # (Note: Here we use 8 heads; ensure that latent_dim is divisible by 8 or adjust accordingly.)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=inner_dim, nhead=8, dropout=dropout, batch_first=True)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=inner_dim, nhead=4, dropout=dropout, batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-
+        self.dim = gene_dim
         
         # Linear layer mapping transformer output to gene space.
         self.output_layer = nn.Linear(inner_dim, gene_dim)
         
         self.softplus = softplus
         if softplus:
-            self.activation = nn.ReLU()  # you could also use nn.Softplus() if preferred
+            self.activation = nn.ReLU()
         else:
             self.activation = None
+
+    def gene_dim(self):
+        return self.dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -86,11 +88,13 @@ class FinetuneVCICountsDecoder(nn.Module):
     def __init__(
         self,
         genes,
-        model_loc="/large_storage/ctc/userspace/aadduri/vci/checkpoint/rda_tabular_counts_2048_new/step=950000.ckpt",
-        config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/rda_tabular_counts_2048_new/tahoe_config.yaml",
-        read_depth=10000,
-        latent_dim=512, # dimension of pretrained vci model
-        hidden_dims=[256, 256], # hidden dimensions of the decoder
+        # model_loc="/large_storage/ctc/userspace/aadduri/vci/checkpoint/rda_tabular_counts_2048_new/step=950000.ckpt",
+        # config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/rda_tabular_counts_2048_new/tahoe_config.yaml",
+        model_loc="/home/aadduri/vci_pretrain/vci_1.4.1.ckpt",
+        config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/large_1e-4_rda_tabular_counts_1024/crossds_config.yaml",
+        read_depth=70,
+        latent_dim=1024, # dimension of pretrained vci model
+        hidden_dims=[256, 512], # hidden dimensions of the decoder
         dropout=0.1,
         basal_residual=False,
     ):
@@ -100,27 +104,14 @@ class FinetuneVCICountsDecoder(nn.Module):
         self.config = config
         self.finetune = Finetune(OmegaConf.load(self.config))
         self.finetune.load_model(self.model_loc)
-        self.read_depth = read_depth
+        self.read_depth = nn.Parameter(torch.tensor(read_depth, dtype=torch.float), requires_grad=False)
         self.basal_residual = basal_residual
 
-        layers = []
+        # layers = [
+        #     nn.Linear(latent_dim, hidden_dims[0]),
+        # ]
         
-        # Starting with latent_dim as input dimension
-        input_dim = len(self.genes)
-        for hidden_dim in hidden_dims:
-            layers.append(nn.Linear(input_dim, hidden_dim))
-            layers.append(nn.LayerNorm(hidden_dim))
-            layers.append(nn.GELU())
-            layers.append(nn.Dropout(dropout))
-            input_dim = hidden_dim
-        
-        # Final output layer
-        layers.append(nn.Linear(input_dim, len(self.genes)))
-
-        # append a relu
-        layers.append(nn.ReLU())
-        
-        self.gene_decoder = nn.Sequential(*layers)
+        # self.gene_lora = nn.Sequential(*layers)
 
         self.latent_decoder = nn.Sequential(
             nn.Linear(latent_dim, hidden_dims[0]),
@@ -145,6 +136,8 @@ class FinetuneVCICountsDecoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x is [B, S, latent_dim].
+        if len(x.shape) != 3:
+            x = x.unsqueeze(0)
         batch_size, seq_len, latent_dim = x.shape
         x = x.view(batch_size * seq_len, latent_dim)
         
@@ -163,9 +156,10 @@ class FinetuneVCICountsDecoder(nn.Module):
 
             # Create task_counts for the sub-batch if needed
             if use_rda:
-                task_counts_sub = torch.full(
-                    (x_sub.shape[0],), self.read_depth, device=x.device
-                )
+                # task_counts_sub = torch.full(
+                #     (x_sub.shape[0],), self.read_depth, device=x.device
+                # )
+                task_counts_sub = torch.ones((x_sub.shape[0],), device=x.device) * self.read_depth
             else:
                 task_counts_sub = None
 
@@ -187,7 +181,7 @@ class FinetuneVCICountsDecoder(nn.Module):
 
         # Reshape back to [B, S, gene_dim]
         decoded_gene = logprobs.view(batch_size, seq_len, len(self.genes))
-        decoded_gene = self.gene_decoder(decoded_gene)
+        # decoded_gene = self.gene_lora(decoded_gene)
         # TODO: fix this to work with basal counts
         
         # add logic for basal_residual:
