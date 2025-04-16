@@ -94,6 +94,25 @@ def compute_metrics(
                 celltype_col=celltype_col,
             )
 
+            adata_pred_gene_control = None
+            adata_real_gene_control = None
+            if adata_pred_gene is not None and adata_real_gene is not None:
+                adata_pred_gene_control = get_samples_by_pert_and_celltype(
+                    adata_pred_gene,
+                    pert=control_pert,
+                    celltype=celltype,
+                    pert_col=pert_col,
+                    celltype_col=celltype_col,
+                )
+                
+                adata_real_gene_control = get_samples_by_pert_and_celltype(
+                    adata_real_gene,
+                    pert=control_pert,
+                    celltype=celltype,
+                    pert_col=pert_col,
+                    celltype_col=celltype_col,
+                )
+
             # only evaluate on perturbations that are shared between the train and test sets
             if shared_perts:
                 all_perts = shared_perts & pred_celltype_pert_dict[celltype]
@@ -103,6 +122,14 @@ def compute_metrics(
 
             pred_groups = adata_pred.obs[adata_pred.obs[celltype_col] == celltype].groupby(pert_col).indices
             real_groups = adata_real.obs[adata_real.obs[celltype_col] == celltype].groupby(pert_col).indices
+
+            # Get sample indices for count space if gene data is provided
+            pred_gene_groups = None
+            real_gene_groups = None
+            if adata_pred_gene is not None and adata_real_gene is not None:
+                pred_gene_groups = adata_pred_gene.obs[adata_pred_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+                real_gene_groups = adata_real_gene.obs[adata_real_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+
 
             # use tqdm to track progress
             for pert in tqdm(all_perts, desc=f"Computing metrics for {celltype}", leave=False):
@@ -148,6 +175,43 @@ def compute_metrics(
                             suffix="cell_type",
                             include_dist_metrics=include_dist_metrics,
                         )
+
+                        # Add metrics for counts space if gene data is provided
+                        if adata_pred_gene is not None and adata_real_gene is not None and pred_gene_groups is not None and real_gene_groups is not None:
+                            # Get indices for counts space
+                            pred_gene_idx = pred_gene_groups.get(pert, [])
+                            true_gene_idx = real_gene_groups.get(pert, [])
+                            
+                            if len(pred_gene_idx) > 0 and len(true_gene_idx) > 0:
+                                # Extract data slices for counts space
+                                adata_pred_gene_pert = adata_pred_gene[pred_gene_idx]
+                                adata_real_gene_pert = adata_real_gene[true_gene_idx]
+                                
+                                # Get the predictions and true values for counts space
+                                pert_preds_gene = to_dense(adata_pred_gene_pert.X)
+                                pert_true_gene = to_dense(adata_real_gene_pert.X)
+                                control_true_gene = to_dense(adata_real_gene_control.X)
+                                control_preds_gene = to_dense(adata_pred_gene_control.X)
+                                
+                                # If matrix is sparse convert to dense
+                                try:
+                                    pert_true_gene = pert_true_gene.toarray()
+                                    control_true_gene = control_true_gene.toarray()
+                                except:
+                                    pass
+                                
+                                # Compute metrics for counts space
+                                gene_metrics = _compute_metrics_dict(
+                                    pert_preds_gene,
+                                    pert_true_gene,
+                                    control_true_gene,
+                                    control_preds_gene,
+                                    suffix="cell_type_counts",
+                                    include_dist_metrics=include_dist_metrics,
+                                )
+                                
+                                # Add counts metrics to current metrics
+                                curr_metrics.update(gene_metrics)
 
                         metrics[celltype]["pert"].append(pert)
                         for k, v in curr_metrics.items():

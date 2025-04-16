@@ -104,7 +104,7 @@ class FinetuneVCICountsDecoder(nn.Module):
         self.config = config
         self.finetune = Finetune(OmegaConf.load(self.config))
         self.finetune.load_model(self.model_loc)
-        self.read_depth = nn.Parameter(torch.tensor(read_depth, dtype=torch.float), requires_grad=False)
+        self.read_depth = nn.Parameter(torch.tensor(read_depth, dtype=torch.float), requires_grad=True)
         self.basal_residual = basal_residual
 
         # layers = [
@@ -181,6 +181,11 @@ class FinetuneVCICountsDecoder(nn.Module):
 
         # Reshape back to [B, S, gene_dim]
         decoded_gene = logprobs.view(batch_size, seq_len, len(self.genes))
+        # decoded_gene = torch.nn.functional.relu(decoded_gene)
+
+        # # normalize the sum of decoded_gene to be read depth
+        # decoded_gene = decoded_gene / decoded_gene.sum(dim=2, keepdim=True) * self.read_depth
+
         # decoded_gene = self.gene_lora(decoded_gene)
         # TODO: fix this to work with basal counts
         

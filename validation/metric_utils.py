@@ -670,12 +670,12 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, spli
     logger.info(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
     
     # Get top DE genes sorted by fold change
-    de_genes_fc = vectorized_topk_de(de_results, control_pert, k, sort_by='abs_log_fold_change')
+    de_genes_fc = vectorized_topk_de(de_results, control_pert, 200, sort_by='abs_log_fold_change')
     
     # Get top DE genes sorted by p-value
-    de_genes_pval = vectorized_topk_de(de_results, control_pert, k, sort_by='p_value')
+    de_genes_pval = vectorized_topk_de(de_results, control_pert, 200, sort_by='p_value')
 
-    de_genes_pval_fc = vectorized_sig_genes_fc_sort(de_results, control_pert, k, pvalue_threshold=0.05)
+    de_genes_pval_fc = vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_threshold=0.05)
 
     de_genes_sig = vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_threshold=0.05)
     
