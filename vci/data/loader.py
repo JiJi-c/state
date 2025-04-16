@@ -319,8 +319,8 @@ class VCIDatasetSentenceCollator(object):
 
         self.global_to_local = {}
         for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
-            if isinstance(ds_emb_idxs, np.ndarray):
-                ds_emb_idxs = torch.tensor(ds_emb_idxs)
+            # make sure tensor with long data type 
+            ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
 
             # Create a tensor filled with -1 (indicating not present in this dataset)
             reverse_mapping = torch.full((19790,), -1, dtype=torch.int64)
@@ -409,6 +409,7 @@ class VCIDatasetSentenceCollator(object):
 
         # if the data has not already been log transformed
         # if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
+
         if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
 
@@ -418,8 +419,9 @@ class VCIDatasetSentenceCollator(object):
             expression_weights = counts / torch.sum(counts, dim=1, keepdim=True)
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
-        if isinstance(ds_emb_idxs, np.ndarray):
-            ds_emb_idxs = torch.tensor(ds_emb_idxs)
+        ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
+        # if isinstance(ds_emb_idxs, np.ndarray):
+        #     ds_emb_idxs = torch.tensor(ds_emb_idxs)
 
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         cell_sentence_counts = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))

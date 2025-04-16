@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.nn import (TransformerEncoder,
                       TransformerEncoderLayer,
                       BCEWithLogitsLoss)
-from vci.utils import compute_gene_overlap_cross_pert, compute_pearson_delta, compute_perturbation_ranking_score
+from vci.utils import compute_gene_overlap_cross_pert, compute_pearson_delta, compute_perturbation_ranking_score, convert_symbols_to_ensembl
 
 
 import sys
@@ -255,8 +255,8 @@ class LitUCEModel(L.LightningModule):
                                        sentence_collator=self.collater,)
         if 'gene_symbols' in adata.var:
             gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
-        else:
-            gene_embeds = self.get_gene_embedding(adata.var.index)
+        else: # use convert_symbols_to_ensembl(adata)
+            gene_embeds = self.get_gene_embedding(convert_symbols_to_ensembl(adata))
         logprobs_batchs = []
         for batch in tqdm(dataloader,
                           position=0,

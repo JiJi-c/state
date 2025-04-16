@@ -8,6 +8,87 @@ from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
 import uuid
 
+import logging
+import requests
+import mygene
+import numpy as np
+import time
+
+# Constants for gene mapping
+GENE_NAME_ENSEMPLE_MAP = {
+    'GATD3A': 'ENSMUSG00000053329',
+    'GATD3B': 'ENSG00000160221'
+}
+
+def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):
+    server = "https://grch37.rest.ensembl.org"
+
+    # Map species to its scientific name
+    species_map = {
+        "human": "homo_sapiens",
+        "mouse": "mus_musculus",
+        "rat": "rattus_norvegicus"
+    }
+
+    species_name = species_map.get(species.lower(), species)
+    gene_to_ensembl = {}
+
+    for symbol in gene_symbols:
+        # Construct the URL for the API request
+        ext = f"/lookup/symbol/{species_name}/{symbol}?"
+
+        # Make the request
+        r = requests.get(server + ext, headers={"Content-Type": "application/json"})
+
+        # Check if the request was successful
+        if r.status_code != 200:
+            print(f"Failed to retrieve data for {symbol}: {r.status_code}")
+            continue
+
+        # Parse the JSON response
+        decoded = r.json()
+
+        # Extract the Ensembl ID
+        if "id" in decoded:
+            gene_to_ensembl[symbol] = decoded["id"]
+
+        # Sleep briefly to avoid overloading the server
+        time.sleep(0.1)
+
+    return gene_to_ensembl
+
+def convert_symbols_to_ensembl(adata):
+    gene_symbols = adata.var_names.tolist()
+
+    mg = mygene.MyGeneInfo()
+    results = mg.querymany(gene_symbols, scopes='symbol', fields='ensembl.gene', species='human')
+
+    symbol_to_ensembl = {}
+    for result in results:
+        if 'ensembl' in result and not result.get('notfound', False):
+            if isinstance(result['ensembl'], list):
+                symbol_to_ensembl[result['query']] = result['ensembl'][0]['gene']
+            else:
+                symbol_to_ensembl[result['query']] = result['ensembl']['gene']
+
+    for symbol in gene_symbols:
+        if symbol_to_ensembl.get(symbol) is None:
+            sym_results = convert_gene_symbols_to_ensembl_rest([symbol])
+            if len(sym_results) > 0:
+                symbol_to_ensembl[symbol] = sym_results[symbol]
+                logging.info(f"Converted {symbol} to {symbol_to_ensembl[symbol]} using REST API")
+
+    logging.info(f"Done...")
+    for symbol in gene_symbols:
+        if symbol_to_ensembl.get(symbol) is None:
+            logging.info(f"{symbol} -> {symbol_to_ensembl.get(symbol, np.nan)}")
+            if symbol in GENE_NAME_ENSEMPLE_MAP:
+                symbol_to_ensembl[symbol] = GENE_NAME_ENSEMPLE_MAP[symbol]
+
+    # Add the remaining or errored ones manually
+    symbol_to_ensembl['PBK'] = 'ENSG00000168078'
+    return [symbol_to_ensembl.get(symbol, np.nan) for symbol in gene_symbols]
+
 def is_valid_uuid(val):
     try:
         uuid.UUID(str(val))

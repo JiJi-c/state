@@ -49,6 +49,12 @@ embeddings:
     ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/dataset_emb_idx.torch
     valid_genes_masks: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/valid_gene_index.torch
     size: 2560
+  
+  esm2_3B-scbasecamp_cellxgene:
+    all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/all_species.torch
+    ds_emb_mapping: /home/alishbaimran/scbasecamp/dataset_emb_idx_ESM2.torch
+    valid_genes_masks: /home/alishbaimran/scbasecamp/valid_gene_index.torch
+    size: 2560
 
 validations:
   diff_exp:
@@ -87,6 +93,13 @@ dataset:
     ds_type: filtered_h5ad
     train: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
     val: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
+    filter: true
+    filter_by_species: null
+  
+  scbasecamp-cellxgene: 
+    ds_type: filtered_h5ad
+    train: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv
+    val: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv
     filter: true
     filter_by_species: null
 
