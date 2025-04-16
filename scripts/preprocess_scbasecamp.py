@@ -12,6 +12,7 @@ import h5py as h5
 import numpy as np
 import pandas as pd
 import urllib.request
+import scanpy as sc
 
 from pathlib import Path
 from functools import partial
@@ -802,6 +803,38 @@ def compute_count_summary(summary_file='/large_storage/ctc/projects/vci/scbaseca
             logging.info(f'Summary\n{file_summary.describe().T}...')
 
     summary_df.to_csv(report_file, index=False)
+
+
+def filter_dataset(summary_file='/large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv',
+                   species='Homo_sapiens',
+                   start: int = 0,
+                   offset: int = 2000):
+
+    datasets_df = pd.read_csv(summary_file)
+    datasets_df = datasets_df[datasets_df['species'] == species]
+    datasets_df = datasets_df.iloc[start:start+offset, :]
+    summary_df = pd.DataFrame()
+
+    logging.info(f"Processing for {species} from {start} to {start + offset}")
+
+    for i, row in datasets_df.iterrows():
+        name = row["names"]
+        h5f_path = row["path"]
+        species_output_dir = os.path.join('/large_storage/ctc/projects/vci/scbasecamp/data', species)
+        os.makedirs(species_output_dir, exist_ok=True)
+        output_file = os.path.join(species_output_dir, Path(h5f_path).name)
+
+        if os.path.exists(output_file):
+            logging.info(f"Skipping {output_file}")
+            continue
+
+        adata = sc.read_h5ad(h5f_path)
+        orig_size = adata.shape
+        sc.pp.filter_cells(adata, min_genes=200)
+        sc.pp.filter_cells(adata, min_counts=500)
+
+        logging.info(f"Saving {h5f_path} Orig Size: {orig_size}. After filter {adata.shape}")
+        adata.write_h5ad(output_file)
 
 
 if __name__ == '__main__':
