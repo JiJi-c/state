@@ -193,7 +193,13 @@ class PerturbationDataset(Dataset):
         cell_type = self.metadata_cache.cell_type_categories[cell_type_code]
 
         # Get batch information
-        batch = self.metadata_cache.batch_codes[underlying_idx]
+        batch_code = self.metadata_cache.batch_codes[underlying_idx]
+        batch_name = self.metadata_cache.batch_categories[batch_code]
+        if self.batch_onehot_map is not None:
+            # map across all files to a consistent one hot encoding or featurization
+            batch = self.batch_onehot_map[batch_name]
+        else:
+            batch = None
 
         sample = {
             "X": pert_expr,  # the perturbed cell’s data
@@ -202,6 +208,7 @@ class PerturbationDataset(Dataset):
             "pert_name": pert_name,
             "cell_type": cell_type,
             "gem_group": batch,
+            "gem_group_name": batch_name,
         }
         # Optionally, if raw gene expression is needed:
         # backwards compatibility for old cktps
@@ -349,7 +356,8 @@ class PerturbationDataset(Dataset):
             "pert": torch.stack([item["pert"] for item in batch]),
             "pert_name": [item["pert_name"] for item in batch],
             "cell_type": [item["cell_type"] for item in batch],
-            "gem_group": torch.tensor([item["gem_group"] for item in batch]),
+            "gem_group": torch.stack([item["gem_group"] for item in batch]),
+            "gem_group_name": [item["gem_group_name"] for item in batch],
         }
         
         # If the first sample has "X_hvg", assume the entire batch does
@@ -360,7 +368,9 @@ class PerturbationDataset(Dataset):
             if pert_col == "drug" or pert_col == "drugname_drugconc":
                 batch_dict["X_hvg"] = torch.log1p(X_hvg)
             else:
+                # this is for log transformed data. let's make it count data
                 batch_dict["X_hvg"] = X_hvg
+                # batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
 
         # If the first sample has "basal_hvg", assume the entire batch does
         if "basal_hvg" in batch[0]: # either control hvg gene space or 19k gene space

@@ -688,7 +688,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         # get the shape of the first value in pert_onehot_map
         pert_dim = next(iter(self.pert_onehot_map.values())).shape[0]
-
+        batch_dim = next(iter(self.batch_onehot_map.values())).shape[0]
 
         return {
             "input_dim": input_dim,
@@ -697,6 +697,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             "output_dim": output_dim,
             "pert_dim": pert_dim,
             "gene_names": gene_names,
+            "batch_dim": batch_dim,
         }
 
     def get_shared_perturbations(self) -> Set[str]:

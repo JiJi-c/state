@@ -56,6 +56,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "old_neuralot":
@@ -65,6 +66,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
@@ -74,6 +76,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "simplesum":
@@ -83,6 +86,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "globalsimplesum":
@@ -92,6 +96,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "celltypemean":
@@ -101,6 +106,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     elif model_type.lower() == "decoder_only":
@@ -110,6 +116,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             hvg_dim=var_dims["hvg_dim"],
             output_dim=var_dims["output_dim"],
             pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
             **module_config,
         )
     else:
