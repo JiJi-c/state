@@ -224,7 +224,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.gene_decoder = NBDecoder(
                 latent_dim=self.output_dim + (self.batch_dim or 0),
                 gene_dim=gene_dim,
-                hidden_dims=[512, 1024],
+                hidden_dims=[512, 512, 512],
                 dropout=self.dropout,
             )
 
@@ -399,8 +399,9 @@ class PertSetsPerturbationModel(PerturbationModel):
         if self.gene_decoder is not None and "X_hvg" in batch:
             gene_targets = batch["X_hvg"]
             # Train decoder to map latent predictions to gene space
-            with torch.no_grad():
-                latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
+            latent_preds = pred
+            # with torch.no_grad():
+            #     latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
             
             batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
             # concatenate on the last axis
@@ -425,7 +426,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
             
-            total_loss = total_loss + decoder_loss
+            total_loss = total_loss + 0.1 * decoder_loss
 
         if confidence_pred is not None:
             # Detach main loss to prevent gradients flowing through it
@@ -455,23 +456,11 @@ class PertSetsPerturbationModel(PerturbationModel):
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
 
-        if confidence_pred is not None:
-            # Detach main loss to prevent gradients flowing through it
-            loss_target = loss.detach().clone().unsqueeze(0)
-
-            # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
-            self.log("val/confidence_loss", confidence_loss)
-
-        return {"loss": loss, "predictions": pred}
-
-    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        """Track decoder performance during validation without training it."""
         if self.gene_decoder is not None and "X_hvg" in batch:
             gene_targets = batch["X_hvg"] 
 
             # Get model predictions from validation step
-            latent_preds = outputs["predictions"]
+            latent_preds = pred
 
             # Train decoder to map latent predictions to gene space
             batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
@@ -494,6 +483,16 @@ class PertSetsPerturbationModel(PerturbationModel):
             
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
+
+        if confidence_pred is not None:
+            # Detach main loss to prevent gradients flowing through it
+            loss_target = loss.detach().clone().unsqueeze(0)
+
+            # Compute confidence loss
+            confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
+            self.log("val/confidence_loss", confidence_loss)
+
+        return {"loss": loss, "predictions": pred}
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         confidence_pred = None

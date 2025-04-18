@@ -344,7 +344,7 @@ class PerturbationDataset(Dataset):
     # Static methods
     ##############################
     @staticmethod
-    def collate_fn(batch, transform=False, pert_col="drug", normalize=False):
+    def collate_fn(batch, transform=False, pert_col="drug", int_counts=False):
         """
         Custom collate that reshapes data into sequences.
         Safely handles normalization when vectors sum to zero.
@@ -369,8 +369,10 @@ class PerturbationDataset(Dataset):
                 batch_dict["X_hvg"] = torch.log1p(X_hvg)
             else:
                 # this is for log transformed data. let's make it count data
-                batch_dict["X_hvg"] = X_hvg
-                # batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
+                if int_counts:
+                    batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
+                else:
+                    batch_dict["X_hvg"] = X_hvg
 
         # If the first sample has "basal_hvg", assume the entire batch does
         if "basal_hvg" in batch[0]: # either control hvg gene space or 19k gene space

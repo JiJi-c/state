@@ -123,7 +123,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.k_neighbors = k_neighbors
         self.should_yield_control_cells = should_yield_control_cells
         self.cell_sentence_len = cell_sentence_len
+        self.int_counts = kwargs.get("int_counts", False)
         logger.info(f"Using cell_sentence_len={cell_sentence_len}")
+
+        if self.int_counts:
+            logger.info("Using int_counts=True, will use int counts for training")
+        else:
+            logger.info("Using int_counts=False, will use log counts for training")
 
         self.pert_col = pert_col
         self.control_pert = control_pert
@@ -610,8 +616,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def train_dataloader(self):
         if len(self.train_datasets) == 0:
             return None
-        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
+        use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.train_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
@@ -620,8 +626,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def val_dataloader(self):
         if len(self.val_datasets) == 0:
             return None
-        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
+        use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.val_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
@@ -630,8 +636,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def test_dataloader(self):
         if len(self.test_datasets) == 0:
             return None
-        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
+        use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
@@ -641,8 +647,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     def predict_dataloader(self):
         if len(self.test_datasets) == 0:
             return None
-        normalize = self.normalize_counts if 'normalize_counts' in self.__dict__ else False
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, normalize=normalize)
+        use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
+        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
