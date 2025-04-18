@@ -224,15 +224,29 @@ def compute_metrics(
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
 
+
+            # filter adata_real and adata_pred to only include control and shared perturbations
+            assert control_pert in all_perts
+            all_perts = list(all_perts)
+            adata_real_ct.obs[pert_col] = pd.Categorical(adata_real_ct.obs[pert_col])
+            adata_real_ct = adata_real_ct[adata_real_ct.obs[pert_col].isin(all_perts)]
+
+            adata_pred_ct.obs[pert_col] = pd.Categorical(adata_pred_ct.obs[pert_col])
+            adata_pred_ct = adata_pred_ct[adata_pred_ct.obs[pert_col].isin(all_perts)]
+
             # gene level metrics may not be available if the output_space was specified to be latent
             adata_real_gene_ct = None
             adata_pred_gene_ct = None
             if adata_real_gene is not None:
                 logger.info(f"Using gene expression data for true {celltype}")
                 adata_real_gene_ct = adata_real_gene[adata_real_gene.obs[celltype_col] == celltype]
+                adata_real_gene_ct.obs[pert_col] = pd.Categorical(adata_real_gene_ct.obs[pert_col])
+                adata_real_gene_ct = adata_real_gene_ct[adata_real_gene_ct.obs[pert_col].isin(all_perts)]
             if adata_pred_gene is not None:
                 logger.info(f"Using gene expression data for pred {celltype}")
                 adata_pred_gene_ct = adata_pred_gene[adata_pred_gene.obs[celltype_col] == celltype]
+                adata_pred_gene_ct.obs[pert_col] = pd.Categorical(adata_pred_gene_ct.obs[pert_col])
+                adata_pred_gene_ct = adata_pred_gene_ct[adata_pred_gene_ct.obs[pert_col].isin(all_perts)]
 
             if DE_metric_flag:
                 ## Compute differential expression at the full adata level for speed
