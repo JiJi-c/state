@@ -6,10 +6,6 @@ from lightning.pytorch.callbacks import Callback
 class BatchSpeedMonitorCallback(Callback):
     """
     Callback that logs the number of batches processed per second to wandb.
-    
-    This helps monitor the data loading and processing performance, especially
-    for identifying bottlenecks in the RandomMappingStrategy or other data loading
-    components.
     """
 
     def __init__(self, logging_interval=10):
