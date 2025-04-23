@@ -52,7 +52,7 @@ embeddings:
   
   esm2_3B-scbasecamp_cellxgene:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/ESM2_3B/all_species.torch
-    ds_emb_mapping: /home/alishbaimran/scbasecamp/dataset_emb_idx_ESM2.torch
+    ds_emb_mapping: /home/alishbaimran/scbasecamp/dataset_emb_idx_ESM2_copy.torch
     valid_genes_masks: /home/alishbaimran/scbasecamp/valid_gene_index.torch
     size: 2560
 
@@ -64,7 +64,7 @@ validations:
     obs_filter_label: non-targeting
     top_k_rank: 200
     method: null
-    dataset: /large_storage/ctc/datasets/vci/validation/rpe1_top5000_variable.h5ad
+    dataset: /large_storage/ctc/datasets/cellxgene/processed/rpe1_top5000_variable.h5ad
     dataset_name: rpe1_top5000_variable
 
   perturbation:
@@ -91,11 +91,11 @@ dataset:
 
   scbasecamp:
     ds_type: filtered_h5ad
-    train: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
-    val: /large_storage/ctc/projects/vci/scbasecamp/scBasecamp_all.csv
+    train: /home/alishbaimran/scbasecamp/scbasecamp_all.csv
+    val: /home/alishbaimran/scbasecamp/scbasecamp_all.csv
     filter: true
     filter_by_species: null
-  
+
   scbasecamp-cellxgene: 
     ds_type: filtered_h5ad
     train: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv

@@ -363,6 +363,7 @@ class VCIDatasetSentenceCollator(object):
         datasets = []
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
             (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores, shared_genes)
+
             datasets.append(dataset)
 
             batch_sentences[i, :] = bs

@@ -13,6 +13,7 @@ GENE_NAME_ENSEMPLE_MAP = {
     'GATD3A': 'ENSMUSG00000053329',
     'GATD3B': 'ENSG00000160221',
     'PBK': 'ENSG00000168078',
+    'NEPRO': 'ENSG00000163608'
 }
 
 def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):
@@ -39,8 +40,10 @@ def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):
 
         # Check if the request was successful
         if r.status_code != 200:
-            print(f"Failed to retrieve data for {symbol}: {r.status_code}")
+            logging.warning(f"[REST API] Failed to retrieve data for {symbol}: {r.status_code}")
+            gene_to_ensembl[symbol] = None  
             continue
+
 
         # Parse the JSON response
         decoded = r.json()
@@ -72,15 +75,30 @@ def convert_symbols_to_ensembl(adata):
     for symbol in gene_symbols:
         if symbol_to_ensembl.get(symbol) is None:
             sym_results = convert_gene_symbols_to_ensembl_rest([symbol])
-            if len(sym_results) > 0:
+            if symbol in sym_results and sym_results[symbol] is not None:
                 symbol_to_ensembl[symbol] = sym_results[symbol]
                 logging.info(f"Converted {symbol} to {symbol_to_ensembl[symbol]} using REST API")
+            else:
+                logging.warning(f"Could not retrieve Ensembl ID for {symbol} using REST — fallback will be used")
+
 
     logging.info(f"Done...")
+    # for symbol in gene_symbols:
+    #     if symbol_to_ensembl.get(symbol) is None:
+    #         logging.info(f"{symbol} -> {symbol_to_ensembl.get(symbol, np.nan)}")
+    #         symbol_to_ensembl[symbol] = GENE_NAME_ENSEMPLE_MAP[symbol]
+
     for symbol in gene_symbols:
-        if symbol_to_ensembl.get(symbol) is None:
-            logging.info(f"{symbol} -> {symbol_to_ensembl.get(symbol, np.nan)}")
-            symbol_to_ensembl[symbol] = GENE_NAME_ENSEMPLE_MAP[symbol]
+        value = symbol_to_ensembl.get(symbol, None)
+        if value is None or str(value).lower() == 'nan' or value == '':
+            logging.info(f"{symbol} -> {value}")
+            if symbol in GENE_NAME_ENSEMPLE_MAP:
+                symbol_to_ensembl[symbol] = GENE_NAME_ENSEMPLE_MAP[symbol]
+                logging.info(f"Manually assigned {symbol} to {GENE_NAME_ENSEMPLE_MAP[symbol]}")
+            else:
+                logging.warning(f"{symbol} not found in GENE_NAME_ENSEMPLE_MAP — assigned np.nan")
+                symbol_to_ensembl[symbol] = np.nan
+
 
     # Add the remaining or errored ones manually
     symbol_to_ensembl['PBK'] = 'ENSG00000168078'
