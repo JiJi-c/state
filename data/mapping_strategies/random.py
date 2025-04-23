@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from .mapping_strategies import BaseMappingStrategy
 
 class RandomMappingStrategy(BaseMappingStrategy):
@@ -18,6 +19,9 @@ class RandomMappingStrategy(BaseMappingStrategy):
             "val": {},
             "test": {},
         }
+        
+        # Initialize Python's random module with the same seed
+        random.seed(random_state)
 
     def name():
         return "random"
@@ -46,25 +50,34 @@ class RandomMappingStrategy(BaseMappingStrategy):
     def get_control_indices(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int) -> np.ndarray:
         """
         Returns n_basal_samples control indices that are from the same cell type as the perturbed cell.
+        Uses Python's random.choice instead of NumPy's random.choice for potentially better performance.
         """
-        # Get the cell type of the perturbed cell.
+        # Get the cell type of the perturbed cell
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
         pool = self.split_control_pool[split].get(pert_cell_type, None)
-        if pool is None or len(pool) == 0: # will pool ever be None?
+        
+        if pool is None or len(pool) == 0:
             return None
-        return self.rng.choice(pool, size=self.n_basal_samples, replace=True)
+            
+        # Use Python's random.choices which allows replacement by default
+        # and returns a list of the specified length
+        selected_indices = random.choices(pool, k=self.n_basal_samples)
+        
+        # Convert to numpy array for compatibility with the rest of the code
+        return np.array(selected_indices)
 
     def get_control_index(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int):
         """
         Returns a single control index from the same cell type as the perturbed cell.
+        Uses Python's random.choice instead of NumPy's random.choice for potentially better performance.
         """
-        # Get the cell type of the perturbed cell.
+        # Get the cell type of the perturbed cell
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
         pool = self.split_control_pool[split].get(pert_cell_type, None)
         
-        # Return None if there is no pool or the pool is empty.
+        # Return None if there is no pool or the pool is empty
         if not pool:
             return None
 
-        # Return a single random control index from the pool.
-        return self.rng.choice(pool)
+        # Use Python's random.choice to select a single item
+        return random.choice(pool)
