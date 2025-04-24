@@ -261,6 +261,14 @@ class LitUCEModel(L.LightningModule):
         else:
             raise ValueError(f"Unsupported dataset: {self.cfg.dataset.current}")
 
+        # if self.cfg.dataset.current == "scbasecamp": 
+        #     gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
+        # elif self.cfg.dataset.current in ["cellxgene", "scbasecamp-cellxgene"]: # use convert_symbols_to_ensembl(adata) or adata.var.index
+        #     # not sure about this change, may need to debug further 
+        #     gene_embeds = self.get_gene_embedding(adata.var.index)
+        # else:
+        #     raise ValueError(f"Unsupported dataset: {self.cfg.dataset.current}")
+        
         logprobs_batchs = []
         for batch in tqdm(dataloader,
                           position=0,
