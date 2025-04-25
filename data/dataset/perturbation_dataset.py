@@ -16,7 +16,6 @@ import h5py
 import numpy as np
 from pathlib import Path
 import logging
-import time
 
 # We import our mapping strategy base class for type hints
 from data.mapping_strategies import BaseMappingStrategy

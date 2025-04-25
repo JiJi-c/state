@@ -321,7 +321,7 @@ def train(cfg: DictConfig) -> None:
         cfg["training"].get("ckpt_every_n_steps", 4000),
     )
     # Add BatchSpeedMonitorCallback to log batches per second to wandb
-    batch_speed_monitor = BatchSpeedMonitorCallback(logging_interval=10)
+    batch_speed_monitor = BatchSpeedMonitorCallback()
     callbacks = ckpt_callbacks + [batch_speed_monitor]
 
     logger.info('Loggers and callbacks set up.')

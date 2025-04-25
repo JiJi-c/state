@@ -8,7 +8,7 @@ class BatchSpeedMonitorCallback(Callback):
     Callback that logs the number of batches processed per second to wandb.
     """
 
-    def __init__(self, logging_interval=10):
+    def __init__(self, logging_interval=50):
         """
         Args:
             logging_interval: Log the speed every N batches

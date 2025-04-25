@@ -50,7 +50,7 @@ class RandomMappingStrategy(BaseMappingStrategy):
     def get_control_indices(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int) -> np.ndarray:
         """
         Returns n_basal_samples control indices that are from the same cell type as the perturbed cell.
-        Uses Python's random.choice instead of NumPy's random.choice for potentially better performance.
+        Uses Python's random.choice instead of NumPy's random.choice for better performance.
         """
         # Get the cell type of the perturbed cell
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
