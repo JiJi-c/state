@@ -344,7 +344,6 @@ def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
         df['abs_log_fold_change'] = np.abs(df['log_fold_change'].fillna(0))
     
     target_genes = DE_true_df['target'].unique()
-    breakpoint()
 
     with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(DE_pred_df, DE_true_df)) as pool:
         func = partial(compute_downstream_DE_metrics_parallel, p_value_threshold=p_value_threshold)
