@@ -56,7 +56,6 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
-    outdir = '/home/yhr/pert-sets'
     relevant_perts = adata_pred.obs[pert_col].unique().tolist()[:5]
     relevant_perts = relevant_perts + ['non-targeting']
     adata_pred = adata_pred[adata_pred.obs[pert_col].isin(relevant_perts)]
