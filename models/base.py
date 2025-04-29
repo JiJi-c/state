@@ -286,25 +286,6 @@ class PerturbationModel(ABC, LightningModule):
 
         return {"loss": loss, "predictions": pred}
 
-    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        """Track decoder performance during validation without training it."""
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            # Get model predictions from validation step
-            latent_preds = outputs["predictions"]
-            batch_var = batch["gem_group"]
-            # concatenate on the last axis
-            latent_preds = torch.cat([latent_preds, batch_var], dim=-1) if self.batch_dim is not None else latent_preds
-            
-            # Get decoder predictions
-            gene_preds = self.gene_decoder(latent_preds)
-            gene_targets = batch["X_hvg"]
-            
-            # Compute loss (but don't backprop)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets)
-            
-            # Log the validation metric
-            self.log("decoder_val_loss", decoder_loss)
-
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         latent_output = self(batch)
         target = batch[self.embed_key]
