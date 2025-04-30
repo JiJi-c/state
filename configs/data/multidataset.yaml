@@ -27,5 +27,7 @@ kwargs:
   map_controls: true # for a control cell, should we use it as the target (learn identity) or sample a control?
   normalize_counts: false # should we normalize the hvg counts before taking the log transform?
   perturbation_features_file: null
+  store_raw_basal: ${model.kwargs.residual_decoder}
+  int_counts: ${model.kwargs.nb_decoder}
 output_dir: null
 debug: true

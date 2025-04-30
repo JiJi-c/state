@@ -57,12 +57,7 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
-    outdir = '/home/yhr/pert-sets'
-    relevant_perts = adata_pred.obs[pert_col].unique().tolist()[:100]
-    relevant_perts = relevant_perts + ['non-targeting']
-    adata_pred = adata_pred[adata_pred.obs[pert_col].isin(relevant_perts)]
-    adata_real = adata_real[adata_real.obs[pert_col].isin(relevant_perts)]
-    
+
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
@@ -100,6 +95,25 @@ def compute_metrics(
                 celltype_col=celltype_col,
             )
 
+            adata_pred_gene_control = None
+            adata_real_gene_control = None
+            if adata_pred_gene is not None and adata_real_gene is not None:
+                adata_pred_gene_control = get_samples_by_pert_and_celltype(
+                    adata_pred_gene,
+                    pert=control_pert,
+                    celltype=celltype,
+                    pert_col=pert_col,
+                    celltype_col=celltype_col,
+                )
+                
+                adata_real_gene_control = get_samples_by_pert_and_celltype(
+                    adata_real_gene,
+                    pert=control_pert,
+                    celltype=celltype,
+                    pert_col=pert_col,
+                    celltype_col=celltype_col,
+                )
+
             # only evaluate on perturbations that are shared between the train and test sets
             if shared_perts:
                 all_perts = shared_perts & pred_celltype_pert_dict[celltype]
@@ -109,6 +123,14 @@ def compute_metrics(
 
             pred_groups = adata_pred.obs[adata_pred.obs[celltype_col] == celltype].groupby(pert_col).indices
             real_groups = adata_real.obs[adata_real.obs[celltype_col] == celltype].groupby(pert_col).indices
+
+            # Get sample indices for count space if gene data is provided
+            pred_gene_groups = None
+            real_gene_groups = None
+            if adata_pred_gene is not None and adata_real_gene is not None:
+                pred_gene_groups = adata_pred_gene.obs[adata_pred_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+                real_gene_groups = adata_real_gene.obs[adata_real_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+
 
             # use tqdm to track progress
             for pert in tqdm(all_perts, desc=f"Computing metrics for {celltype}", leave=False):
@@ -155,6 +177,43 @@ def compute_metrics(
                             include_dist_metrics=include_dist_metrics,
                         )
 
+                        # Add metrics for counts space if gene data is provided
+                        if adata_pred_gene is not None and adata_real_gene is not None and pred_gene_groups is not None and real_gene_groups is not None:
+                            # Get indices for counts space
+                            pred_gene_idx = pred_gene_groups.get(pert, [])
+                            true_gene_idx = real_gene_groups.get(pert, [])
+                            
+                            if len(pred_gene_idx) > 0 and len(true_gene_idx) > 0:
+                                # Extract data slices for counts space
+                                adata_pred_gene_pert = adata_pred_gene[pred_gene_idx]
+                                adata_real_gene_pert = adata_real_gene[true_gene_idx]
+                                
+                                # Get the predictions and true values for counts space
+                                pert_preds_gene = to_dense(adata_pred_gene_pert.X)
+                                pert_true_gene = to_dense(adata_real_gene_pert.X)
+                                control_true_gene = to_dense(adata_real_gene_control.X)
+                                control_preds_gene = to_dense(adata_pred_gene_control.X)
+                                
+                                # If matrix is sparse convert to dense
+                                try:
+                                    pert_true_gene = pert_true_gene.toarray()
+                                    control_true_gene = control_true_gene.toarray()
+                                except:
+                                    pass
+                                
+                                # Compute metrics for counts space
+                                gene_metrics = _compute_metrics_dict(
+                                    pert_preds_gene,
+                                    pert_true_gene,
+                                    control_true_gene,
+                                    control_preds_gene,
+                                    suffix="cell_type_counts",
+                                    include_dist_metrics=include_dist_metrics,
+                                )
+                                
+                                # Add counts metrics to current metrics
+                                curr_metrics.update(gene_metrics)
+
                         metrics[celltype]["pert"].append(pert)
                         for k, v in curr_metrics.items():
                             metrics[celltype][k].append(v)
@@ -166,15 +225,29 @@ def compute_metrics(
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
 
+
+            # filter adata_real and adata_pred to only include control and shared perturbations
+            assert control_pert in all_perts
+            all_perts = list(all_perts)
+            adata_real_ct.obs[pert_col] = pd.Categorical(adata_real_ct.obs[pert_col])
+            adata_real_ct = adata_real_ct[adata_real_ct.obs[pert_col].isin(all_perts)]
+
+            adata_pred_ct.obs[pert_col] = pd.Categorical(adata_pred_ct.obs[pert_col])
+            adata_pred_ct = adata_pred_ct[adata_pred_ct.obs[pert_col].isin(all_perts)]
+
             # gene level metrics may not be available if the output_space was specified to be latent
             adata_real_gene_ct = None
             adata_pred_gene_ct = None
             if adata_real_gene is not None:
                 logger.info(f"Using gene expression data for true {celltype}")
                 adata_real_gene_ct = adata_real_gene[adata_real_gene.obs[celltype_col] == celltype]
+                adata_real_gene_ct.obs[pert_col] = pd.Categorical(adata_real_gene_ct.obs[pert_col])
+                adata_real_gene_ct = adata_real_gene_ct[adata_real_gene_ct.obs[pert_col].isin(all_perts)]
             if adata_pred_gene is not None:
                 logger.info(f"Using gene expression data for pred {celltype}")
                 adata_pred_gene_ct = adata_pred_gene[adata_pred_gene.obs[celltype_col] == celltype]
+                adata_pred_gene_ct.obs[pert_col] = pd.Categorical(adata_pred_gene_ct.obs[pert_col])
+                adata_pred_gene_ct = adata_pred_gene_ct[adata_pred_gene_ct.obs[pert_col].isin(all_perts)]
 
             if DE_metric_flag:
                 ## Compute differential expression at the full adata level for speed
@@ -291,7 +364,7 @@ def compute_metrics(
 
                 # Compute additional DE metrics
                 print("Computing additional metrics")
-                get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir='./', 
+                get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir=outdir, 
                                           celltype=celltype, n_workers=None, p_value_threshold=0.05)
 
             if class_score_flag:
