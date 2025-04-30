@@ -104,7 +104,7 @@ class FinetuneVCICountsDecoder(nn.Module):
         self.config = config
         self.finetune = Finetune(OmegaConf.load(self.config))
         self.finetune.load_model(self.model_loc)
-        self.read_depth = nn.Parameter(torch.tensor(read_depth, dtype=torch.float), requires_grad=True)
+        self.read_depth = nn.Parameter(torch.tensor(read_depth, dtype=torch.float), requires_grad=False)
         self.basal_residual = basal_residual
 
         # layers = [
