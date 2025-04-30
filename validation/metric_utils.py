@@ -28,6 +28,15 @@ from adjustpy import adjust
 from scipy.stats import ranksums
 from tqdm import tqdm
 
+import numpy as np
+import scanpy as sc
+from sklearn.metrics import (
+    adjusted_mutual_info_score,
+    normalized_mutual_info_score,
+    adjusted_rand_score,
+)
+from typing import Iterable, Union, Literal, Sequence
+
 from models.base import DecoderInterface
 
 import pandas as pd
@@ -339,6 +348,132 @@ def compute_sig_gene_spearman(true_counts, pred_counts, pert_list):
     # Compute and return the Spearman correlation coefficient
     corr, _ = spearmanr(true_list, pred_list)
     return corr
+
+
+def _score(
+    labels_true: Sequence[int],
+    labels_pred: Sequence[int],
+    metric: Literal["ami", "nmi", "ari"] = "ami",
+) -> float:
+    if metric == "ami":
+        return adjusted_mutual_info_score(labels_true, labels_pred)
+    if metric == "nmi":
+        return normalized_mutual_info_score(labels_true, labels_pred)
+    if metric == "ari":
+        return (adjusted_rand_score(labels_true, labels_pred) + 1) / 2
+    raise ValueError(f"Unknown metric: {metric}")
+
+
+def _cluster_leiden(
+    adata: sc.AnnData,
+    *,
+    resolution: float,
+    key_added: str,
+    n_neighbors: int = 15,
+) -> None:
+    """
+    Leiden clustering on `adata` (in-place).  Re-uses pre-computed graph if present.
+    """
+    if key_added in adata.obs:
+        return
+    if "neighbors" not in adata.uns:
+        knn = min(n_neighbors, adata.n_obs - 1)
+        sc.pp.neighbors(adata, n_neighbors=knn, use_rep="X")
+    sc.tl.leiden(adata, resolution=resolution, key_added=key_added)
+
+
+def _centroid_ann(
+    adata: sc.AnnData,
+    *,
+    category_key: str,
+    embed_key: str | None = "X_pca",
+) -> sc.AnnData:
+    """
+    Build a new AnnData with **one row per perturbation category** whose `.X`
+    contains the centroid (mean) of that category in the chosen feature space.
+
+    If `embed_key` is `None` or not found, fall back to `adata.X`.
+    """
+    feats = adata.obsm[embed_key] if embed_key and embed_key in adata.obsm else adata.X
+    cats = adata.obs[category_key].values
+    unique_cats, inv = np.unique(cats, return_inverse=True)
+
+    centroids = np.zeros((unique_cats.size, feats.shape[1]), dtype=feats.dtype)
+    np.add.at(centroids, inv, feats)
+    counts = np.bincount(inv)
+    centroids /= counts[:, None]
+
+    ad_centroids = sc.AnnData(X=centroids)
+    ad_centroids.obs[category_key] = unique_cats
+    return ad_centroids
+
+def compute_clustering_agreement(
+    adata_real: sc.AnnData,
+    adata_pred: sc.AnnData,
+    perturb_key: str = "pert_name",
+    embed_key: str | None = "X_vci",
+    true_resolution: float = 1.0,
+    pred_resolutions: Iterable[float] = (0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0),
+    metric: Literal["ami", "nmi", "ari"] = "ami",
+    n_neighbors: int = 15,
+) -> float:
+    """
+    Cluster *centroids* (one per perturbation) in the real and predicted spaces
+    and return the best clustering-similarity score across `pred_resolutions`.
+
+    The two AnnData objects need only share the same set of perturbation
+    categories (checked explicitly); cell identities may differ.
+    """
+    # 1. Verify that perturbation categories match
+    cats_real = set(adata_real.obs[perturb_key].unique())
+    cats_pred = set(adata_pred.obs[perturb_key].unique())
+    if cats_real != cats_pred:
+        raise ValueError(
+            "Perturbation category mismatch:\n"
+            f"  only-in-real : {sorted(cats_real - cats_pred)}\n"
+            f"  only-in-pred : {sorted(cats_pred - cats_real)}"
+        )
+    cats_sorted = sorted(cats_real)
+
+    # 2. Build centroid AnnData objects (one row per perturbation)
+    ad_real_cent = _centroid_ann(adata_real, category_key=perturb_key, embed_key=embed_key)
+    ad_pred_cent = _centroid_ann(adata_pred, category_key=perturb_key, embed_key=embed_key)
+
+    # 3. Cluster real centroids once
+    real_key = "real_clusters"
+    _cluster_leiden(
+        ad_real_cent,
+        resolution=true_resolution,
+        key_added=real_key,
+        n_neighbors=n_neighbors,
+    )
+    ad_real_cent.obs = ad_real_cent.obs.set_index('pert_name')
+    ad_real_cent.obs = ad_real_cent.obs.loc[cats_sorted]
+    real_labels = pd.Categorical(ad_real_cent.obs[real_key])
+
+    # 4. Sweep resolutions on predicted centroids
+    best_score = 0.0
+    ad_pred_cent.obs = ad_pred_cent.obs.set_index('pert_name', drop=False)
+    ad_pred_cent.obs = ad_pred_cent.obs.loc[cats_sorted]
+
+    for r in pred_resolutions:
+        pred_key = f"pred_clusters_{r:g}"
+        _cluster_leiden(
+            ad_pred_cent,
+            resolution=r,
+            key_added=pred_key,
+            n_neighbors=n_neighbors,
+        )
+        pred_labels = pd.Categorical(ad_pred_cent.obs[pred_key])
+        #pred_labels = (
+        #    pd.Categorical(ad_pred_cent.obs[pred_key]).reindex(cats_sorted).codes
+        #)
+
+        best_score = max(best_score, _score(real_labels, pred_labels, metric))
+
+    breakpoint()
+    return float(best_score)
+
 
 
 def compute_directionality_agreement(DE_true_df, DE_pred_df, pert_list, p_val_thresh=0.05):
