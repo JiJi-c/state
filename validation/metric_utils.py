@@ -471,7 +471,6 @@ def compute_clustering_agreement(
 
         best_score = max(best_score, _score(real_labels, pred_labels, metric))
 
-    breakpoint()
     return float(best_score)
 
 
