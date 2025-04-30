@@ -11,6 +11,7 @@ from validation.metric_utils import (
     compute_DE_for_truth_and_pred,
     compute_perturbation_ranking_score,
     compute_pearson_delta_batched,
+    compute_clustering_agreement,
     compute_downstream_DE_metrics,
     compute_sig_gene_counts,
     compute_sig_gene_spearman,
@@ -56,6 +57,7 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
+
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
@@ -266,6 +268,9 @@ def compute_metrics(
                     outdir=outdir,
                 )
 
+                clustering_agreement = compute_clustering_agreement(adata_real, adata_pred, embed_key=None)
+                metrics[celltype]['clustering_agreement'] = clustering_agreement
+
                 # Compute overlap for fold change-based DE
                 DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert, k=50)
                 metrics[celltype]['DE_fc'] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
@@ -321,12 +326,13 @@ def compute_metrics(
                 metrics[celltype]['DE_sig_genes_spearman'] = spearman_corr
 
 
-                # 3. Compute the directionality agreement.
+                # Compute the directionality agreement.
                 directionality_agreement = compute_directionality_agreement(DE_true_df, DE_pred_df, only_perts)
                 metrics[celltype]['DE_direction_match'] = [directionality_agreement.get(p, np.nan) for p in only_perts]
                 metrics[celltype]['DE_direction_match_avg'] = np.nanmean(list(directionality_agreement.values()))
 
-
+                # Compute clustering overlap
+            
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
                 de_true_genes_col = []
