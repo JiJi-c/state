@@ -82,8 +82,65 @@ def parse_args():
         ],
         help="Override the mapping strategy at inference time (optional).",
     )
+    parser.add_argument(
+        "--test_time_finetune",
+        type=int,
+        default=0,
+        help="If >0, run test-time fine-tuning for the specified number of epochs on only control cells.",
+    )
+
     return parser.parse_args()
 
+def run_test_time_finetune(model, dataloader, ft_epochs, control_pert, device):
+    """
+    Perform test-time fine-tuning on only control cells.
+
+    For each batch, we check the first sample’s perturbation label (since all
+    samples in the batch share the same group). If it equals the control perturbation,
+    we process the batch; otherwise, we skip it.
+
+    Arguments:
+        model: the loaded model to be fine-tuned.
+        dataloader: the test dataloader (which samples cells as in your test split).
+        ft_epochs: number of epochs to run fine-tuning.
+        control_pert: the control perturbation name (from data.kwargs.control_pert).
+        device: the device where the model is located.
+    """
+    model.train()
+    # Use a small learning rate for test-time fine-tuning
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+
+    logger.info(f"Starting test-time fine-tuning for {ft_epochs} epoch(s) on control cells only.")
+    for epoch in range(ft_epochs):
+        epoch_losses = []
+        pbar = tqdm(dataloader, desc=f"Finetune epoch {epoch+1}/{ft_epochs}", leave=True)
+        for batch in pbar:
+            # Peek at the first perturbation name in this batch.
+            first_pert = (
+                batch["pert_name"][0]
+                if isinstance(batch["pert_name"], list)
+                else batch["pert_name"][0].item()
+            )
+            if first_pert != control_pert:
+                continue
+
+            # Move batch data to the model's device.
+            batch = {
+                k: (v.to(device) if torch.is_tensor(v) else v)
+                for k, v in batch.items()
+            }
+
+            optimizer.zero_grad()
+            loss = model.training_step(batch, batch_idx=0, padded=False)
+            if loss is None:
+                continue
+            loss.backward()
+            optimizer.step()
+            epoch_losses.append(loss.item())
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
+        mean_loss = np.mean(epoch_losses) if epoch_losses else float("nan")
+        logger.info(f"Finetune epoch {epoch+1}/{ft_epochs}, mean loss: {mean_loss}")
+    model.eval()
 
 def load_config(cfg_path: str) -> dict:
     """
@@ -220,8 +277,14 @@ def main():
     model.eval()
     logger.info("Model loaded successfully.")
 
-    # TODO - add batch size parameter properly
-    # data_module.batch_size = 1
+    data_module.batch_size = 1
+    if args.test_time_finetune > 0:
+        # Get the control perturbation from the data module
+        control_pert = data_module.get_control_pert()
+        # Run finetuning – use the test dataloader so that you only get cells from the test split.
+        test_loader = data_module.test_dataloader()
+        run_test_time_finetune(model, test_loader, args.test_time_finetune, control_pert, device=next(model.parameters()).device)
+        logger.info("Test-time fine-tuning complete.")
 
     # 5. Run inference on test set
     data_module.setup(stage="test")
@@ -233,20 +296,43 @@ def main():
 
     num_cells = test_loader.batch_sampler.tot_num
     output_dim = var_dims["output_dim"]
+    gene_dim = var_dims["gene_dim"]
+    hvg_dim = var_dims["hvg_dim"]
 
     logger.info("Generating predictions on test set using manual loop...")
     device = next(model.parameters()).device
 
     final_preds = np.empty((num_cells, output_dim), dtype=np.float16)
     final_reals = np.empty((num_cells, output_dim), dtype=np.float16)
+
+    store_raw_expression = (
+        data_module.embed_key is not None and 
+        data_module.embed_key != "X_hvg" and 
+        cfg["data"]["kwargs"]["output_space"] == "gene"
+    ) or (
+        data_module.embed_key is not None and 
+        cfg["data"]["kwargs"]["output_space"] == "all"
+    )
+
+    if store_raw_expression:
+        # Preallocate matrices of shape (num_cells, gene_dim) for decoded predictions.
+        if cfg["data"]["kwargs"]["output_space"] == "gene":
+            final_X_hvg = np.empty((num_cells, hvg_dim), dtype=np.float16)
+            final_gene_preds = np.empty((num_cells, hvg_dim), dtype=np.float16)
+        if cfg["data"]["kwargs"]["output_space"] == "all":
+            final_X_hvg = np.empty((num_cells, gene_dim), dtype=np.float16)
+            final_gene_preds = np.empty((num_cells, gene_dim), dtype=np.float16)
+    else:
+        # Otherwise, use lists for later concatenation.
+        final_X_hvg = None
+        final_gene_preds = None
+
     current_idx = 0
 
     # Initialize aggregation variables directly
     all_pert_names = []
     all_celltypes = []
     all_gem_groups = []
-    all_X_hvg = []
-    all_gene_preds = []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
@@ -286,33 +372,18 @@ def main():
             current_idx += batch_size
             
             # Handle X_hvg for HVG space ground truth
-            if "X_hvg" in batch_preds and batch_preds["X_hvg"] is not None:
-                all_X_hvg.append(batch_preds["X_hvg"].cpu().numpy().astype(np.float16))
-            else:
-                all_X_hvg.append(None)
+            if final_X_hvg is not None:
+                batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
+                final_X_hvg[current_idx-batch_size:current_idx, :] = batch_real_gene_np
             
             # Handle decoded gene predictions if available
-            if "gene_preds" in batch_preds and batch_preds["gene_preds"] is not None:
-                all_gene_preds.append(batch_preds["gene_preds"].cpu().numpy().astype(np.float16))
-            else:
-                all_gene_preds.append(None)
+            if final_gene_preds is not None:
+                batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
+                final_gene_preds[current_idx-batch_size:current_idx, :] = batch_gene_pred_np
 
-    logger.info("Aggregating predictions from manual loop...")
 
-    # Handle HVG ground truth if available
-    if any(x is not None for x in all_X_hvg):
-        final_X_hvg = np.concatenate([x for x in all_X_hvg if x is not None], axis=0)
-    else:
-        final_X_hvg = None
+    logger.info("Creating anndatas from predictions from manual loop...")
 
-    # Handle decoded gene predictions if available
-    if any(x is not None for x in all_gene_preds):
-        final_gene_preds = np.concatenate([x for x in all_gene_preds if x is not None], axis=0)
-    else:
-        final_gene_preds = None
-
-    del all_X_hvg, all_gene_preds
-    gc.collect()
 
     # Build pandas DataFrame for obs
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
@@ -336,11 +407,15 @@ def main():
     # Create adata for real data in gene space (if available)
     adata_real_gene = None
     if final_X_hvg is not None: # either this is available, or we are already working in gene space
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
+            final_X_hvg = np.log1p(final_X_hvg)
         adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs)
 
     # Create adata for gene predictions (if available)
     adata_pred_gene = None
     if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
+            final_gene_preds = np.log1p(final_gene_preds)
         adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
 
     # # save out adata_real to the output directory

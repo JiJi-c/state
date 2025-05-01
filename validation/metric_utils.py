@@ -1078,7 +1078,7 @@ def vectorized_de(de_results, control_pert, sort_by='abs_fold_change'):
     k : int
         Number of top genes to return for each perturbation
     sort_by : str
-        Metric to sort by ('abs_fold_change' or 'p_value')
+        Metric to sort by ('abs_log_fold_change' or 'p_value')
         
     Returns
     -------
@@ -1089,7 +1089,7 @@ def vectorized_de(de_results, control_pert, sort_by='abs_fold_change'):
     df = de_results[de_results['target'] != control_pert]
     
     # Compute absolute fold change (if not already computed)
-    df['abs_fold_change'] = df['fold_change'].abs()
+    df['abs_log_fold_change'] = df['fold_change'].abs()
 
     if df[sort_by].dtype == 'float16':
         df[sort_by] = df[sort_by].astype('float32')

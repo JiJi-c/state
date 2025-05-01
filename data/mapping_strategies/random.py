@@ -19,6 +19,9 @@ class RandomMappingStrategy(BaseMappingStrategy):
             "test": {},
         }
 
+    def name():
+        return "random"
+
     def register_split_indices(self, dataset: "PerturbationDataset", split: str,
                                  perturbed_indices: np.ndarray, control_indices: np.ndarray):
         """
@@ -39,7 +42,7 @@ class RandomMappingStrategy(BaseMappingStrategy):
                 self.split_control_pool[split][ct] = list(ct_indices)
             else:
                 self.split_control_pool[split][ct].extend(ct_indices)
-
+# # 
     def get_control_indices(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int) -> np.ndarray:
         """
         Returns n_basal_samples control indices that are from the same cell type as the perturbed cell.
@@ -50,3 +53,18 @@ class RandomMappingStrategy(BaseMappingStrategy):
         if pool is None or len(pool) == 0: # will pool ever be None?
             return None
         return self.rng.choice(pool, size=self.n_basal_samples, replace=True)
+
+    def get_control_index(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int):
+        """
+        Returns a single control index from the same cell type as the perturbed cell.
+        """
+        # Get the cell type of the perturbed cell.
+        pert_cell_type = dataset.get_cell_type(perturbed_idx)
+        pool = self.split_control_pool[split].get(pert_cell_type, None)
+        
+        # Return None if there is no pool or the pool is empty.
+        if not pool:
+            return None
+
+        # Return a single random control index from the pool.
+        return self.rng.choice(pool)

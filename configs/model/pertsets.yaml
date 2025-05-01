@@ -13,6 +13,11 @@ kwargs:
   predict_residual: True
   softplus: True
   freeze_pert: False
+  transformer_decoder: False
+  finetune_vci_decoder: False
+  residual_decoder: False
+  batch_encoder: False
+  nb_decoder: False
   distributional_loss: energy
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
