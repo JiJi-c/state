@@ -14,6 +14,7 @@ GENE_NAME_ENSEMPLE_MAP = {
     'GATD3B': 'ENSG00000160221',
     'PBK': 'ENSG00000168078',
     'NEPRO': 'ENSG00000163608'
+    'HSPA14-1': 'ENSG00000187522',
 }
 
 def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):

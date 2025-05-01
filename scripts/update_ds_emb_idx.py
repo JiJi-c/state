@@ -61,7 +61,7 @@ if __name__ == '__main__':
                               args.emb_idx_file)
 
     filetype = Path(args.dataset_file).suffix
-    if filetype == '.h5ad':
+    if filetype == '.h5ad' or filetype == '.h5':
         adata = anndata.read_h5ad(args.dataset_file)
         adata = convert_symbols_to_ensembl(adata)
         adata.write(args.dataset_file)

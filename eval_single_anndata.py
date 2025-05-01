@@ -40,6 +40,7 @@ def parse_args():
                         help="Dataset name to be used in dataloader creation")
     parser.add_argument("--gpu", action="store_true", help="Use GPU if available")
     parser.add_argument("--filter", action="store_true", help="Filter gene set to our esm embeddings only.")
+    parser.add_argument("--embed-key", help="Name of key to store")
     
     return parser.parse_args()
 
@@ -51,7 +52,7 @@ def main():
     inferer = Inference(conf)
     inferer.load_model(args.checkpoint)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    inferer.encode_adata(args.input, args.output, emb_key='X_vci', dataset_name=args.dataset_name)
+    inferer.encode_adata(args.input, args.output, emb_key=args.embed_key, dataset_name=args.dataset_name)
 
 if __name__ == "__main__":
     main()

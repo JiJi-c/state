@@ -145,7 +145,7 @@ class Inference():
                      dataset_name = None,
                      batch_size: int = 32,):
         shape_dict = self.__load_dataset_meta(input_adata_path)
-        adata = anndata.read(input_adata_path)
+        adata = anndata.read_h5ad(input_adata_path)
         if dataset_name is None:
             dataset_name = Path(input_adata_path).stem
 

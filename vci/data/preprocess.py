@@ -111,8 +111,8 @@ class Preprocessor:
                 idxs = []
                 for k in cat_data:
                     k = k.decode('utf-8')
-                    if lower:
-                        k = k.lower()
+                    # if lower:
+                    #     k = k.lower()
 
                     if k in self.gene_filter:
                         idx = self.gene_filter.index(k) + self.emb_offset
