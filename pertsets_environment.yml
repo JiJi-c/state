@@ -434,4 +434,6 @@ dependencies:
       - xarray==2024.10.0
       - yarl==1.18.0
       - zict==3.0.0
+      - igraph==0.11.8
+      - leidenalg==0.10.2
 prefix: /home/aadduri/miniconda/envs/pertsets

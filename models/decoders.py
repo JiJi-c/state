@@ -94,7 +94,7 @@ class FinetuneVCICountsDecoder(nn.Module):
         config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/large_1e-4_rda_tabular_counts_2048/crossds_config.yaml",
         read_depth=70,
         latent_dim=1024, # dimension of pretrained vci model
-        hidden_dims=[256, 512], # hidden dimensions of the decoder
+        hidden_dims=[512, 512, 512], # hidden dimensions of the decoder
         dropout=0.1,
         basal_residual=False,
     ):
@@ -147,7 +147,7 @@ class FinetuneVCICountsDecoder(nn.Module):
         # Handle RDA task counts
         use_rda = getattr(self.finetune.model.cfg.model, "rda", False)
         # Define your sub-batch size (tweak this based on your available memory)
-        sub_batch_size = 32
+        sub_batch_size = 16
         logprob_chunks = []  # to store outputs of each sub-batch
 
         for i in range(0, x.shape[0], sub_batch_size):
