@@ -57,7 +57,6 @@ def compute_metrics(
     shared_perts=None,
     outdir=None, # output directory to store raw de results
 ):
-
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
 
@@ -262,7 +261,6 @@ def compute_metrics(
                     control_pert=control_pert,
                     pert_col=pert_col,
                     n_top_genes=2000,  # default HVG
-                    k_de_genes=50,
                     output_space=output_space,
                     model_decoder=decoder,
                     outdir=outdir,
@@ -295,6 +293,10 @@ def compute_metrics(
                 metrics[celltype]['DE_pval_fc_200'] = [DE_metrics_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]]
                 metrics[celltype]['DE_pval_fc_avg_200'] = np.mean(list(DE_metrics_pval_fc_200.values()))
 
+                # Variable k
+                DE_metrics_pval_fc_N = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=-1)
+                metrics[celltype]['DE_pval_fc_N'] = [DE_metrics_pval_fc_N.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]['DE_pval_fc_avg_N'] = np.mean(list(DE_metrics_pval_fc_N.values()))
 
                 # Compute precision at k for fold change-based DE thresholded with p-values
                 DE_metrics_patk_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=50)
