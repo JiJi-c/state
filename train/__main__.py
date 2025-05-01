@@ -28,7 +28,7 @@ from models import (
     DecoderOnlyPerturbationModel,
     PseudobulkPerturbationModel
 )
-from callbacks import GradNormCallback
+from callbacks import GradNormCallback, BatchSpeedMonitorCallback
 
 import logging
 
@@ -331,8 +331,9 @@ def train(cfg: DictConfig) -> None:
         cfg["training"]["val_freq"],
         cfg["training"].get("ckpt_every_n_steps", 4000),
     )
-    # callbacks = ckpt_callbacks + [GradNormCallback()]
-    callbacks = ckpt_callbacks
+    # Add BatchSpeedMonitorCallback to log batches per second to wandb
+    batch_speed_monitor = BatchSpeedMonitorCallback()
+    callbacks = ckpt_callbacks + [batch_speed_monitor]
 
     logger.info('Loggers and callbacks set up.')
 

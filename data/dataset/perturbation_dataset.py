@@ -172,7 +172,7 @@ class PerturbationDataset(Dataset):
         # Map idx to the underlying file index
         underlying_idx = int(self.all_indices[idx])
         split = self._find_split_for_idx(underlying_idx)
-
+        
         # Get expression from the h5 file.
         # For now, we assume the data is stored in "X" (could be counts) and/or in obsm (embed_key)
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
@@ -346,52 +346,88 @@ class PerturbationDataset(Dataset):
     @staticmethod
     def collate_fn(batch, transform=False, pert_col="drug", int_counts=False):
         """
-        Custom collate that reshapes data into sequences.
+        Optimized collate function with preallocated lists.
         Safely handles normalization when vectors sum to zero.
         """
-        # First do normal collation
+        # Get batch size
+        batch_size = len(batch)
+        
+        # Preallocate lists with exact size
+        X_list = [None] * batch_size
+        basal_list = [None] * batch_size
+        pert_list = [None] * batch_size
+        pert_name_list = [None] * batch_size
+        cell_type_list = [None] * batch_size
+        gem_group_list = [None] * batch_size
+        gem_group_name_list = [None] * batch_size
+        
+        # Check if optional fields exist
+        has_X_hvg = "X_hvg" in batch[0]
+        has_basal_hvg = "basal_hvg" in batch[0]
+        
+        # Preallocate optional lists if needed
+        if has_X_hvg:
+            X_hvg_list = [None] * batch_size
+        
+        if has_basal_hvg:
+            basal_hvg_list = [None] * batch_size
+        
+        # Process all items in a single pass
+        for i, item in enumerate(batch):
+            X_list[i] = item["X"]
+            basal_list[i] = item["basal"]
+            pert_list[i] = item["pert"]
+            pert_name_list[i] = item["pert_name"]
+            cell_type_list[i] = item["cell_type"]
+            gem_group_list[i] = item["gem_group"]
+            gem_group_name_list[i] = item["gem_group_name"]
+            
+            if has_X_hvg:
+                X_hvg_list[i] = item["X_hvg"]
+            
+            if has_basal_hvg:
+                basal_hvg_list[i] = item["basal_hvg"]
+        
+        # Create batch dictionary
         batch_dict = {
-            "X": torch.stack([item["X"] for item in batch]),
-            "basal": torch.stack([item["basal"] for item in batch]),
-            "pert": torch.stack([item["pert"] for item in batch]),
-            "pert_name": [item["pert_name"] for item in batch],
-            "cell_type": [item["cell_type"] for item in batch],
-            "gem_group": torch.stack([item["gem_group"] for item in batch]),
-            "gem_group_name": [item["gem_group_name"] for item in batch],
+            "X": torch.stack(X_list),
+            "basal": torch.stack(basal_list),
+            "pert": torch.stack(pert_list),
+            "pert_name": pert_name_list,
+            "cell_type": cell_type_list,
+            "gem_group": torch.stack(gem_group_list),
+            "gem_group_name": gem_group_name_list,
         }
         
-        # If the first sample has "X_hvg", assume the entire batch does
-        if "X_hvg" in batch[0]:
-            X_hvg = torch.stack([item["X_hvg"] for item in batch])
+        is_tahoe = pert_col == "drug" or pert_col == "drugname_drugconc"
+        
+        # Process X_hvg if present
+        if has_X_hvg:
+            X_hvg = torch.stack(X_hvg_list)
             
-            # Handle Tahoe dataset (needs log transform)
-            if pert_col == "drug" or pert_col == "drugname_drugconc":
+            if is_tahoe:
                 batch_dict["X_hvg"] = torch.log1p(X_hvg)
+            elif int_counts:
+                batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
             else:
-                # this is for log transformed data. let's make it count data
-                if int_counts:
-                    batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
-                else:
-                    batch_dict["X_hvg"] = X_hvg
+                batch_dict["X_hvg"] = X_hvg
 
-        # If the first sample has "basal_hvg", assume the entire batch does
-        if "basal_hvg" in batch[0]: # either control hvg gene space or 19k gene space
-            basal_hvg = torch.stack([item["basal_hvg"] for item in batch])
-
-            # Handle Tahoe dataset (needs log transform)
-            if pert_col == "drug" or pert_col == "drugname_drugconc":
+        # Process basal_hvg if present
+        if has_basal_hvg:
+            basal_hvg = torch.stack(basal_hvg_list)
+            
+            if is_tahoe:
                 batch_dict["basal_hvg"] = torch.log1p(basal_hvg)
             else:
                 batch_dict["basal_hvg"] = basal_hvg
         
         # Apply transform if provided
         if transform:
-            # Original behavior: just log transform without normalization
             batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])
         
         return batch_dict
-
+    
     ##############################
     # Utility methods
     ##############################
