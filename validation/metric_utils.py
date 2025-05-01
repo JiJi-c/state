@@ -248,12 +248,15 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
             true_genes = [gene for gene in DE_true.loc[c].values if pd.notnull(gene)]
             pred_genes = [gene for gene in DE_pred.loc[c].values if pd.notnull(gene)]
             
-            # Use only the top k predicted genes (if available).
+            # If k=-1, then set k to be the number of true DE genes
+            if k == -1:
+                k = len(true_genes)
 
+            # Use only the top k predicted genes (if available).
             if k is not None:
-                pred_genes = pred_genes[:k]
                 true_genes = true_genes[:k]
-            
+                pred_genes = pred_genes[:len(true_genes)]
+
             elif topk is not None:
                 pred_genes = pred_genes[:topk]
             
@@ -471,7 +474,6 @@ def compute_clustering_agreement(
 
         best_score = max(best_score, _score(real_labels, pred_labels, metric))
 
-    breakpoint()
     return float(best_score)
 
 
@@ -536,7 +538,6 @@ def compute_DE_for_truth_and_pred(
     control_pert: str,
     pert_col: str = "gene",
     n_top_genes: int = 2000,  # HVG cutoff
-    k_de_genes: int = 50,
     output_space: str = "gene",
     model_decoder: Optional[DecoderInterface] = None,
     outdir=None,
@@ -576,7 +577,7 @@ def compute_DE_for_truth_and_pred(
     adata_real_hvg = adata_real_ct
     adata_real_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
     start_true = time.time()
-    DE_true_fc, DE_true_pval, DE_true_pval_fc, DE_true_sig_genes, DE_true_df = parallel_compute_de(adata_real_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='real')
+    DE_true_fc, DE_true_pval, DE_true_pval_fc, DE_true_sig_genes, DE_true_df = parallel_compute_de(adata_real_hvg, control_pert, pert_col, outdir=outdir, split='real')
     print("Time taken for true DE: ", time.time() - start_true)
 
     start_pred = time.time()
@@ -588,7 +589,6 @@ def compute_DE_for_truth_and_pred(
             control_pert=control_pert,
             genes=adata_real_hvg.var.index.values,
         )
-        DE_pred_fc = pred_de_genes_ranked.iloc[:, :k_de_genes]
         DE_pred_pval = DE_pred_fc
         DE_pred_pval_fc = DE_pred_fc
     else:
@@ -598,7 +598,7 @@ def compute_DE_for_truth_and_pred(
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
         adata_pred_hvg = adata_pred_gene
         adata_pred_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
-        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc, DE_pred_sig_genes, DE_pred_df = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, k_de_genes, outdir=outdir, split='pred')
+        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc, DE_pred_sig_genes, DE_pred_df = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, outdir=outdir, split='pred')
     print("Time taken for predicted DE: ", time.time() - start_pred)
 
     # return DE_true, DE_pred
@@ -738,7 +738,7 @@ def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", 
 
 # PASTED FROM ARC SEQ #
 
-def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, split='real'):
+def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='real'):
     """
     Compute differential expression using parallel_differential_expression,
     returns two DataFrames: one sorted by fold change and one by p-value
@@ -798,15 +798,15 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, k, outdir=None, spli
     
     logger.info(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
     
-    # Get top DE genes sorted by fold change
-    de_genes_fc = vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change')
+    # Get DE genes sorted by fold change
+    de_genes_fc = vectorized_de(de_results, control_pert, sort_by='abs_fold_change')
     
-    # Get top DE genes sorted by p-value
-    de_genes_pval = vectorized_topk_de(de_results, control_pert, k, sort_by='p_value')
+    # Get DE genes sorted by p-value
+    de_genes_pval = vectorized_de(de_results, control_pert, sort_by='p_value')
 
-    de_genes_pval_fc = vectorized_sig_genes_fc_sort(de_results, control_pert, k, pvalue_threshold=0.05)
+    de_genes_pval_fc = vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05)
 
-    de_genes_sig = vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_threshold=0.05)
+    de_genes_sig = vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05)
     
     return de_genes_fc, de_genes_pval, de_genes_pval_fc, de_genes_sig, de_results
 
@@ -1065,7 +1065,7 @@ def _percent_change(
     """Calculate the percent change between two means."""
     return (μ_tgt - μ_ref) / μ_ref
 
-def vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change'):
+def vectorized_de(de_results, control_pert, sort_by='abs_fold_change'):
     """
     Create a DataFrame with top k DE genes for each perturbation sorted by the specified metric.
     
@@ -1102,17 +1102,16 @@ def vectorized_topk_de(de_results, control_pert, k, sort_by='abs_fold_change'):
     
     # For each target, pick the top k rows
     df_sorted['rank'] = df_sorted.groupby('target').cumcount()
-    df_topk = df_sorted[df_sorted['rank'] < k]
     
     # Pivot the DataFrame so that rows are targets and columns are the ranked top genes
-    de_genes = df_topk.pivot(index='target', columns='rank', values='feature')
+    de_genes = df_sorted.pivot(index='target', columns='rank', values='feature')
     
     # Optionally, sort the columns so that they are in order from 0 to k-1
     de_genes = de_genes.sort_index(axis=1)
     
     return de_genes
 
-def vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_threshold=0.05):
+def vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05):
     """
     Create a DataFrame with DE genes for each perturbation.
 
@@ -1157,10 +1156,6 @@ def vectorized_sig_genes_fc_sort(de_results, control_pert, k=None, pvalue_thresh
     
     # Within each target, assign a rank based on the ordering
     df_sorted['rank'] = df_sorted.groupby('target').cumcount()
-    
-    # If not returning all, filter to only the top k genes per target
-    if k is not None:
-        df_sorted = df_sorted[df_sorted['rank'] < k]
     
     # Pivot the results so that rows are targets and columns are ranked genes.
     # Note: If return_all is False, targets with fewer than k genes will have NaNs in missing positions.
