@@ -355,7 +355,8 @@ class LitUCEModel(L.LightningModule):
     def shared_step(self, batch, batch_idx):
         logging.info(f"Step {self.global_step} - Batch {batch_idx}")
         X, Y, batch_weights, embs, dataset_embs = self._compute_embedding_for_batch(batch)
-        total_counts = batch[6] if self.cfg.model.rda else None
+        # total_counts = batch[6] if self.cfg.model.rda else None
+        total_counts = torch.nanmean(Y.masked_fill(Y == 0, float('nan')), dim=1) if self.cfg.model.rda else None
 
         if dataset_embs is not None and self.training:
             z = embs + dataset_embs

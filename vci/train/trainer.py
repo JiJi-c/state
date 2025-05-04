@@ -16,6 +16,7 @@ from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilter
 from vci.train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback, PerfProfilerCallback
 from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
+from vci.data.sampler import DatasetBatchSampler
 
 def get_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
@@ -48,10 +49,13 @@ def main(cfg):
         DatasetClass = NpzMultiDataset
     else:
         raise ValueError(f'Unknown dataset type: {get_dataset_cfg(cfg).ds_type}')
+    
 
     # Training dataloader
     train_dataset = DatasetClass(cfg)
+    # train_batch_sampler = DatasetBatchSampler(train_dataset, batch_size=cfg.model.batch_size)
     train_dataloader = DataLoader(train_dataset,
+                                #   batch_sampler=train_batch_sampler,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
                                   collate_fn=dataset_sentence_collator,
@@ -67,6 +71,7 @@ def main(cfg):
                                 num_workers=cfg.dataset.num_val_workers,
                                 persistent_workers=True,
                                 generator=generator)
+
     model = LitUCEModel(token_dim=get_embedding_cfg(cfg).size,
                         d_model=cfg.model.emsize,
                         nhead=cfg.model.nhead,

@@ -317,16 +317,17 @@ class VCIDatasetSentenceCollator(object):
             )
         )
 
+        self.global_size = utils.get_embedding_cfg(self.cfg).num
         self.global_to_local = {}
         for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
             # make sure tensor with long data type 
             ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
 
             # Create a tensor filled with -1 (indicating not present in this dataset)
-            reverse_mapping = torch.full((19790,), -1, dtype=torch.int64)
+            reverse_mapping = torch.full((self.global_size,), -1, dtype=torch.int64)
 
             local_indices = torch.arange(ds_emb_idxs.size(0), dtype=torch.int64)
-            mask = (ds_emb_idxs >= 0) & (ds_emb_idxs < 19790)
+            mask = (ds_emb_idxs >= 0) & (ds_emb_idxs < self.global_size)
             reverse_mapping[ds_emb_idxs[mask]] = local_indices[mask]
             self.global_to_local[dataset_name] = reverse_mapping
 
@@ -351,8 +352,37 @@ class VCIDatasetSentenceCollator(object):
         if self.cfg.model.rda:
             total_counts_all = torch.zeros(batch_size)
 
+        datasets = []
+        for _, _, ds_name, _, _, _ in batch:
+            datasets.append(ds_name)
+
         if self.cfg.loss.name == "tabular":
-            shared_genes = torch.randint(low=0, high=19789, size=(self.S,), dtype=torch.int32)
+            # shared_genes = torch.randint(low=0, high=19789, size=(self.S,), dtype=torch.int32)
+
+            batch_ds = set(datasets)
+            presence_masks = [ (self.global_to_local[ds] >= 0) for ds in batch_ds ]
+            inter = presence_masks[0].clone()
+            for m in presence_masks[1:]:
+                inter &= m
+            candidates = torch.where(inter)[0]     # all global IDs present in every dataset
+            n = candidates.numel()
+            if n >= self.S:
+                # sample without replacement
+                idx = torch.randperm(n, device=candidates.device)[:self.S]
+                shared_genes = candidates[idx]
+            elif n > 0:
+                # sample with replacement
+                idx = torch.randint(n, (self.S,), device=candidates.device)
+                shared_genes = candidates[idx]
+            else:
+                # truly no overlap → random global pick
+                shared_genes = torch.randint(
+                    low=0,
+                    high=self.global_size,
+                    size=(self.S,),
+                    device=candidates.device,
+                    dtype=torch.long
+                )
         else:
             shared_genes = None
 
@@ -360,11 +390,8 @@ class VCIDatasetSentenceCollator(object):
 
         i = 0
         max_len = 0
-        datasets = []
         for counts, idx, dataset, dataset_num, gene_indices, gene_scores in batch:
             (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, gene_indices, gene_scores, shared_genes)
-
-            datasets.append(dataset)
 
             batch_sentences[i, :] = bs
             masks[i, :] = mask
@@ -408,9 +435,6 @@ class VCIDatasetSentenceCollator(object):
         if torch.any(counts < 0):
             counts = F.relu(counts)
 
-        # if the data has not already been log transformed
-        # if torch.max(counts) > 20: # CAN WE CHANGE THIS TO INT VS REAL
-
         if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
             counts = torch.log1p(counts)
 
@@ -421,8 +445,6 @@ class VCIDatasetSentenceCollator(object):
 
         ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
         ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
-        # if isinstance(ds_emb_idxs, np.ndarray):
-        #     ds_emb_idxs = torch.tensor(ds_emb_idxs)
 
         cell_sentences = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
         cell_sentence_counts = torch.zeros((counts.shape[0], self.cfg.dataset.pad_length))
@@ -447,75 +469,42 @@ class VCIDatasetSentenceCollator(object):
             num_pos_genes = torch.sum(cell > 0)
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
-            if self.cfg.model.counts:
-                # shuffle before argsort - randomly break ties so we select random unexpressed genes each time, if pad_length > num_non_zero genes
-                indices = torch.randperm(cell.shape[-1])
-                shuffled_cell = cell[indices]
-                shuffled_genes_ranked_exp = torch.argsort(shuffled_cell, descending=True)
-                genes_ranked_exp = indices[shuffled_genes_ranked_exp]
-                cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
-                if len(genes_ranked_exp) >= self.cfg.dataset.pad_length - 1:
-                    cell_sentences[c, 1:] = genes_ranked_exp[:self.cfg.dataset.pad_length-1]
-                else:
-                    # take the nonzero genes first
-                    num_nonzero = min(num_pos_genes, self.cfg.dataset.pad_length - 1)
-                    cell_sentences[c, 1:num_nonzero+1] = genes_ranked_exp[:num_nonzero]
-
-                    # sample the unexpressed genes with replacement
-                    remaining_slots = self.cfg.dataset.pad_length - 1 - num_nonzero
-                    unexpressed_genes = genes_ranked_exp[num_nonzero:]
-                    cell_sentences[c, num_nonzero+1:] = unexpressed_genes[torch.randint(len(unexpressed_genes), (remaining_slots,))]
+            assert self.cfg.model.counts
+            # shuffle before argsort - randomly break ties so we select random unexpressed genes each time, if pad_length > num_non_zero genes
+            indices = torch.randperm(cell.shape[-1])
+            shuffled_cell = cell[indices]
+            shuffled_genes_ranked_exp = torch.argsort(shuffled_cell, descending=True)
+            genes_ranked_exp = indices[shuffled_genes_ranked_exp]
+            cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
+            if len(genes_ranked_exp) >= self.cfg.dataset.pad_length - 1:
+                cell_sentences[c, 1:] = genes_ranked_exp[:self.cfg.dataset.pad_length-1]
             else:
-                start_sentence = min(((self.cfg.dataset.pad_length - 1) // 2), num_pos_genes)
-                genes_ranked_exp = torch.argsort(cell, descending=True)
+                # take the nonzero genes first
+                num_nonzero = min(num_pos_genes, self.cfg.dataset.pad_length - 1)
+                cell_sentences[c, 1:num_nonzero+1] = genes_ranked_exp[:num_nonzero]
 
-                # Combine into final sequence
-                cell_sentences[c, 0] = self.cfg.dataset.cls_token_idx
-                # paste the most expressed genes first
-                cell_sentences[c, 1: start_sentence + 1] = genes_ranked_exp[:start_sentence]
-                # sample with replacement weighted by normalized log counts
-                cell_sentences[c, start_sentence + 1:] = torch.multinomial(
-                        expression_weights, self.cfg.dataset.pad_length - start_sentence - 1, replacement=True)
+                # sample the unexpressed genes with replacement
+                remaining_slots = self.cfg.dataset.pad_length - 1 - num_nonzero
+                unexpressed_genes = genes_ranked_exp[num_nonzero:]
+                cell_sentences[c, num_nonzero+1:] = unexpressed_genes[torch.randint(len(unexpressed_genes), (remaining_slots,))]
 
-            if self.cfg.model.counts:
-                cell_sentence_counts[c, :] = 100 * expression_weights[c, cell_sentences[c, :].to(torch.int32)]
+            cell_sentence_counts[c, :] = 100 * expression_weights[c, cell_sentences[c, :].to(torch.int32)]
 
             # Convert tokens to Embeddings - local to global
             # this also includes the cls token, but we will override it later with a learnable torch vector
             cell_sentences[c, :] = ds_emb_idxs[cell_sentences[c, :].to(torch.int32)]
 
-            # LOGIC FOR TASK SENTENCE
-            if gene_indices is not None:
-                # Task sentence for DE aware
-                de_budget = min(self.cfg.dataset.P // 4, len(gene_indices))
-
-                # TODO: if this overlaps too much we might mask out too much of the sentence
-                # THIS CONTAINS EXPRESSED AND UNEXPRESSED GENES
-                task_sentence[c, :de_budget] = gene_indices[torch.multinomial(gene_scores, de_budget, replacement=False)]
-
-                # NOTE: this may overlap with the first half of task sentence. let's talk about this more.
-                exp_genes = torch.where(cell > 0)[0]
-
-                if len(exp_genes) > self.cfg.dataset.P - de_budget:
-                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
-                        exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P - de_budget]]
-                elif len(exp_genes) > 0:
-                    # sample with replacement
-                    task_sentence[c, de_budget:self.cfg.dataset.P] = \
-                        exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P - de_budget,))]
-
-            else:
-                exp_genes = torch.where(cell > 0)[0]
-                if len(exp_genes) > self.cfg.dataset.P:
-                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P]]
-                elif len(exp_genes) > 0:
-                    task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
+            # pick P expressed genes to mask for MLM
+            exp_genes = torch.where(cell > 0)[0]
+            if len(exp_genes) > self.cfg.dataset.P:
+                task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randperm(len(exp_genes))[0:self.cfg.dataset.P]]
+            elif len(exp_genes) > 0:
+                task_sentence[c, :self.cfg.dataset.P] = exp_genes[torch.randint(len(exp_genes), (self.cfg.dataset.P,))]
 
             # get the total number of genes unique to this cell; everything
             # past this are shared genes across all cells in a batch, used for tabular loss
             unshared_num = self.cfg.dataset.P + self.cfg.dataset.N
 
-            # DE AWARE FOR UNEXPRESSED GENES???
             unexp_genes = torch.where(cell < 1)[0]
             if len(unexp_genes) > self.cfg.dataset.N:
                 task_sentence[c, self.cfg.dataset.P:unshared_num] = unexp_genes[torch.randperm(len(unexp_genes)) [0:self.cfg.dataset.N]]
@@ -531,11 +520,15 @@ class VCIDatasetSentenceCollator(object):
 
             # now take care of shared genes across all cells in the batch
             if shared_genes is not None:
-                # Overwrite the final positions of task_sentence (adjust as needed)
-                task_sentence[c, unshared_num:] = shared_genes
+                # Overwrite the final positions of task_sentence 
+
+                task_sentence[c, unshared_num:] = shared_genes # in the old impl these are global gene indices
+                # task_sentence[c, unshared_num:] = ds_emb_idxs[shared_genes.to(torch.int32)] # in the new impl these are local gene indices
 
                 # convert the shared_genes, which are global indices, to the dataset specific indices
-                local_indices = self.global_to_local[dataset][shared_genes].to(cell.device)
+                local_indices = self.global_to_local[dataset][shared_genes].to(cell.device) # in the old impl these are global gene indices
+                # local_indices = shared_genes # in the new impl these are local gene indices
+
                 shared_counts = torch.zeros(local_indices.shape, dtype=cell.dtype, device=cell.device)
                 valid_mask = local_indices != -1
                 if valid_mask.any():
@@ -544,9 +537,9 @@ class VCIDatasetSentenceCollator(object):
                 # for indices which are -1, count is 0, else index into cell
                 task_counts[c, unshared_num:] = shared_counts
 
-            if self.cfg.model.rda:
-                # sum the counts of the task sentence before converting to global indices
-                cell_total_counts[c] = torch.sum(task_counts[c])
+            assert self.cfg.model.rda
+            # sum the counts of the task sentence
+            cell_total_counts[c] = torch.sum(task_counts[c])
 
             if self.cfg.loss.name == "cross_entropy":
                 # binarize the counts to 0/1
@@ -590,14 +583,6 @@ class VCIDatasetSentenceCollator(object):
             else:
                 # Exactly self.cfg.task.mask percent are masked, use the potential mask as is
                 mask[c] = potential_mask
-
-                # TODO: DOUBLE CHECK THE MASKING FOR CELL SENTENCE VS TASK SENTENCE.
-                # housekeeping genes, ribosomal and mitochondrial genes take up a lot of the cell sentence
-                # many of these genes are expressed in every cell - log transform helps a lot
-
-                # 1. how much are we masking
-                # 2. on average how much overlap is there
-                # 3. entropy in the cell sentence and the task sentence
 
             # make sure that the CLS token is never masked out.
             mask[c, 0] = False
