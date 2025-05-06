@@ -26,7 +26,7 @@ from torch.optim.lr_scheduler import (ChainedScheduler,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
 from vci.data import create_dataloader
-from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg
+from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg, get_dataset_cfg
 from vci.eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss, IndependenceLoss, uniformity_loss
 
@@ -81,7 +81,49 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
+class RDAEncoder(nn.Module):
+    """
+    Map a scalar read-depth d  ->  (mu, log_sigma).
+    latent_dim is whatever you used for z_count.
+    """
+    def __init__(self, latent_dim: int):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.net = nn.Sequential(
+            # nn.Linear(2, latent_dim, bias=True),
+            SkipBlock(self.latent_dim),
+            SkipBlock(self.latent_dim),
+        )
 
+    def forward(self, mu, sigma):
+        """
+        Parameters
+        ----------
+        mu    : tensor or float -- shape (B,) or (B,1) or scalar
+        sigma : tensor or float -- same shape as `mu`; *must be ≥0*
+
+        Returns
+        -------
+        z_latent : tensor of shape (B, latent_dim)
+            Sampled from 𝒩(μ, σ²I) and processed by `self.net`.
+        """
+        # Ensure tensors, move to same device as the network
+        mu    = mu.view(-1, 1)
+        sigma = sigma.view(-1, 1)
+
+        # Sample eps ~ N(0, I) and build z
+        eps = torch.randn(mu.size(0), self.latent_dim, device=mu.device)
+        z   = mu.expand(-1, self.latent_dim) + sigma.expand(-1, self.latent_dim) * eps
+
+        # z = torch.cat((mu, sigma), dim=1)  # (B, 2)
+
+        # Pass through two SkipBlocks (or identity if you prefer)
+        z = self.net(z)                              # (B, latent_dim)
+        return z
+
+def nanstd(x): 
+    return torch.sqrt(torch.nanmean(torch.pow(x - torch.nanmean(x, dim=-1).unsqueeze(-1), 2), dim=-1))
+    
 class LitUCEModel(L.LightningModule):
     def __init__(self, token_dim: int, d_model: int, nhead: int, d_hid: int,
                  nlayers: int, output_dim:int, dropout: float = 0.0,
@@ -96,6 +138,7 @@ class LitUCEModel(L.LightningModule):
         self.compiled = compiled
         self.model_type = 'Transformer'
         self.cls_token = nn.Parameter(torch.randn(1, token_dim))
+
         # self.pos_encoder = PositionalEncoding(d_model, dropout)
         self.d_model = d_model
         self.warmup_steps = warmup_steps
@@ -139,11 +182,22 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.decoder = torch.compile(self.decoder)
 
-        count_info = 1 if self.cfg.model.rda else 0
+        if getattr(self.cfg.model, "sample_rda", False):
+            self.z_dim = 128
+            self.z_encoder = RDAEncoder(self.z_dim)
+        else:
+            if self.cfg.model.rda:
+                self.z_dim = 1
+            else:
+                self.z_dim = 0
+
+        if self.cfg.model.get('dataset_correction', False):
+            self.z_dim += 10
+
         self.binary_decoder = nn.Sequential(
-            SkipBlock(output_dim + d_model + count_info),
-            SkipBlock(output_dim + d_model + count_info),
-            nn.Linear(output_dim + d_model + count_info, 1, bias=True)
+            SkipBlock(output_dim + d_model + self.z_dim),
+            SkipBlock(output_dim + d_model + self.z_dim),
+            nn.Linear(output_dim + d_model + self.z_dim, 1, bias=True)
         )
 
         if self.cfg.model.counts:
@@ -173,26 +227,21 @@ class LitUCEModel(L.LightningModule):
         self._last_val_perturbation_check = 0
 
         if getattr(self.cfg.model, "dataset_correction", False):
+            self.dataset_token = nn.Parameter(torch.randn(1, d_model))
+            self.dataset_embedder = nn.Linear(d_model, 10)
+
             # Assume self.cfg.model.num_datasets is set to the number of unique datasets.
+            num_dataset = get_dataset_cfg(self.cfg).num_datasets
             self.dataset_encoder = nn.Sequential(
-                nn.Embedding(self.cfg.model.num_datasets, d_model),
-                nn.LayerNorm(d_model),
-                nn.Dropout(0.1),
                 nn.Linear(d_model, d_model),
                 nn.SiLU(),
                 nn.LayerNorm(d_model),
                 nn.Dropout(0.1),
-                nn.Linear(d_model, d_model),
-                nn.SiLU(),
-                nn.LayerNorm(d_model),
-                nn.Dropout(0.1),
-                nn.Linear(d_model, d_model),
-                nn.SiLU(),
+                nn.Linear(d_model, num_dataset),
             )
 
-            self.independence_loss = IndependenceLoss()
         else:
-            self.dataset_embedding = None
+            self.dataset_token = None
 
     def _compute_embedding_for_batch(self, batch):
         batch_sentences = batch[0].to(self.device)
@@ -218,6 +267,13 @@ class LitUCEModel(L.LightningModule):
         # Add a learnable CLS token to the beginning of the sentence
         batch_sentences[:, 0, :] = self.cls_token.expand(batch_sentences.size(0), -1)
 
+        # Optionally add a learnable dataset token to the end of the sentence
+        if self.dataset_token is not None:
+            dataset_token = self.dataset_token.expand(batch_sentences.size(0), -1)
+            batch_sentences = torch.cat((batch_sentences, dataset_token), dim=1)
+            # concatenate a False to the mask on dim 1
+            mask = torch.cat((mask, torch.zeros(mask.size(0), 1, device=mask.device).bool()), dim=1)
+
         # mask out the genes embeddings that appear in the task sentence
         _, embedding, dataset_emb = self.forward(batch_sentences, mask=mask, counts=batch_sentences_counts, dataset_nums=dataset_nums)
 
@@ -234,19 +290,26 @@ class LitUCEModel(L.LightningModule):
         return self.gene_embedding_layer(protein_embeds)
 
     @staticmethod
-    def resize_batch(cell_embeds, task_embeds, task_counts=None):
+    def resize_batch(cell_embeds, task_embeds, task_counts=None, sampled_rda=None):
         A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)
         B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)
-        if task_counts is not None:
+        if sampled_rda is not None:
+            # your code here that computes mu and std dev from Y
+            reshaped_counts = sampled_rda.unsqueeze(1)
+            reshaped_counts = reshaped_counts.repeat(1, A.shape[1], 1)
+            combine = torch.cat((A, B, reshaped_counts), dim=2)
+        elif task_counts is not None:
             reshaped_counts = task_counts.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, A.shape[1], 1)
 
             # Concatenate all three tensors along the third dimension
-            mlp_input = torch.cat((A, B, reshaped_counts), dim=-1)
+            combine = torch.cat((A, B, reshaped_counts), dim=2)
         else:
             # Original behavior if total_counts is None
-            mlp_input = torch.cat([A, B], dim=-1)  # (batch_size, num_genes, 2*embed_dim)
-        return mlp_input
+            combine = torch.cat((A, B), dim=2)
+
+        return combine
+
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
@@ -278,12 +341,23 @@ class LitUCEModel(L.LightningModule):
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb, _ = self._compute_embedding_for_batch(batch)
-            if self.cfg.model.rda:
-                task_counts = batch[6].to(self.device)
+            if self.z_dim > 1:
+                Y = batch[2].to(self.device)
+                nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
+                mu = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
+                sigma = nanstd(nan_y) if self.cfg.model.rda else None
+                sampled_rda = self.z_encoder(mu, sigma)
+                task_counts = None
+            elif self.z_dim == 1:
+                Y = batch[2].to(self.device)
+                nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
+                task_counts = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
+                sampled_rda = None
             else:
                 task_counts = None
+                sampled_rda = None
 
-            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts)
+            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts, sampled_rda)
             logprobs_batch = self.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
             logprobs_batchs.append(logprobs_batch.squeeze())
@@ -345,8 +419,8 @@ class LitUCEModel(L.LightningModule):
         embedding = nn.functional.normalize(embedding, dim=1) # Normalize.
 
         # we must be in train mode to use dataset correction
-        if dataset_nums is not None and self.dataset_encoder is not None and self.training:
-            dataset_emb = self.dataset_encoder(dataset_nums)
+        if self.dataset_token is not None:
+            dataset_emb = gene_output[:, -1, :]
         else:
             dataset_emb = None
 
@@ -355,8 +429,6 @@ class LitUCEModel(L.LightningModule):
     def shared_step(self, batch, batch_idx):
         logging.info(f"Step {self.global_step} - Batch {batch_idx}")
         X, Y, batch_weights, embs, dataset_embs = self._compute_embedding_for_batch(batch)
-        # total_counts = batch[6] if self.cfg.model.rda else None
-        total_counts = torch.nanmean(Y.masked_fill(Y == 0, float('nan')), dim=1) if self.cfg.model.rda else None
 
         if dataset_embs is not None and self.training:
             z = embs + dataset_embs
@@ -365,13 +437,24 @@ class LitUCEModel(L.LightningModule):
 
         z = z.unsqueeze(1).repeat(1, X.shape[1], 1)
 
-        if total_counts is not None:
-            reshaped_counts = total_counts.unsqueeze(1).unsqueeze(2)
+        if self.z_dim > 1:
+            # your code here that computes mu and std dev from Y
+            nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
+            mu = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
+            sigma = nanstd(nan_y) if self.cfg.model.rda else None
+
+            reshaped_counts = self.z_encoder(mu, sigma).unsqueeze(1)
+            reshaped_counts = reshaped_counts.expand(X.shape[0], X.shape[1], reshaped_counts.shape[2])
+            combine = torch.cat((X, z, reshaped_counts), dim=2)
+        elif self.z_dim == 1:
+            mu = torch.nanmean(Y.masked_fill(Y == 0, float('nan')), dim=1) if self.cfg.model.rda else None
+            reshaped_counts = mu.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
 
             # Concatenate all three tensors along the third dimension
             combine = torch.cat((X, z, reshaped_counts), dim=2)
         else:
+            assert self.z_dim == 0
             # Original behavior if total_counts is None
             combine = torch.cat((X, z), dim=2)
 

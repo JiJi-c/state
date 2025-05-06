@@ -167,6 +167,7 @@ model:
   ema: false
   ema_decay: 0.999
   ema_update_interval: 1000
+  sample_rda: false
 
 task:
   mask: 0.2
