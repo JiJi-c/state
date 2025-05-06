@@ -182,17 +182,13 @@ class LitUCEModel(L.LightningModule):
         if compiled:
             self.decoder = torch.compile(self.decoder)
 
-        if getattr(self.cfg.model, "sample_rda", False):
-            self.z_dim = 128
-            self.z_encoder = RDAEncoder(self.z_dim)
+        if self.cfg.model.get("sample_rda", False):
+            self.z_dim_rd = 128
+            self.z_encoder = RDAEncoder(self.z_dim_rd)
         else:
-            if self.cfg.model.rda:
-                self.z_dim = 1
-            else:
-                self.z_dim = 0
-
-        if self.cfg.model.get('dataset_correction', False):
-            self.z_dim += 10
+            self.z_dim_rd = 1 if self.cfg.model.rda else 0
+        self.z_dim_ds = 10  if self.cfg.model.get("dataset_correction", False) else 0
+        self.z_dim = self.z_dim_rd + self.z_dim_ds
 
         self.binary_decoder = nn.Sequential(
             SkipBlock(output_dim + d_model + self.z_dim),
@@ -227,19 +223,21 @@ class LitUCEModel(L.LightningModule):
         self._last_val_perturbation_check = 0
 
         if getattr(self.cfg.model, "dataset_correction", False):
-            self.dataset_token = nn.Parameter(torch.randn(1, d_model))
-            self.dataset_embedder = nn.Linear(d_model, 10)
+            self.dataset_token = nn.Parameter(torch.randn(1, token_dim))
+            self.dataset_embedder = nn.Linear(output_dim, 10)
 
             # Assume self.cfg.model.num_datasets is set to the number of unique datasets.
             num_dataset = get_dataset_cfg(self.cfg).num_datasets
             self.dataset_encoder = nn.Sequential(
-                nn.Linear(d_model, d_model),
+                nn.Linear(output_dim, d_model),
                 nn.SiLU(),
                 nn.LayerNorm(d_model),
                 nn.Dropout(0.1),
                 nn.Linear(d_model, num_dataset),
             )
 
+            # this should be a classification label loss
+            self.dataset_loss = nn.CrossEntropyLoss()
         else:
             self.dataset_token = None
 
@@ -269,7 +267,7 @@ class LitUCEModel(L.LightningModule):
 
         # Optionally add a learnable dataset token to the end of the sentence
         if self.dataset_token is not None:
-            dataset_token = self.dataset_token.expand(batch_sentences.size(0), -1)
+            dataset_token = self.dataset_token.expand(batch_sentences.size(0), -1).unsqueeze(1)
             batch_sentences = torch.cat((batch_sentences, dataset_token), dim=1)
             # concatenate a False to the mask on dim 1
             mask = torch.cat((mask, torch.zeros(mask.size(0), 1, device=mask.device).bool()), dim=1)
@@ -290,7 +288,7 @@ class LitUCEModel(L.LightningModule):
         return self.gene_embedding_layer(protein_embeds)
 
     @staticmethod
-    def resize_batch(cell_embeds, task_embeds, task_counts=None, sampled_rda=None):
+    def resize_batch(cell_embeds, task_embeds, task_counts=None, sampled_rda=None, ds_emb=None):
         A = task_embeds.unsqueeze(0).repeat(cell_embeds.size(0), 1, 1)
         B = cell_embeds.unsqueeze(1).repeat(1, task_embeds.size(0), 1)
         if sampled_rda is not None:
@@ -307,6 +305,11 @@ class LitUCEModel(L.LightningModule):
         else:
             # Original behavior if total_counts is None
             combine = torch.cat((A, B), dim=2)
+
+        if ds_emb is not None:
+            # ds_emb is a tensor of shape (batch_size, 10). concatenate it to the combine tensor
+            ds_emb = ds_emb.unsqueeze(1).repeat(1, A.shape[1], 1)
+            combine = torch.cat((combine, ds_emb), dim=2)
 
         return combine
 
@@ -340,15 +343,15 @@ class LitUCEModel(L.LightningModule):
                           desc=f"Embeddings for {dataset_name}",):
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
-            _, _, _, emb, _ = self._compute_embedding_for_batch(batch)
-            if self.z_dim > 1:
+            _, _, _, emb, ds_emb = self._compute_embedding_for_batch(batch)
+            if self.z_dim_rd > 1:
                 Y = batch[2].to(self.device)
                 nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
                 mu = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
                 sigma = nanstd(nan_y) if self.cfg.model.rda else None
                 sampled_rda = self.z_encoder(mu, sigma)
                 task_counts = None
-            elif self.z_dim == 1:
+            elif self.z_dim_rd == 1:
                 Y = batch[2].to(self.device)
                 nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
                 task_counts = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
@@ -357,7 +360,12 @@ class LitUCEModel(L.LightningModule):
                 task_counts = None
                 sampled_rda = None
 
-            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts, sampled_rda)
+            if self.dataset_token is not None:
+                ds_emb = self.dataset_embedder(ds_emb)
+            else:
+                ds_emb = None
+
+            merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts, sampled_rda, ds_emb)
             logprobs_batch = self.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
             logprobs_batchs.append(logprobs_batch.squeeze())
@@ -405,8 +413,13 @@ class LitUCEModel(L.LightningModule):
             # Step 3: Compute weighted sum of bin embeddings
             count_emb = torch.matmul(bin_weights, bin_embeddings)
 
+            if self.dataset_token is not None:
+                # append B x 1 x d_model to count_emb of all zeros
+                dataset_count_emb = torch.zeros(count_emb.size(0), 1, count_emb.size(2), device=self.device)
+                count_emb = torch.cat((count_emb, dataset_count_emb), dim=1)  # B x H x d_model
+
             # Add count embeddings to token embeddings
-            src = src + count_emb  # should both be B x H x self.d_model
+            src = src + count_emb  # should both be B x H x self.d_model, or B x H + 1 x self.d_model if dataset correction
 
         if self.training:
             mask = mask.to(self.device)
@@ -430,14 +443,9 @@ class LitUCEModel(L.LightningModule):
         logging.info(f"Step {self.global_step} - Batch {batch_idx}")
         X, Y, batch_weights, embs, dataset_embs = self._compute_embedding_for_batch(batch)
 
-        if dataset_embs is not None and self.training:
-            z = embs + dataset_embs
-        else:
-            z = embs
+        z = embs.unsqueeze(1).repeat(1, X.shape[1], 1) # CLS token
 
-        z = z.unsqueeze(1).repeat(1, X.shape[1], 1)
-
-        if self.z_dim > 1:
+        if self.z_dim_rd > 1:
             # your code here that computes mu and std dev from Y
             nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
             mu = torch.nanmean(nan_y, dim=1) if self.cfg.model.rda else None
@@ -446,7 +454,7 @@ class LitUCEModel(L.LightningModule):
             reshaped_counts = self.z_encoder(mu, sigma).unsqueeze(1)
             reshaped_counts = reshaped_counts.expand(X.shape[0], X.shape[1], reshaped_counts.shape[2])
             combine = torch.cat((X, z, reshaped_counts), dim=2)
-        elif self.z_dim == 1:
+        elif self.z_dim_rd == 1:
             mu = torch.nanmean(Y.masked_fill(Y == 0, float('nan')), dim=1) if self.cfg.model.rda else None
             reshaped_counts = mu.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
@@ -454,9 +462,14 @@ class LitUCEModel(L.LightningModule):
             # Concatenate all three tensors along the third dimension
             combine = torch.cat((X, z, reshaped_counts), dim=2)
         else:
-            assert self.z_dim == 0
+            assert self.z_dim_rd == 0
             # Original behavior if total_counts is None
             combine = torch.cat((X, z), dim=2)
+
+        if self.dataset_token is not None and dataset_embs is not None:
+            ds_emb = self.dataset_embedder(dataset_embs)
+            ds_emb = ds_emb.unsqueeze(1).repeat(1, X.shape[1], 1)
+            combine = torch.cat((combine, ds_emb), dim=2)
 
         # concatenate the counts
         decs = self.binary_decoder(combine)
@@ -496,7 +509,7 @@ class LitUCEModel(L.LightningModule):
                 loss = loss + dataset_loss
             else:
                 self.log("validation/dataset_loss", dataset_loss)
-
+                
         sch = self.lr_schedulers()
 
         for scheduler in sch._schedulers:
