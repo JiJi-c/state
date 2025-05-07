@@ -265,10 +265,7 @@ def train(cfg: DictConfig) -> None:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module. this is backwards compatible with previous configs
-    try:
-        sentence_len = cfg["model"]["cell_set_len"]
-    except KeyError:
-        sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+    sentence_len = cfg["model"]["kwargs"]["cell_set_len"]
         
     data_module = get_datamodule(
         cfg["data"]["name"],
@@ -375,8 +372,9 @@ def train(cfg: DictConfig) -> None:
 
     # if we are training with freeze pert param, manually load the checkpoint
     # if no last.ckpt, start training using the seed file
-    if checkpoint_path is None and cfg["model"]["kwargs"].get("freeze_pert", False):
-        checkpoint_path = join(ckpt_callbacks[0].dirpath, "seed.ckpt")
+    manual_init = cfg["model"]["kwargs"].get("init_from", None)
+    if checkpoint_path is None and manual_init is not None:
+        checkpoint_path = manual_init
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model_state = model.state_dict()
@@ -387,10 +385,7 @@ def train(cfg: DictConfig) -> None:
             checkpoint_pert_dim = checkpoint_state[pert_encoder_weight_key].shape[1]
             if checkpoint_pert_dim != model.pert_dim:
                 print(f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder.")
-                # Update the model's pert_dim
-                model.pert_dim = checkpoint_pert_dim
-                # Rebuild the pert_encoder with the new input dimension.
-                # (Assumes that build_mlp is the utility function used by your model)
+                # Rebuild the pert_encoder with the new pert input dimension
                 from models.utils import build_mlp
                 model.pert_encoder = build_mlp(
                     in_dim=model.pert_dim,

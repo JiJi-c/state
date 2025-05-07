@@ -1,9 +1,16 @@
 import scipy
 import pandas as pd
+import json
+import matplotlib.pyplot as plt
+from sklearn.metrics import auc
+from scipy.interpolate import interp1d
 from collections import defaultdict
 from validation.metric_utils import (
     to_dense,
+    compute_mae,
     compute_mse,
+    compute_wasserstein,
+    compute_mmd,
     compute_pearson_delta,
     compute_pearson_delta_separate_controls,
     compute_cosine_similarity,
@@ -266,6 +273,56 @@ def compute_metrics(
                     outdir=outdir,
                 )
 
+                # compute pearson for only significant genes:
+                pearson_sig = []
+                # for pert in metrics[celltype]["pert"]:
+                # use tqdm
+                gene_counts = adata_real_gene_ct or adata_real_ct
+                pred_gene_counts = adata_pred_gene_ct or adata_pred_ct
+                for pert in tqdm(metrics[celltype]["pert"], desc=f"Computing pearson for sig genes across perts in {celltype}", leave=False):
+                    # subset adata for this pert and for control
+                    real_pert = gene_counts[gene_counts.obs[pert_col] == pert]
+                    pred_pert = pred_gene_counts[pred_gene_counts.obs[pert_col] == pert]
+                    real_ctrl = gene_counts[gene_counts.obs[pert_col] == control_pert]
+                    pred_ctrl = pred_gene_counts[pred_gene_counts.obs[pert_col] == control_pert]
+
+                    # convert to dense arrays
+                    X_true = to_dense(real_pert.X)
+                    X_pred = to_dense(pred_pert.X)
+                    X_ctrl_true = to_dense(real_ctrl.X)
+                    X_ctrl_pred = to_dense(pred_ctrl.X)
+
+                    # get the list of significant genes for this perturbation
+                    if pert in DE_true_sig_genes.index:
+                        sig_genes = DE_true_sig_genes.loc[pert].dropna().tolist()
+                    else:
+                        sig_genes = []
+
+                    if not sig_genes:
+                        pearson_sig.append(np.nan)
+                        continue
+
+                    # map gene names → column indices in the AnnData
+                    var_index = list(gene_counts.var.index)
+                    gene_cols = [var_index.index(g) for g in sig_genes if g in var_index]
+                    if not gene_cols:
+                        pearson_sig.append(np.nan)
+                        continue
+
+                    # slice out only the sig-gene columns
+                    true_sub = X_true[:, gene_cols]
+                    pred_sub = X_pred[:, gene_cols]
+                    ctrl_true_sub = X_ctrl_true[:, gene_cols]
+                    ctrl_pred_sub = X_ctrl_pred[:, gene_cols]
+
+                    # compute the delta‐Pearson
+                    pearson_sig.append(
+                        compute_pearson_delta(pred_sub, true_sub, ctrl_true_sub, ctrl_pred_sub)
+                    )
+
+                metrics[celltype]["pearson_delta_cell_type_sig_genes"] = pearson_sig
+    
+
                 clustering_agreement = compute_clustering_agreement(adata_real, adata_pred, embed_key=None)
                 metrics[celltype]['clustering_agreement'] = clustering_agreement
 
@@ -391,11 +448,18 @@ def compute_metrics(
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):
     metrics = {}
     metrics["mse_" + suffix] = compute_mse(pert_pred, pert_true, ctrl_true, ctrl_pred)
+    metrics["mae_" + suffix] = compute_mae(pert_pred, pert_true)
     metrics["pearson_delta_" + suffix] = compute_pearson_delta(pert_pred, pert_true, ctrl_true, ctrl_pred)
     metrics["pearson_delta_sep_ctrls_" + suffix] = compute_pearson_delta_separate_controls(
         pert_pred, pert_true, ctrl_true, ctrl_pred
     )
+
     metrics["cosine_" + suffix] = compute_cosine_similarity(pert_pred, pert_true, ctrl_true, ctrl_pred)
+    if include_dist_metrics:
+        # with time_it("compute_wasserstein"):
+        #     metrics["wasserstein_" + suffix] = compute_wasserstein(pert_pred, pert_true, ctrl_true, ctrl_pred)
+        with time_it("compute_mmd"):
+            metrics["mmd_" + suffix] = compute_mmd(pert_pred, pert_true, ctrl_true, ctrl_pred)
     return metrics
 
 def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_col):
@@ -413,9 +477,40 @@ def init_worker(global_pred_df, global_true_df):
 def compute_downstream_DE_metrics_parallel(target_gene, p_value_threshold):
     return compute_downstream_DE_metrics(target_gene, PRED_DF, TRUE_DF, p_value_threshold)
 
+def interpolate_curves(curves, x_grid, min_max=(0, 1)):
+    """Interpolate a list of curves onto a common x grid."""
+    y_values = []
+    min_val, max_val = min_max
+    
+    for curve in curves:
+        x, y = curve
+        
+        # Skip if too few points
+        if len(x) < 2:
+            continue
+            
+        # Create interpolation function
+        f = interp1d(
+            x, y, 
+            kind='linear', 
+            bounds_error=False, 
+            fill_value=(y[0], y[-1])
+        )
+        
+        # Interpolate y values at the grid points
+        interp_y = f(x_grid)
+        
+        # Apply bounds
+        interp_y = np.clip(interp_y, min_val, max_val)
+        y_values.append(interp_y)
+    
+    # Convert to numpy array
+    if y_values:
+        return np.array(y_values)
+    return np.array([])
+
 def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
                               n_workers=10, p_value_threshold=0.05):
-
     for df in (DE_pred_df, DE_true_df):
         df['abs_fold_change'] = np.abs(df['fold_change'])
         with np.errstate(divide='ignore'):
@@ -424,15 +519,117 @@ def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
         df['abs_log_fold_change'] = np.abs(df['log_fold_change'].fillna(0))
     
     target_genes = DE_true_df['target'].unique()
+    os.makedirs(outdir, exist_ok=True)
 
     with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(DE_pred_df, DE_true_df)) as pool:
         func = partial(compute_downstream_DE_metrics_parallel, p_value_threshold=p_value_threshold)
         results = list(tqdm(pool.imap(func, target_genes), total=len(target_genes)))
 
-    results_df = pd.DataFrame(results)
+    # Create the main results DataFrame (without the curve data)
+    scalar_results = [{k: v for k, v in r.items() 
+                       if k not in ['recall_raw', 'precision_raw', 'fpr_raw', 'tpr_raw']} 
+                      for r in results]
+    results_df = pd.DataFrame(scalar_results)
+    
+    # Save the main results
     outpath = os.path.join(outdir, f"{celltype}_downstream_de_results.csv")
     results_df.to_csv(outpath, index=False)
 
+    # Get all valid curve data
+    pr_curves = [(np.array(r['recall_raw']), np.array(r['precision_raw'])) 
+                 for r in results if len(r['recall_raw']) > 0 and len(r['precision_raw']) > 0]
+    roc_curves = [(np.array(r['fpr_raw']), np.array(r['tpr_raw']))
+                  for r in results if len(r['fpr_raw']) > 0 and len(r['tpr_raw']) > 0]
+    
+    # Create common x-axis grids for interpolation
+    pr_grid = np.linspace(0, 1, 100)
+    roc_grid = np.linspace(0, 1, 100)
+    
+    # Interpolate all curves onto the common grid
+    pr_interp = interpolate_curves(pr_curves, pr_grid)
+    roc_interp = interpolate_curves(roc_curves, roc_grid)
+    
+    # Calculate mean and std for each curve type
+    pr_mean = np.mean(pr_interp, axis=0) if len(pr_interp) > 0 else np.array([])
+    pr_std = np.std(pr_interp, axis=0) if len(pr_interp) > 0 else np.array([])
+    
+    roc_mean = np.mean(roc_interp, axis=0) if len(roc_interp) > 0 else np.array([])
+    roc_std = np.std(roc_interp, axis=0) if len(roc_interp) > 0 else np.array([])
+    
+    # Calculate average AUC values
+    mean_pr_auc = auc(pr_grid, pr_mean) if len(pr_mean) > 0 else np.nan
+    mean_roc_auc = auc(roc_grid, roc_mean) if len(roc_mean) > 0 else np.nan
+    
+    # Save curve data to CSV
+    if len(pr_mean) > 0:
+        pr_df = pd.DataFrame({
+            'recall': pr_grid,
+            'precision_mean': pr_mean,
+            'precision_std': pr_std
+        })
+        pr_df.to_csv(os.path.join(outdir, f"{celltype}_avg_pr_curve.csv"), index=False)
+    
+    if len(roc_mean) > 0:
+        roc_df = pd.DataFrame({
+            'fpr': roc_grid,
+            'tpr_mean': roc_mean,
+            'tpr_std': roc_std
+        })
+        roc_df.to_csv(os.path.join(outdir, f"{celltype}_avg_roc_curve.csv"), index=False)
+    
+    # Save mean metrics
+    mean_metrics = {
+        'mean_aupr': float(mean_pr_auc) if not np.isnan(mean_pr_auc) else None,
+        'mean_auroc': float(mean_roc_auc) if not np.isnan(mean_roc_auc) else None,
+        'pr_curves_count': len(pr_curves),
+        'roc_curves_count': len(roc_curves)
+    }
+    
+    with open(os.path.join(outdir, f"{celltype}_avg_curve_metrics.json"), 'w') as f:
+        json.dump(mean_metrics, f)
+    
+    # Plot PR curve with shaded std dev
+    if len(pr_mean) > 0:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(pr_grid, pr_mean, 'b-', label=f'Mean AUPR = {mean_pr_auc:.3f} (n={len(pr_curves)})')
+        ax.fill_between(pr_grid, 
+                      np.maximum(0, pr_mean - pr_std),
+                      np.minimum(1, pr_mean + pr_std),
+                      color='b', alpha=0.2, label='±1 std dev')
+        ax.set_xlabel('Recall')
+        ax.set_ylabel('Precision')
+        ax.set_title(f'Average Precision-Recall Curve - {celltype}')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        fig.savefig(os.path.join(outdir, f"{celltype}_avg_pr_curve.svg"), dpi=300, bbox_inches='tight')
+        plt.close(fig)
+    
+    # Plot ROC curve with shaded std dev
+    if len(roc_mean) > 0:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(roc_grid, roc_mean, 'r-', label=f'Mean AUROC = {mean_roc_auc:.3f} (n={len(roc_curves)})')
+        ax.fill_between(roc_grid, 
+                      np.maximum(0, roc_mean - roc_std), 
+                      np.minimum(1, roc_mean + roc_std), 
+                      color='r', alpha=0.2, label='±1 std dev')
+        ax.plot([0, 1], [0, 1], 'k--', alpha=0.5)  # Diagonal line
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_title(f'Average ROC Curve - {celltype}')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        fig.savefig(os.path.join(outdir, f"{celltype}_avg_roc_curve.svg"), dpi=300, bbox_inches='tight')
+        plt.close(fig)
+    
+    # Log completion message
+    logger.info(f"Completed downstream DE metrics for {celltype}, results saved to {outdir}")
+    
     return results_df
 
 

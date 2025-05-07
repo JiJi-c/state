@@ -92,7 +92,7 @@ class FinetuneVCICountsDecoder(nn.Module):
         # config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/rda_tabular_counts_2048_new/tahoe_config.yaml",
         model_loc="/home/aadduri/vci_pretrain/vci_1.4.2.ckpt",
         config="/large_storage/ctc/userspace/aadduri/vci/checkpoint/large_1e-4_rda_tabular_counts_2048/crossds_config.yaml",
-        read_depth=70,
+        read_depth=1200,
         latent_dim=1024, # dimension of pretrained vci model
         hidden_dims=[512, 512, 512], # hidden dimensions of the decoder
         dropout=0.1,
@@ -124,6 +124,11 @@ class FinetuneVCICountsDecoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dims[1], len(self.genes)),
             nn.ReLU(),
+        )
+
+        self.gene_decoder_proj = nn.Sequential(
+            nn.Linear(len(self.genes), 128),
+            nn.Linear(128, len(self.genes)),
         )
 
         self.binary_decoder = self.finetune.model.binary_decoder
@@ -181,6 +186,7 @@ class FinetuneVCICountsDecoder(nn.Module):
 
         # Reshape back to [B, S, gene_dim]
         decoded_gene = logprobs.view(batch_size, seq_len, len(self.genes))
+        decoded_gene = decoded_gene + self.gene_decoder_proj(decoded_gene)
         # decoded_gene = torch.nn.functional.relu(decoded_gene)
 
         # # normalize the sum of decoded_gene to be read depth

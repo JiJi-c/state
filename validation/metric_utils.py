@@ -37,8 +37,6 @@ from sklearn.metrics import (
 )
 from typing import Iterable, Union, Literal, Sequence
 
-from models.base import DecoderInterface
-
 import pandas as pd
 import numpy as np
 from scipy.stats import spearmanr
@@ -110,7 +108,11 @@ def compute_mmd(pred, true, ctrl, pred_ctrl, gammas=None):
 
 def compute_mse(pred, true, ctrl, pred_ctrl):
     """Computes mean squared error between x and y."""
-    return mean_squared_error(pred, true)
+    return mean_squared_error(pred.mean(0), true.mean(0))
+
+def compute_mae(pred, true):
+    """Computes mean absolute error between x and y."""
+    return np.mean(np.abs(pred.mean(0) - true.mean(0)))
 
 
 def compute_pearson(pred, true, ctrl, pred_ctrl):
@@ -539,7 +541,7 @@ def compute_DE_for_truth_and_pred(
     pert_col: str = "gene",
     n_top_genes: int = 2000,  # HVG cutoff
     output_space: str = "gene",
-    model_decoder: Optional[DecoderInterface] = None,
+    model_decoder=None,
     outdir=None,
 ):
     """
@@ -635,6 +637,10 @@ def compute_downstream_DE_metrics(target_gene, pred_df, true_df, p_value_thresho
         'spearman': np.nan,
         'pr_auc': np.nan,
         'roc_auc': np.nan,
+        'recall_raw': np.array([]),
+        'precision_raw': np.array([]),
+        'fpr_raw': np.array([]),
+        'tpr_raw': np.array([]),
         'significant_genes_count': len(sig_genes)
     }
 
@@ -672,6 +678,10 @@ def compute_downstream_DE_metrics(target_gene, pred_df, true_df, p_value_thresho
             fpr, tpr, _ = roc_curve(y_true, y_scores)
             result['pr_auc'] = auc(recall, precision)
             result['roc_auc'] = auc(fpr, tpr)
+            result['recall_raw'] = recall
+            result['precision_raw'] = precision
+            result['fpr_raw'] = fpr
+            result['tpr_raw'] = tpr
         except:
             pass
 

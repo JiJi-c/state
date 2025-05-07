@@ -160,9 +160,12 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
         self.distributional_loss = distributional_loss
-        self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
+        self.cell_sentence_len =  kwargs.get('cell_set_len', 256)
         self.gene_dim = gene_dim
-        self.batch_dim = batch_dim
+        if kwargs.get("batch_encoder", False):
+            self.batch_dim = batch_dim
+        else:
+            self.batch_dim = None
         self.residual_decoder = kwargs.get("residual_decoder", False)
 
         # Build the distributional loss from geomloss
@@ -182,8 +185,8 @@ class PertSetsPerturbationModel(PerturbationModel):
         # Build the underlying neural OT network
         self._build_networks()
 
-        self.batch_encoder = None
         if kwargs.get("batch_encoder", False) and batch_dim is not None:
+            self.batch_token = torch.nn.Parameter(torch.randn(1, 1, batch_dim))
             self.batch_encoder = build_mlp(
                 in_dim=batch_dim,
                 out_dim=self.hidden_dim,
@@ -192,6 +195,8 @@ class PertSetsPerturbationModel(PerturbationModel):
                 dropout=self.dropout,
                 activation=self.activation_class,
             )
+        else:
+            self.batch_token = None
 
         # if the model is outputting to counts space, apply softplus
         # otherwise its in embedding space and we don't want to
@@ -207,18 +212,18 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.confidence_head = None
             self.confidence_loss_fn = None
 
-        # self.freeze_pert = kwargs.get("freeze_pert", False)
-        # if self.freeze_pert:
-        #     modules_to_freeze = [
-        #         self.pert_encoder,
-        #         self.basal_encoder,
-        #         self.transformer_backbone,
-        #         self.project_out,
-        #         self.convolve,
-        #     ]
-        #     for module in modules_to_freeze:
-        #         for param in module.parameters():
-        #             param.requires_grad = False
+        self.freeze_pert = kwargs.get("freeze_pert", False)
+        if self.freeze_pert:
+            modules_to_freeze = [
+                self.pert_encoder,
+                self.basal_encoder,
+                self.transformer_backbone,
+                self.project_out,
+                self.convolve,
+            ]
+            for module in modules_to_freeze:
+                for param in module.parameters():
+                    param.requires_grad = False
 
         if kwargs.get("nb_decoder", False):
             self.gene_decoder = NBDecoder(
@@ -342,7 +347,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         seq_input = torch.cat([pert_embedding, control_cells], dim=2) # Shape: [B, S, 2 * hidden_dim]
         seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
 
-        if self.batch_encoder is not None:
+        if self.batch_token is not None:
             if padded:
                 batch = batch["gem_group"].reshape(-1, self.cell_sentence_len, self.batch_dim)
             else:
@@ -351,7 +356,26 @@ class PertSetsPerturbationModel(PerturbationModel):
             seq_input = seq_input + self.batch_encoder(batch)  # Shape: [B, S, hidden_dim]
         
         # forward pass + extract CLS last hidden state
-        res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state
+        if self.hparams.get("mask_attn", False):
+            batch_size, seq_length, _ = seq_input.shape
+            device = seq_input.device
+            num_heads = self.transformer_backbone.config.n_head
+
+            self.transformer_backbone._attn_implementation = "eager"
+
+            # create a [1,1,S,S] mask
+            base = torch.eye(seq_length, device=device).view(1,seq_length,seq_length)
+
+            # repeat out to [B,H,S,S]
+            attn_mask = base.repeat(batch_size, 1, 1)
+
+            outputs = self.transformer_backbone(
+                inputs_embeds=seq_input,
+                attention_mask=attn_mask
+            )
+            res_pred = outputs.last_hidden_state
+        else:
+            res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state
 
         # add to basal if predicting residual
         if self.predict_residual:
@@ -559,21 +583,3 @@ class PertSetsPerturbationModel(PerturbationModel):
             output_dict["gene_preds"] = gene_preds
 
         return output_dict
-
-    # def configure_optimizers(self):
-    #     read_depth_lr_multiplier = 100
-
-    #     read_depth_params = []
-    #     other_params = []
-
-    #     for name, param in self.named_parameters():
-    #         if "read_depth" in name:
-    #             read_depth_params.append(param)
-    #         else:
-    #             other_params.append(param)
-        
-    #     optimizer = torch.optim.Adam([
-    #         {'params': other_params, 'lr': self.lr},
-    #         {'params': read_depth_params, 'lr': self.lr * read_depth_lr_multiplier}
-    #     ])
-    #     return optimizer
