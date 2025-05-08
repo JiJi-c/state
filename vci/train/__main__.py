@@ -1,10 +1,11 @@
 import os
 import sys
 import logging
-import argparse
-
+import hydra
 from pathlib import Path
-from hydra import compose, initialize
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
+from typing import Optional
 
 sys.path.append('../../')
 import vci.train.trainer as train
@@ -12,42 +13,58 @@ import vci.train.trainer as train
 log = logging.getLogger(__name__)
 # os.environ["NCCL_TIMEOUT"] = "36000"
 
+# Custom command line resolver for hydra
+from hydra.core.config_store import ConfigStore
+from hydra._internal.utils import get_args_parser
+from hydra.core.singleton import Singleton
+import argparse
 
-def main(config_file):
-    config_file = Path(config_file)
-    config_path = os.path.relpath(Path(config_file).parent, Path(__file__).parent)
-    with initialize(version_base=None, config_path=config_path):
-        log.info(f'Loading config {config_file}...')
-        cfg = compose(config_name=config_file.name)
+def main(config_path: Optional[str] = None):
+    parser = argparse.ArgumentParser(description="VCI pretraining")
+    parser.add_argument('--conf', type=str, help="Path to config YAML file")
+    
+    # First parse just the conf argument
+    args, override_args = parser.parse_known_args()
+    
+    if not args.conf:
+        parser.error("--conf argument is required")
+    
+    # Initialize hydra with the directory of the config file
+    config_file = Path(args.conf)
+    config_dir = str(config_file.parent)
+    config_name = config_file.name
+    
+    # Initialize configuration
+    with hydra.initialize_config_module(config_module=None, version_base=None):
+        # Load the base configuration
+        cfg = OmegaConf.load(args.conf)
+        
+        # Process the remaining command line arguments as overrides
+        if override_args:
+            overrides = OmegaConf.from_dotlist(override_args)
+            cfg = OmegaConf.merge(cfg, overrides)
+        
+        # Execute the main logic
+        run_with_config(cfg)
 
-        if cfg.embeddings.current is None:
-            log.error("Gene embeddings are required for training. Please set 'embeddings.current'")
-            sys.exit(1)
-
-        if cfg.dataset.current is None:
-            log.error("Please set the desired dataset to 'dataset.current'")
-            sys.exit(1)
-
+def run_with_config(cfg: DictConfig):
+    if cfg.embeddings.current is None:
+        log.error("Gene embeddings are required for training. Please set 'embeddings.current'")
+        sys.exit(1)
+    
+    if cfg.dataset.current is None:
+        log.error("Please set the desired dataset to 'dataset.current'")
+        sys.exit(1)
+    
     os.environ['MASTER_PORT'] = str(cfg.experiment.port)
     # WAR: Workaround for sbatch failing when --ntasks-per-node is set.
     # lightning expects this to be set.
     os.environ['SLURM_NTASKS_PER_NODE'] = str(cfg.experiment.num_gpus_per_node)
-
+    
     log.info(f'*************** Training {cfg.experiment.name} ***************')
-    log.info(cfg)
-
+    log.info(OmegaConf.to_yaml(cfg))
+    
     train.main(cfg)
 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="VCI pretraining"
-    )
-    parser.add_argument(
-        '-c', "--config",
-        type=str,
-        help="Training configuration file.",
-    )
-    args = parser.parse_args()
-
-    main(args.config)
+    main()
