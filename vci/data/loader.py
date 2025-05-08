@@ -357,32 +357,30 @@ class VCIDatasetSentenceCollator(object):
             datasets.append(ds_name)
 
         if self.cfg.loss.name == "tabular":
-            # shared_genes = torch.randint(low=0, high=19789, size=(self.S,), dtype=torch.int32)
-
-            batch_ds = set(datasets)
-            presence_masks = [ (self.global_to_local[ds] >= 0) for ds in batch_ds ]
-            inter = presence_masks[0].clone()
-            for m in presence_masks[1:]:
-                inter &= m
-            candidates = torch.where(inter)[0]     # all global IDs present in every dataset
-            n = candidates.numel()
-            if n >= self.S:
-                # sample without replacement
-                idx = torch.randperm(n, device=candidates.device)[:self.S]
-                shared_genes = candidates[idx]
-            elif n > 0:
-                # sample with replacement
-                idx = torch.randint(n, (self.S,), device=candidates.device)
-                shared_genes = candidates[idx]
-            else:
-                # truly no overlap → random global pick
-                shared_genes = torch.randint(
-                    low=0,
-                    high=self.global_size,
-                    size=(self.S,),
-                    device=candidates.device,
-                    dtype=torch.long
-                )
+            # batch_ds = set(datasets)
+            # presence_masks = [ (self.global_to_local[ds] >= 0) for ds in batch_ds ]
+            # inter = presence_masks[0].clone()
+            # for m in presence_masks[1:]:
+            #     inter &= m
+            # candidates = torch.where(inter)[0]     # all global IDs present in every dataset
+            # n = candidates.numel()
+            # if n >= self.S:
+            #     # sample without replacement
+            #     idx = torch.randperm(n, device=candidates.device)[:self.S]
+            #     shared_genes = candidates[idx]
+            # elif n > 0:
+            #     # sample with replacement
+            #     idx = torch.randint(n, (self.S,), device=candidates.device)
+            #     shared_genes = candidates[idx]
+            # else:
+            # # truly no overlap → random global pick
+            shared_genes = torch.randint(
+                low=0,
+                high=self.global_size,
+                size=(self.S,),
+                device=masks.device,
+                dtype=torch.long
+            )
         else:
             shared_genes = None
 

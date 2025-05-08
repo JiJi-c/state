@@ -10,7 +10,7 @@ experiment:
   num_epochs: 16
   num_nodes: 1
   num_gpus_per_node: 1
-  port: 12399
+  port: 12400
   val_check_interval: 1000 # Number of steps between tests
   limit_val_batches: 100
   ddp_timeout: 3600
@@ -69,7 +69,7 @@ embeddings:
 
 validations:
   diff_exp:
-    enable: true
+    enable: false
     eval_interval_multiple: 10
     obs_pert_col: gene
     obs_filter_label: non-targeting
@@ -79,7 +79,7 @@ validations:
     dataset_name: rpe1_top5000_variable
 
   perturbation:
-    enable: true
+    enable: false
     eval_interval_multiple: 10
     pert_col: gene
     ctrl_label: non-targeting
@@ -161,14 +161,14 @@ model:
   dropout: 0.1
   output_dim:  512 # TODO: Is emsize different from this?
   use_flash_attention: true
-  rda: false
-  counts: false
-  dataset_correction: false
+  rda: true
+  counts: true
+  dataset_correction: true
   num_datasets: 1139
   ema: false
   ema_decay: 0.999
   ema_update_interval: 1000
-  sample_rda: false
+  sample_rda: true
 
 task:
   mask: 0.2
@@ -179,11 +179,11 @@ optimizer:
   start: 0.33
   end: 1.0
   max_grad_norm: 0.8
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 8
   reset_lr_on_restart: false # LR is reset to start value on restart
 
 loss:
-  name: "cross_entropy" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
+  name: "tabular" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
   apply_normalization: False
   kernel: "energy"
   uniformity: False
