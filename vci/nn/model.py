@@ -400,19 +400,18 @@ class LitUCEModel(L.LightningModule):
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
 
         loss = criterion(decs.squeeze(), target)
-        if dataset_embs is not None and self.training:
-            sparsity_loss = torch.mean(torch.abs(dataset_embs))
-            independence_loss = self.independence_loss(embs, dataset_embs)
-            self.log("trainer/sparsity_loss", sparsity_loss)
-            self.log("trainer/independence_loss", independence_loss)
-            self.log("trainer/reconstruction_loss", loss)
-            loss = loss + sparsity_loss + 10 * independence_loss
+        if dataset_embs is not None:
+            # use the dataset loss 
+            dataset_pred = self.dataset_encoder(dataset_embs) # B x # datasets
+            dataset_labels = batch[8].to(self.device).long()
 
-        # add in the independence loss for cell embeddings
-        if self.cfg.loss.get('uniformity', False):
-            uniformity = self.cfg.loss.get('uniformity_weight', 1.0) * uniformity_loss(embs)
-            self.log("trainer/uniformity_loss", uniformity)
-            loss = loss + uniformity
+            # self.dataset_loss is a nn.CrossEntropyLoss
+            dataset_loss = self.dataset_loss(dataset_pred, dataset_labels)
+            if self.training:
+                self.log("trainer/dataset_loss", dataset_loss)
+                loss = loss + dataset_loss
+            else:
+                self.log("validation/dataset_loss", dataset_loss)
 
         sch = self.lr_schedulers()
 
