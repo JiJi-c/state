@@ -32,6 +32,12 @@ embeddings:
     valid_genes_masks: null
     size: 5120
 
+  esm2-cellxgene-basecamp-tahoe:
+    all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    ds_emb_mapping: /home/alishbaimran/scbasecamp/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
+    valid_genes_masks: /home/alishbaimran/scbasecamp/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
+    size: 5120
+
   evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
     ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/Evo2/dataset_emb_idx_Evo2_fixed.torch
@@ -100,6 +106,13 @@ dataset:
     ds_type: filtered_h5ad
     train: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv
     val: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv
+    filter: true
+    filter_by_species: null
+  
+  scbasecamp-cellxgene-tahoe:
+    ds_type: filtered_h5ad
+    train: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
+    val: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
     filter: true
     filter_by_species: null
 
