@@ -38,6 +38,7 @@ embeddings:
     ds_emb_mapping: /home/alishbaimran/scbasecamp/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
     valid_genes_masks: /home/alishbaimran/scbasecamp/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
     size: 5120
+    num: 503178
 
   evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
@@ -164,11 +165,11 @@ model:
   rda: true
   counts: true
   dataset_correction: true
-  num_datasets: 1139
   ema: false
   ema_decay: 0.999
   ema_update_interval: 1000
-  sample_rda: true
+  sample_rda: false
+  batch_tabular_loss: false
 
 task:
   mask: 0.2
