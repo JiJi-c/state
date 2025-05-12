@@ -21,7 +21,6 @@ kwargs:
   mask_attn: False
   distributional_loss: energy
   init_from: null
-  batch_token: true
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
       n_positions: ${model.kwargs.cell_set_len}

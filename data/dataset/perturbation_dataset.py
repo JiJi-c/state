@@ -336,7 +336,11 @@ class PerturbationDataset(Dataset):
                 codes = self.h5_file["var/gene_name/codes"][:]
                 genes = categories[codes].tolist()
             except:
-                genes = self.h5_file["var/_index"][:].astype(str).tolist()
+                try:
+                    genes = self.h5_file["var/_index"][:].astype(str).tolist()
+                except:
+                    # Try to access the gene names from the var group
+                    genes = self.h5_file["var/gene_symbol"][:].astype(str)
 
         return genes
 

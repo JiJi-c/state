@@ -264,9 +264,6 @@ class PerturbationModel(ABC, LightningModule):
             with torch.no_grad():
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
             
-            batch_var = batch["gem_group"]
-            # concatenate on the last axis
-            latent_preds = torch.cat([latent_preds, batch_var], dim=-1) if self.batch_dim is not None else latent_preds
             gene_preds = self.gene_decoder(latent_preds)
             gene_targets = batch["X_hvg"]
             decoder_loss = self.loss_fn(gene_preds, gene_targets)
@@ -306,9 +303,6 @@ class PerturbationModel(ABC, LightningModule):
         }
 
         if self.gene_decoder is not None:
-            batch_var = batch["gem_group"]
-            # concatenate on the last axis
-            latent_preds = torch.cat([latent_preds, batch_var], dim=-1) if self.batch_dim is not None else latent_preds
             gene_preds = self.gene_decoder(latent_output)
             output_dict["gene_preds"] = gene_preds
             decoder_loss = self.loss_fn(gene_preds, batch["X_hvg"])
@@ -333,9 +327,6 @@ class PerturbationModel(ABC, LightningModule):
         }
 
         if self.gene_decoder is not None:
-            batch_var = batch["gem_group"]
-            # concatenate on the last axis
-            latent_preds = torch.cat([latent_preds, batch_var], dim=-1) if self.batch_dim is not None else latent_preds
             gene_preds = self.gene_decoder(latent_output)
             output_dict["gene_preds"] = gene_preds
 

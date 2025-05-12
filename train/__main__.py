@@ -370,8 +370,8 @@ def train(cfg: DictConfig) -> None:
 
     logger.info('Starting trainer fit.')
 
-    # if we are training with freeze pert param, manually load the checkpoint
-    # if no last.ckpt, start training using the seed file
+    # if a checkpoint does not exist, start with the provided checkpoint
+    # this is mainly used for pretrain -> finetune workflows
     manual_init = cfg["model"]["kwargs"].get("init_from", None)
     if checkpoint_path is None and manual_init is not None:
         checkpoint_path = manual_init

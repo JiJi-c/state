@@ -1,5 +1,6 @@
 name: MultiDatasetPerturbationDataModule
 kwargs:
+  few_shot_percent: 0.3
   embed_key: X_hvg
   output_space: gene
   train_task: replogle

@@ -186,17 +186,12 @@ class PertSetsPerturbationModel(PerturbationModel):
         self._build_networks()
 
         if kwargs.get("batch_encoder", False) and batch_dim is not None:
-            self.batch_token = torch.nn.Parameter(torch.randn(1, 1, batch_dim))
-            self.batch_encoder = build_mlp(
-                in_dim=batch_dim,
-                out_dim=self.hidden_dim,
-                hidden_dim=self.hidden_dim,
-                n_layers=self.n_encoder_layers,
-                dropout=self.dropout,
-                activation=self.activation_class,
+            self.batch_encoder = nn.Embedding(
+                num_embeddings=batch_dim,
+                embedding_dim=hidden_dim,
             )
         else:
-            self.batch_token = None
+            self.batch_encoder = None
 
         # if the model is outputting to counts space, apply softplus
         # otherwise its in embedding space and we don't want to
@@ -347,7 +342,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         seq_input = torch.cat([pert_embedding, control_cells], dim=2) # Shape: [B, S, 2 * hidden_dim]
         seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
 
-        if self.batch_token is not None:
+        if self.batch_encoder is not None:
             if padded:
                 batch = batch["gem_group"].reshape(-1, self.cell_sentence_len, self.batch_dim)
             else:
@@ -429,11 +424,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             # with torch.no_grad():
             #     latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
             
-            batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
-            # concatenate on the last axis
-            if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
-                latent_preds = torch.cat([latent_preds, batch_var], dim=-1)
-
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
                 gene_targets = batch["X_hvg"].reshape_as(mu)
@@ -490,10 +480,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             latent_preds = pred
 
             # Train decoder to map latent predictions to gene space
-            batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
-            # concatenate on the last axis
-            if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
-                latent_preds = torch.cat([latent_preds, batch_var], dim=-1)
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
                 gene_targets = batch["X_hvg"].reshape_as(mu)
@@ -565,13 +551,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         basal_hvg = batch.get("basal_hvg", None)
 
         if self.gene_decoder is not None:
-            if latent_output.dim() == 2:
-                batch_var = batch["gem_group"].reshape(latent_output.shape[0], -1)
-            else:
-                batch_var = batch["gem_group"].reshape(latent_output.shape[0], latent_output.shape[1], -1)
-            # concatenate on the last axis
-            if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
-                latent_output = torch.cat([latent_output, batch_var], dim=-1)
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, _ = self.gene_decoder(latent_output)
                 gene_preds = mu
