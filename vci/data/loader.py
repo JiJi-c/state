@@ -242,15 +242,20 @@ class FilteredGenesCounts(H5adSentenceDataset):
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
                 if not utils.is_valid_uuid(name): # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
-                    a = self.dataset_file(name)
-                    try:
-                        gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
-                    except:
-                        gene_categories = a["/var/gene_name/categories"][:]
-                        gene_codes = np.array(a["/var/gene_name/codes"][:])
-                        gene_names = np.array([g.decode('utf-8') for g in gene_categories[gene_codes]])
-                    valid_mask = np.isin(gene_names, valid_genes_list)
-                    self.valid_gene_index[name] = valid_mask
+                    if adata is None:
+                        a = self.dataset_file(name)
+                        try:
+                            gene_names = np.array([g.decode('utf-8') for g in a["/var/gene_name"][:]])  # Decode byte strings
+                        except:
+                            gene_categories = a["/var/gene_name/categories"][:]
+                            gene_codes = np.array(a["/var/gene_name/codes"][:])
+                            gene_names = np.array([g.decode('utf-8') for g in gene_categories[gene_codes]])
+                        valid_mask = np.isin(gene_names, valid_genes_list)
+                        self.valid_gene_index[name] = valid_mask
+                    else:
+                        gene_names = np.array(adata.var_names)
+                        valid_mask = np.isin(gene_names, valid_genes_list)
+                        self.valid_gene_index[name] = valid_mask
 
     def __getitem__(self, idx):
         counts, idx, dataset, dataset_num = super().__getitem__(idx)
@@ -592,3 +597,4 @@ class VCIDatasetSentenceCollator(object):
             cell_total_counts if self.cfg.model.rda else None,
             cell_sentence_counts if self.cfg.model.counts else None,
         )
+
