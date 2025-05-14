@@ -38,7 +38,7 @@ embeddings:
     ds_emb_mapping: /home/alishbaimran/scbasecamp/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
     valid_genes_masks: /home/alishbaimran/scbasecamp/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
     size: 5120
-    num: 503178
+    num: 19790
 
   evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
@@ -118,10 +118,11 @@ dataset:
   
   scbasecamp-cellxgene-tahoe:
     ds_type: filtered_h5ad
-    train: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
-    val: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
+    train: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_train.csv
+    val: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_val.csv
     filter: true
     filter_by_species: null
+    num_datasets: 15700
 
   tahoe:
     ds_type: filtered_h5ad
