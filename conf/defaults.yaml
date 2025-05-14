@@ -35,8 +35,8 @@ embeddings:
 
   esm2-cellxgene-basecamp-tahoe:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
-    ds_emb_mapping: /home/alishbaimran/scbasecamp/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
-    valid_genes_masks: /home/alishbaimran/scbasecamp/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
+    ds_emb_mapping: /large_storage/ctc/datasets/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
+    valid_genes_masks: /large_storage/ctc/datasets/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
     size: 5120
     num: 19790
 
