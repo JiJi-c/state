@@ -15,6 +15,7 @@ import pandas as pd
 
 log = logging.getLogger(__file__)
 
+# THIS SHOULD ONLY BE USED FOR INFERENCE
 def create_dataloader(cfg,
                       workers=1,
                       data_dir=None,
@@ -292,7 +293,19 @@ class VCIDatasetSentenceCollator(object):
         # Load the dataset mappings
         self.use_dataset_info = getattr(cfg.model, "dataset_correction", False)
         self.batch_tabular_loss = getattr(cfg.model, "batch_tabular_loss", False)
-        self.valid_gene_mask = valid_gene_mask
+
+        if valid_gene_mask is not None:
+            # this branch is for inference
+            self.valid_gene_mask = valid_gene_mask
+        else:
+            # otherwise for training, load from config
+            gene_mask_file = utils.get_embedding_cfg(self.cfg).valid_genes_masks
+            if gene_mask_file is not None:
+                # we have a config for training
+                self.valid_gene_mask = torch.load(gene_mask_file)
+            else:
+                # we don't have a config for training
+                self.valid_gene_mask = None
 
         self.dataset_to_protein_embeddings = torch.load(
             utils.get_embedding_cfg(self.cfg).ds_emb_mapping.format(
@@ -429,12 +442,20 @@ class VCIDatasetSentenceCollator(object):
         if torch.isnan(counts_raw).any():
             log.error(f"NaN values in counts for dataset {dataset}")
 
-        ds_emb_idxs = self.dataset_to_protein_embeddings[dataset]
+        ds_emb_idxs = torch.tensor(self.dataset_to_protein_embeddings[dataset], dtype=torch.long)
         counts = counts_raw
         if valid_gene_mask is not None:
-            ds_emb_idxs = ds_emb_idxs[valid_gene_mask]
-            counts = counts_raw[:, valid_gene_mask]
-        ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
+            if ds_emb_idxs.shape[0] == valid_gene_mask.shape[0]:
+                # IF THE MASK IS THE SAME SIZE AS THE DATASET
+                # WITH -1 FOR MISSING GENES
+                ds_emb_idxs = ds_emb_idxs[valid_gene_mask]
+            else:
+                # assert that valid_gene_mask.sum = ds_emb_idxs.shape[0]
+                # OTHERWISE, DATASET COLUMNS HAVE ALREADY BEEN FILTERD
+                assert valid_gene_mask.sum() == ds_emb_idxs.shape[0], f"Something wrong with filtering or mask for dataset {dataset}"
+            if counts_raw.shape[1] == valid_gene_mask.shape[0]:
+                # however, COUNTS ARE NEVER FILTERED
+                counts = counts_raw[:, valid_gene_mask]
 
         if torch.any(counts < 0):
             counts = F.relu(counts)
