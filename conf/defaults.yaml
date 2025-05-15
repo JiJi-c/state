@@ -191,6 +191,7 @@ optimizer:
   max_grad_norm: 0.8
   gradient_accumulation_steps: 8
   reset_lr_on_restart: false # LR is reset to start value on restart
+  zclip: false
 
 loss:
   name: "tabular" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular
