@@ -35,3 +35,4 @@ dependencies:
     - triton
     - biopython
     - plotly
+    - git+https://github.com/bluorion-com/ZClip.git

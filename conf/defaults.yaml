@@ -35,10 +35,10 @@ embeddings:
 
   esm2-cellxgene-basecamp-tahoe:
     all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
-    ds_emb_mapping: /home/alishbaimran/scbasecamp/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
-    valid_genes_masks: /home/alishbaimran/scbasecamp/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
+    ds_emb_mapping: /large_storage/ctc/datasets/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
+    valid_genes_masks: /large_storage/ctc/datasets/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
     size: 5120
-    num: 503178
+    num: 19790
 
   evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
@@ -70,7 +70,7 @@ embeddings:
 
 validations:
   diff_exp:
-    enable: false
+    enable: true
     eval_interval_multiple: 10
     obs_pert_col: gene
     obs_filter_label: non-targeting
@@ -80,7 +80,7 @@ validations:
     dataset_name: rpe1_top5000_variable
 
   perturbation:
-    enable: false
+    enable: true
     eval_interval_multiple: 10
     pert_col: gene
     ctrl_label: non-targeting
@@ -115,13 +115,22 @@ dataset:
     val: /home/alishbaimran/scbasecamp/scBasecamp_cellxgene_all.csv
     filter: true
     filter_by_species: null
-  
-  scbasecamp-cellxgene-tahoe:
+
+  scbasecamp-cellxgene-tahoe-filtered:
     ds_type: filtered_h5ad
-    train: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
-    val: /home/alishbaimran/scbasecamp/scbasecamp_filtered_tahoe_cellxgene_all.csv
+    train: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_train_filtered.csv
+    val: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_val_filtered.csv
     filter: true
     filter_by_species: null
+    num_datasets: 15700 
+
+  scbasecamp-cellxgene-tahoe:
+    ds_type: filtered_h5ad
+    train: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_train.csv
+    val: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_val.csv
+    filter: true
+    filter_by_species: null
+    num_datasets: 15700
 
   tahoe:
     ds_type: filtered_h5ad
@@ -182,6 +191,7 @@ optimizer:
   max_grad_norm: 0.8
   gradient_accumulation_steps: 8
   reset_lr_on_restart: false # LR is reset to start value on restart
+  zclip: false
 
 loss:
   name: "tabular" # mmd, cross_entropy, kl_divergence, mse, wasserstein, tabular

@@ -46,7 +46,7 @@ export MASTER_PORT='12357'
 git log --pretty=format:'%h' -n 1
 
 srun \\
-    python -m vci.train --config {{ traing_config_file }}
+    python -m vci.train --conf {{ traing_config_file }}
 """
 
 

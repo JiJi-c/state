@@ -10,6 +10,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
+from zclip import ZClipLightningCallback
 
 from vci.nn.model import LitUCEModel
 from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator, GeneFilterDataset, NpzMultiDataset
@@ -27,10 +28,11 @@ def get_embeddings(cfg):
     all_pe = all_pe.cuda()
     return all_pe
 
-
 def main(cfg):
     print(f"Starting training with Embedding {cfg.embeddings.current} and dataset {cfg.dataset.current}")
     os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+    os.environ["NCCL_LAUNCH_TIMEOUT"] = str(cfg.experiment.ddp_timeout)
+    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
     TOTAL_N_CELL = cfg.dataset.num_cells
     EPOCH_LENGTH = int(TOTAL_N_CELL // cfg.model.batch_size // 24)
     # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
@@ -119,6 +121,10 @@ def main(cfg):
         ema_decay = getattr(cfg.model, "ema_decay", 0.999)
         callbacks.append(EMACallback(decay=ema_decay))
 
+    if getattr(cfg.optimizer, "zclip", False):
+        zclip_cb = ZClipLightningCallback(mode="zscore", alpha=0.97, z_thresh=2.5, clip_option="adaptive_scaling", max_grad_norm=1.0, clip_factor=1.0)
+        callbacks.append(zclip_cb)
+
     max_steps = -1
     if cfg.experiment.profile.enable_profiler:
         callbacks.append(ProfilerCallback(cfg=cfg))
@@ -131,7 +137,7 @@ def main(cfg):
                         devices=cfg.experiment.num_gpus_per_node,
                         num_nodes=cfg.experiment.num_nodes,
                         # Accumulation
-                        gradient_clip_val=cfg.optimizer.max_grad_norm,
+                        gradient_clip_val=None if cfg.optimizer.zclip else cfg.optimizer.max_grad_norm,
                         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
                         precision="bf16-mixed",
                         strategy=DDPStrategy(process_group_backend="nccl" if cfg.experiment.num_nodes == 1 else "gloo",
