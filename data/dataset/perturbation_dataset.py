@@ -11,7 +11,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 import torch
 from torch.utils.data import Dataset, Subset
-from data.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
+from data.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache, parse_tahoe_style_pert_col
 import h5py
 import numpy as np
 from pathlib import Path
@@ -44,8 +44,10 @@ class PerturbationDataset(Dataset):
         h5_path: Union[str, Path],
         mapping_strategy: BaseMappingStrategy,
         pert_onehot_map: Optional[Dict[str, int]] = None,
+        cell_type_onehot_map: Optional[Dict[str, int]] = None,
         batch_onehot_map: Optional[Dict[str, int]] = None,
         pert_col: str = "gene",
+        pert_dosage_col: Optional[str] = None,
         cell_type_key: str = "cell_type",
         batch_col: str = "gem_group",
         control_pert: str = "non-targeting",
@@ -54,6 +56,7 @@ class PerturbationDataset(Dataset):
         random_state: int = 42,
         should_yield_control_cells: bool = True,
         store_raw_basal: bool = False,
+        process_pert_col=None,
         **kwargs,
     ):
         """
@@ -62,8 +65,10 @@ class PerturbationDataset(Dataset):
             h5_path: Path to the h5 file containing the dataset
             mapping_strategy: Strategy for mapping basal cells to perturbed cells, one of "batch", "random", "nearest"
             pert_onehot_map: Global mapping of perturbation names to one-hot encodings or featurizations
+            cell_type_onehot_map: Global mapping of cell type names to one-hot encodings or featurizations
             batch_onehot_map: Global mapping of batch names to one-hot encodings
             pert_col: Column in the h5 file containing perturbation information
+            pert_dosage_col: Column in the h5 file containing dosage information for perturbation
             cell_type_key: Column in the h5 file containing cell type information
             batch_col: Column in the h5 file containing batch information
             control_pert: Name of the control perturbation
@@ -71,14 +76,22 @@ class PerturbationDataset(Dataset):
             random_state: Random seed for reproducibility
             pert_tracker: PerturbationTracker instance for tracking valid perturbations
             should_yield_control_cells: If True, control cells will be included in the dataset
+            process_pert_col: Function to process the perturbation names in case they are combined with dosage information. 
+                Expected function: f(pert_value) -> (pert_name, pert_dosage)
+                
+                # NOTE: This was required to process the perturbation information stored in Tahoe datasets.
+                # Extracting dosage information can be used by some models like CPA.
+                # For genetic perturbation datasets, please leave this argument and `pert_dosage_col` as None.
         """
         super().__init__()
         self.name = name
         self.h5_path = Path(h5_path)
         self.mapping_strategy = mapping_strategy
         self.pert_onehot_map = pert_onehot_map
+        self.cell_type_onehot_map = cell_type_onehot_map
         self.batch_onehot_map = batch_onehot_map
         self.pert_col = pert_col
+        self.pert_dosage_col = pert_dosage_col
         self.cell_type_key = cell_type_key
         self.batch_col = batch_col
         self.control_pert = control_pert
@@ -88,6 +101,9 @@ class PerturbationDataset(Dataset):
         self.should_yield_control_cells = should_yield_control_cells
         self.should_yield_controls = should_yield_control_cells
         self.store_raw_basal = store_raw_basal
+        self.process_pert_col = process_pert_col
+        
+        self.need_to_process_pert = self.process_pert_col is not None and self.pert_dosage_col is None
 
         self.metadata_cache = GlobalH5MetadataCache().get_cache(
                 str(self.h5_path),
@@ -182,16 +198,37 @@ class PerturbationDataset(Dataset):
         # Get perturbation information using metadata cache
         pert_code = self.metadata_cache.pert_codes[underlying_idx]
         pert_name = self.metadata_cache.pert_categories[pert_code]
+        
+        if self.pert_dosage_col is not None:
+            pert_dosage = self.metadata_cache.pert_dosages[underlying_idx]
+        else:
+            pert_dosage = None
+        
+        if self.need_to_process_pert:
+            if self.process_pert_col == 'tahoe_style':
+                processed_pert_name, processed_pert_dosage = parse_tahoe_style_pert_col(pert_name)
+            else:
+                processed_pert_name = pert_name
+                processed_pert_dosage = pert_dosage
+        else:
+            processed_pert_name = pert_name
+            processed_pert_dosage = pert_dosage
+        
         if self.pert_onehot_map is not None:
             # map across all files to a consistent one hot encoding or featurization
-            pert_onehot = self.pert_onehot_map[pert_name]
+            pert_onehot = self.pert_onehot_map[processed_pert_name]
         else:
             pert_onehot = None
 
         # Get cell type using metadata cache
         cell_type_code = self.metadata_cache.cell_type_codes[underlying_idx]
         cell_type = self.metadata_cache.cell_type_categories[cell_type_code]
-
+        
+        if self.cell_type_onehot_map is not None:
+            cell_type_onehot = self.cell_type_onehot_map[cell_type]
+        else:
+            cell_type_onehot = None
+            
         # Get batch information
         batch_code = self.metadata_cache.batch_codes[underlying_idx]
         batch_name = self.metadata_cache.batch_categories[batch_code]
@@ -205,8 +242,10 @@ class PerturbationDataset(Dataset):
             "X": pert_expr,  # the perturbed cell’s data
             "basal": ctrl_expr,   # will be filled in by the mapping strategy
             "pert": pert_onehot,
-            "pert_name": pert_name,
+            "pert_name": processed_pert_name,
+            "pert_dosage": processed_pert_dosage,
             "cell_type": cell_type,
+            "cell_type_onehot": cell_type_onehot,
             "gem_group": batch,
             "gem_group_name": batch_name,
         }
@@ -361,7 +400,9 @@ class PerturbationDataset(Dataset):
         basal_list = [None] * batch_size
         pert_list = [None] * batch_size
         pert_name_list = [None] * batch_size
+        pert_dosage_list = [None] * batch_size
         cell_type_list = [None] * batch_size
+        cell_type_onehot_list = [None] * batch_size
         gem_group_list = [None] * batch_size
         gem_group_name_list = [None] * batch_size
         
@@ -382,7 +423,9 @@ class PerturbationDataset(Dataset):
             basal_list[i] = item["basal"]
             pert_list[i] = item["pert"]
             pert_name_list[i] = item["pert_name"]
+            pert_dosage_list[i] = item["pert_dosage"]
             cell_type_list[i] = item["cell_type"]
+            cell_type_onehot_list[i] = item["cell_type_onehot"]
             gem_group_list[i] = item["gem_group"]
             gem_group_name_list[i] = item["gem_group_name"]
             
@@ -398,7 +441,9 @@ class PerturbationDataset(Dataset):
             "basal": torch.stack(basal_list),
             "pert": torch.stack(pert_list),
             "pert_name": pert_name_list,
+            "pert_dosage": pert_dosage_list,
             "cell_type": cell_type_list,
+            "cell_type_onehot": torch.stack(cell_type_onehot_list),
             "gem_group": torch.stack(gem_group_list),
             "gem_group_name": gem_group_name_list,
         }
@@ -409,24 +454,56 @@ class PerturbationDataset(Dataset):
         if has_X_hvg:
             X_hvg = torch.stack(X_hvg_list)
             
+            # Handle Tahoe dataset (needs log transform)
             if is_tahoe:
-                batch_dict["X_hvg"] = torch.log1p(X_hvg)
+                if transform == 'log-normalize':
+                    library_sizes = X_hvg.sum(dim=1, keepdim=True) # TODO: Need to replace with library size from all genes
+                    # Replace zeros with ones (will result in no change for zero vectors)
+                    safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
+                    X_hvg_norm = X_hvg * 10000 / safe_sizes
+                    batch_dict["X_hvg"] = torch.log1p(X_hvg_norm)
+                elif transform == 'log1p' or transform is True:
+                    batch_dict["X_hvg"] = torch.log1p(X_hvg)
             elif int_counts:
+                # this is for log transformed data. let's make it count data
                 batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
             else:
                 batch_dict["X_hvg"] = X_hvg
-
+        
         # Process basal_hvg if present
         if has_basal_hvg:
             basal_hvg = torch.stack(basal_hvg_list)
-            
+
+            # Handle Tahoe dataset (needs log transform)
             if is_tahoe:
-                batch_dict["basal_hvg"] = torch.log1p(basal_hvg)
+                if transform == 'log-normalize':
+                    library_sizes = basal_hvg.sum(dim=1, keepdim=True) # TODO: Need to replace with library size from all genes
+                    # Replace zeros with ones (will result in no change for zero vectors)
+                    safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
+                    basal_hvg_norm = basal_hvg * 10000 / safe_sizes
+                    batch_dict["basal_hvg"] = torch.log1p(basal_hvg_norm)
+                elif transform == 'log1p' or transform is True:
+                    batch_dict["basal_hvg"] = torch.log1p(basal_hvg)
+            elif int_counts:
+                # this is for log transformed data. let's make it count data
+                batch_dict["basal_hvg"] = torch.expm1(basal_hvg).round().to(torch.int32)
             else:
                 batch_dict["basal_hvg"] = basal_hvg
-        
+                
         # Apply transform if provided
-        if transform:
+        if transform == 'log-normalize':
+            X_library_sizes = batch_dict["X"].sum(dim=1, keepdim=True)
+            X_safe_sizes = torch.where(X_library_sizes > 0, X_library_sizes, torch.ones_like(X_library_sizes) * 10000)
+            X_norm = batch_dict["X"] * 10000 / X_safe_sizes
+            batch_dict["X"] = torch.log1p(X_norm)
+            
+            # Normalize basal by library size before log transform
+            basal_library_sizes = batch_dict["basal"].sum(dim=1, keepdim=True)
+            basal_safe_sizes = torch.where(basal_library_sizes > 0, basal_library_sizes, torch.ones_like(basal_library_sizes) * 10000)
+            basal_norm = batch_dict["basal"] * 10000 / basal_safe_sizes
+            batch_dict["basal"] = torch.log1p(basal_norm)
+        elif transform == 'log1p' or transform is True: # True is for backwards compatibility
+            # Original behavior: just log transform without normalization
             batch_dict["X"] = torch.log1p(batch_dict["X"])
             batch_dict["basal"] = torch.log1p(batch_dict["basal"])
         

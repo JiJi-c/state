@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import logging
-
+import ast
 import scanpy as sc
 import h5py
 import torch
@@ -16,9 +16,9 @@ import os
 import pandas as pd
 import anndata
 from pathlib import Path
-from utils.singleton import Singleton
+from .singleton import Singleton
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from scanpy import AnnData
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class H5MetadataCache:
                  cell_type_key: str = 'cell_name',
                  control_pert: str = 'DMSO_TF',
                  batch_col: str = 'sample', # replace with plate number
+                 pert_dosage_col: Optional[str] = None,
                 ):
         """
         Args:
@@ -38,6 +39,7 @@ class H5MetadataCache:
             pert_col: Column name for perturbation data
             cell_type_key: Column name for cell type data
             control_pert: Name of control perturbation
+            pert_dosage_col: Column name for perturbation dosage data (Optional)
         """
         self.h5_path = h5_path
         with h5py.File(h5_path, 'r') as f:
@@ -64,6 +66,12 @@ class H5MetadataCache:
                 self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
             except:
                 self.batch_codes = f[f"obs/{batch_col}"][:].astype(np.int32) # if batch is stored directly as numbers
+                
+            # in case dosage is stored in a separate column
+            if pert_dosage_col is not None:
+                self.pert_dosages = f[f"obs/{pert_dosage_col}"][:].astype(np.float32) # TODO: probably should check for the type 
+            else:
+                self.pert_dosages = None
             
             # Create mask for control perturbations
             self.control_pert_code = np.where(self.pert_categories == control_pert)[0][0]
@@ -353,7 +361,7 @@ def split_perturbations_by_cell_fraction(
     return train_perts, val_perts
 
 
-class SincleCellDataset(data.Dataset):
+class SingleCellDataset(data.Dataset):
     def __init__(
         self,
         expression: torch.tensor,
@@ -363,7 +371,7 @@ class SincleCellDataset(data.Dataset):
         labels: None,  # optional, tensor of labels
         covar_vals: None,  # tensor of covar values or cpa.yaml
     ) -> None:
-        super(SincleCellDataset, self).__init__()
+        super(SingleCellDataset, self).__init__()
 
         # Set expression
         self.expression = expression
@@ -433,7 +441,7 @@ def anndata_to_sc_dataset(
     covar_col: str = None,
     hv_genes=None,
     embedding_model="ESM2",
-) -> (SincleCellDataset, AnnData):
+) -> (SingleCellDataset, AnnData):
     # Subset to just genes we have embeddings for
     adata, protein_embeddings = load_gene_embeddings_adata(
         adata=adata, species=[species], embedding_model=embedding_model
@@ -461,7 +469,7 @@ def anndata_to_sc_dataset(
             # we have a categorical label to use as covariate
             covar_vals = torch.tensor(pd.Categorical(adata.obs[covar_col]).codes)
     return (
-        SincleCellDataset(
+        SingleCellDataset(
             expression=expression,
             protein_embeddings=protein_embeddings,
             labels=labels,
@@ -713,3 +721,8 @@ def drop_low_cellcount_perts(adata, obs_key, N_min=0):
     counts = pd.DataFrame(adata.obs[obs_key].value_counts())
     perts_to_keep = counts[counts["count"] > N_min].index.values
     return adata[adata.obs[obs_key].isin(perts_to_keep)]
+
+
+def parse_tahoe_style_pert_col(pert_str):
+    drug, dosage, unit = ast.literal_eval(pert_str)[0]
+    return drug, dosage
