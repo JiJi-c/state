@@ -1,4 +1,6 @@
+import json
 import os
+from pathlib import Path
 import shutil
 import pickle
 import re
@@ -12,12 +14,13 @@ import torch
 
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, Callback
+from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
+from lightning.pytorch.plugins.precision import MixedPrecision
 
 from data.utils.modules import get_datamodule
 from data.data_modules.tasks import parse_dataset_specs  # TODO-Abhi: Should this move?
-from models.decoders import UCELogProbDecoder
+# from models.decoders import UCELogProbDecoder # commented out since it's not used yet
 from models import (
     SimpleSumPerturbationModel,
     GlobalSimpleSumPerturbationModel,
@@ -26,11 +29,15 @@ from models import (
     PertSetsPerturbationModel,
     OldNeuralOTPerturbationModel,
     DecoderOnlyPerturbationModel,
-    PseudobulkPerturbationModel
+    PseudobulkPerturbationModel,
+    scGPTForPerturbation,
+    CPAPerturbationModel,
+    SCVIPerturbationModel,
 )
 from callbacks import GradNormCallback, BatchSpeedMonitorCallback
 
 import logging
+
 
 logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
@@ -130,6 +137,185 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
+    elif model_type.lower() == "cpa":
+        return CPAPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            gene_dim=gene_dim,
+            **module_config,
+        )
+    elif model_type.lower() == "scvi":
+        return SCVIPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "celltypemean":
+        return CellTypeMeanModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "decoder_only":
+        return DecoderOnlyPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "pseudobulk":
+        return PseudobulkPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "cpa":
+        return CPAPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            gene_dim=gene_dim,
+            **module_config,
+        )
+    elif model_type.lower() == "scvi":
+        return SCVIPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "celltypemean":
+        return CellTypeMeanModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "decoder_only":
+        return DecoderOnlyPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "cpa":
+        return CPAPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            gene_dim=gene_dim,
+            **module_config,
+        )
+    elif model_type.lower() == "scvi":
+        return SCVIPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "celltypemean":
+        return CellTypeMeanModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "decoder_only":
+        return DecoderOnlyPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            **module_config,
+        )
+    elif model_type.lower() == "scgpt-chemical" or model_type.lower() == "scgpt-genetic":
+        pretrained_path = module_config["pretrained_path"]
+        assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
+        
+        model_dir = Path(pretrained_path)
+        model_config_file = model_dir / "args.json"
+        model_file = model_dir / "best_model.pt"
+        
+        model = scGPTForPerturbation(
+            ntoken=module_config["ntoken"],
+            n_drug_tokens=module_config["n_perts"], # only used for chemical perturbations
+            d_model=module_config["d_model"],
+            nhead=module_config["nhead"],
+            d_hid=module_config["d_hid"],
+            nlayers=module_config["nlayers"],
+            nlayers_cls=module_config["n_layers_cls"],
+            n_cls=1,
+            dropout=module_config["dropout"],
+            pad_token_id=module_config["pad_token_id"],
+            pad_value=module_config["pad_value"],
+            pert_pad_id=module_config["pert_pad_id"],
+            do_mvc=module_config["do_MVC"],
+            cell_emb_style=module_config["cell_emb_style"],
+            mvc_decoder_style=module_config["mvc_decoder_style"],
+            use_fast_transformer=module_config["use_fast_transformer"],
+            lr=module_config["lr"],
+            step_size_lr=module_config["step_size_lr"],
+            include_zero_gene=module_config["include_zero_gene"],
+            embed_key=module_config["embed_key"],
+            perturbation_type=module_config["perturbation_type"],
+        )
+        
+        load_param_prefixes = module_config["load_param_prefixes"]
+        
+        if load_param_prefixes is not None:
+            model_dict = model.model.state_dict()
+            pretrained_dict = torch.load(model_file)
+            pretrained_dict = {
+                k: v
+                for k, v in pretrained_dict.items()
+                if any([k.startswith(prefix) for prefix in module_config["load_param_prefixes"]])
+            }
+            for k, v in pretrained_dict.items():
+                print(f"Loading params {k} with shape {v.shape}")
+                
+            model_dict.update(pretrained_dict)
+            model.model.load_state_dict(model_dict)
+        else:
+            try:
+                model.model.load_state_dict(torch.load(model_file))
+                print(f"Loading all model params from {model_file}")
+            except:
+                # only load params that are in the model and match the size
+                model_dict = model.model.state_dict()
+                pretrained_dict = torch.load(model_file)
+                pretrained_dict = {
+                    k: v
+                    for k, v in pretrained_dict.items()
+                    if k in model_dict and v.shape == model_dict[k].shape
+                }
+                for k, v in pretrained_dict.items():
+                    print(f"Loading params {k} with shape {v.shape}")
+                    
+                model_dict.update(pretrained_dict)
+                model.model.load_state_dict(model_dict)
+        
+        return model
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -196,7 +382,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_eve
     best_ckpt = ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="step={step}-val_loss={val_loss:.4f}",
-        save_last="link",  # Will create last.ckpt symlink to best checkpoint
+        save_last=True,  # Will create last.ckpt symlink to best checkpoint
         monitor="val_loss",
         mode="min",
         save_top_k=1,  # Only keep the best checkpoint
@@ -236,14 +422,21 @@ def train(cfg: DictConfig) -> None:
     if cfg["use_wandb"]:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
+    # commented out since it didn't load the config correctly for some reason (will need to fix this)
+    # if this already exists for a run, then just read it in
+    # if exists(join(run_output_dir, "config.yaml")):
+    #     with open(join(run_output_dir, "config.yaml"), "r") as f:
+    #         cfg_yaml = f.read()
+    #     cfg = OmegaConf.load(cfg_yaml)
+    #     logger.info(f"Config loaded from file.")
+    # else:
     with open(join(run_output_dir, "config.yaml"), "w") as f:
         f.write(cfg_yaml)
-    logger.info(f"Config saved to file.")
 
     # Set random seeds
     if "train_seed" in cfg["training"]:
         pl.seed_everything(cfg["training"]["train_seed"])
-
+        
     # if the provided pert_col is drugname_drugconc, hard code the value of control pert
     # this is because it's surprisingly hard to specify a list of tuples in the config as a string
     if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
@@ -265,8 +458,46 @@ def train(cfg: DictConfig) -> None:
             cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module. this is backwards compatible with previous configs
-    sentence_len = cfg["model"]["kwargs"]["cell_set_len"]
+    try:
+        sentence_len = cfg["model"]["cell_set_len"]
+    except KeyError:
+        if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
+            if "cell_sentence_len" in cfg["model"]["kwargs"] and cfg["model"]["kwargs"]["cell_sentence_len"] > 1:
+                sentence_len = cfg["model"]["kwargs"]["cell_sentence_len"]
+                cfg['training']['batch_size'] = 1
+            else:
+                sentence_len = 1
+        else:
+            sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+            
+    if cfg["model"]["name"].lower().startswith("scgpt"): # scGPT uses log-normalized expression
+        cfg["data"]["kwargs"]["transform"] = "log-normalize"
+        cfg["data"]["kwargs"]["hvg_names_uns_key"] = "hvg_names" if cfg["data"]["kwargs"]["train_task"] != "replogle" else None # TODO: better to not hardcode this
         
+        cfg['data']['kwargs']['dataset_cls'] = 'scGPTPerturbationDataset'
+        
+        model_dir = Path(cfg["model"]["kwargs"]["pretrained_path"])
+        
+        vocab_file = model_dir / "vocab.json"
+
+        vocab = json.load(open(vocab_file, "r"))
+        cfg["model"]["kwargs"]["pad_token_id"] = vocab["<pad>"]
+        for s in cfg["model"]["kwargs"]["special_tokens"]:
+            if s not in vocab:
+                vocab[s] = len(vocab)
+        
+        cfg["data"]["kwargs"]["vocab"] = vocab
+        cfg["data"]["kwargs"]["perturbation_type"] = cfg["model"]["kwargs"]["perturbation_type"]
+        cfg["model"]["kwargs"]["ntoken"] = len(vocab)
+        cfg["model"]["kwargs"]["d_model"] = cfg["model"]["kwargs"]["embsize"]
+        
+        logger.info(f"Added vocab and hvg_names_uns_key to data kwargs for scGPT")
+        
+    elif cfg["model"]["name"].lower() == "cpa" and cfg["model"]["kwargs"]["recon_loss"] == "gauss":
+        cfg["data"]["kwargs"]["transform"] = "log-normalize"
+    elif cfg["model"]["name"].lower() == "scvi":
+        cfg["data"]["kwargs"]["transform"] = None
+    
     data_module = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
@@ -291,6 +522,11 @@ def train(cfg: DictConfig) -> None:
                 # TODO-Abhi: only save necessary data
                 pickle.dump(data_module, f)
             logger.info(f"Data module saved.")
+
+    if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
+        cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)
+        cfg["model"]["kwargs"]["n_perts"] = len(data_module.pert_onehot_map)
+        cfg["model"]["kwargs"]["n_batches"] = len(data_module.batch_onehot_map)
 
     # Create model
     model = get_lightning_module(
@@ -333,6 +569,16 @@ def train(cfg: DictConfig) -> None:
     callbacks = ckpt_callbacks + [batch_speed_monitor]
 
     logger.info('Loggers and callbacks set up.')
+    
+    if cfg["model"]["name"].lower().startswith("scgpt"):
+        plugins = [
+            MixedPrecision(
+                precision="bf16-mixed",
+                device="cuda",
+            )
+        ]
+    else:
+        plugins = []
 
     if torch.cuda.is_available():
         accelerator = "gpu"
@@ -347,9 +593,9 @@ def train(cfg: DictConfig) -> None:
         check_val_every_n_epoch=None,
         val_check_interval=cfg["training"]["val_freq"],
         logger=loggers,
+        plugins=plugins,
         callbacks=callbacks,
-        gradient_clip_val=cfg["training"]["gradient_clip_val"],
-        # profiler='simple',
+        gradient_clip_val=cfg["training"]["gradient_clip_val"] if cfg["model"]["name"].lower() != "cpa" else None,
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
