@@ -285,6 +285,9 @@ class LitUCEModel(L.LightningModule):
         protein_embeds = [self.protein_embeds[x] \
                           if x in self.protein_embeds else torch.zeros(get_embedding_cfg(self.cfg).size) for x in genes]
         protein_embeds = torch.stack(protein_embeds).to(self.device)
+        if protein_embeds.sum() == 0:
+            raise ValueError(f"No gene embeddings found")
+
         return self.gene_embedding_layer(protein_embeds)
 
     @staticmethod
@@ -319,22 +322,10 @@ class LitUCEModel(L.LightningModule):
                                        adata_name=dataset_name,
                                        shuffle=False,
                                        sentence_collator=self.collater,)
-        if self.cfg.dataset.current in ["scbasecamp", "scbasecamp-cellxgene"]: #switched
-            gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
-        elif self.cfg.dataset.current == "cellxgene": # use convert_symbols_to_ensembl(adata) or adata.var.index
-            # not sure about this change, may need to debug further 
+        try:
             gene_embeds = self.get_gene_embedding(adata.var.index)
-        else:
-            raise ValueError(f"Unsupported dataset: {self.cfg.dataset.current}")
-
-        # if self.cfg.dataset.current == "scbasecamp": 
-        #     gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
-        # elif self.cfg.dataset.current in ["cellxgene", "scbasecamp-cellxgene"]: # use convert_symbols_to_ensembl(adata) or adata.var.index
-        #     # not sure about this change, may need to debug further 
-        #     gene_embeds = self.get_gene_embedding(adata.var.index)
-        # else:
-        #     raise ValueError(f"Unsupported dataset: {self.cfg.dataset.current}")
-        
+        except:
+            gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
         logprobs_batchs = []
         for batch in tqdm(dataloader,
                           position=0,
