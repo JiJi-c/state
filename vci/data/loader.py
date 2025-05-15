@@ -382,13 +382,18 @@ class VCIDatasetSentenceCollator(object):
                         dtype=torch.long
                     )
             else:
-                shared_genes = torch.randint(
+                dataset = datasets[0]
+                valid_indices = torch.where(self.global_to_local[dataset] >= 0)[0]
+                
+                # same sampling but for only valid indices essentially
+                idx = torch.randint(
                     low=0,
-                    high=self.global_size,
+                    high=valid_indices.size(0),
                     size=(self.S,),
                     device=masks.device,
                     dtype=torch.long
                 )
+                shared_genes = valid_indices[idx]
         else:
             shared_genes = None
 
@@ -398,7 +403,10 @@ class VCIDatasetSentenceCollator(object):
         max_len = 0
         for counts, idx, dataset, dataset_num in batch:
             if self.valid_gene_mask is not None:
-                valid_mask = self.valid_gene_mask[dataset]
+                if dataset in self.valid_gene_mask:
+                    valid_mask = self.valid_gene_mask[dataset]
+                else:
+                    valid_mask = None
             else:
                 valid_mask = None
             (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask)
