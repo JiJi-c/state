@@ -450,8 +450,14 @@ class VCIDatasetSentenceCollator(object):
         if torch.isnan(counts_raw).any():
             log.error(f"NaN values in counts for dataset {dataset}")
 
+        if torch.any(counts_raw < 0):
+            counts_raw = F.relu(counts_raw)
+
+        if torch.max(counts_raw) > 35: # CAN WE CHANGE THIS TO INT VS REAL
+            counts_raw = torch.log1p(counts_raw)
+
         ds_emb_idxs = torch.tensor(self.dataset_to_protein_embeddings[dataset], dtype=torch.long)
-        counts = counts_raw
+        counts = counts_raw # counts_raw is needed below so make a copy
         if valid_gene_mask is not None:
             if ds_emb_idxs.shape[0] == valid_gene_mask.shape[0]:
                 # IF THE MASK IS THE SAME SIZE AS THE DATASET
@@ -463,13 +469,7 @@ class VCIDatasetSentenceCollator(object):
                 assert valid_gene_mask.sum() == ds_emb_idxs.shape[0], f"Something wrong with filtering or mask for dataset {dataset}"
             if counts_raw.shape[1] == valid_gene_mask.shape[0]:
                 # however, COUNTS ARE NEVER FILTERED
-                counts = counts_raw[:, valid_gene_mask]
-
-        if torch.any(counts < 0):
-            counts = F.relu(counts)
-
-        if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
-            counts = torch.log1p(counts)
+                counts = counts_raw[:, valid_gene_mask] # filtered version of copy
 
         if counts.sum() == 0:
             expression_weights = F.softmax(counts, dim=1)
