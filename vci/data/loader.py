@@ -331,6 +331,10 @@ class VCIDatasetSentenceCollator(object):
         print(len(self.global_to_local))
 
     def __call__(self, batch):
+        num_aug = getattr(self.cfg.model, "num_downsample", 1)
+        if num_aug > 1:
+           # for each original sample, duplicate it num_aug times
+           batch = [item for item in batch for _ in range(num_aug)]
         batch_size = len(batch)
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
         batch_sentences_counts = torch.zeros((batch_size, self.pad_length))
@@ -448,11 +452,30 @@ class VCIDatasetSentenceCollator(object):
         if torch.any(counts_raw < 0):
             counts_raw = F.relu(counts_raw)
 
-        if torch.max(counts_raw) > 35: # CAN WE CHANGE THIS TO INT VS REAL
-            counts_raw = torch.log1p(counts_raw)
+        # store the raw counts here
+        original_counts_raw = counts_raw.clone()
+        num_aug = getattr(self.cfg.model, "num_downsample", 1)
+        if num_aug > 1:
+            f = torch.empty(1).uniform_(0.3, 1.0).item()
+            total_umis = int(original_counts_raw.sum().item())
+            down_umis = int(total_umis * f)
+            if down_umis > 0:
+                # build a distribution over log1p counts
+                log_counts = torch.log1p(original_counts_raw)
+                expr_weights = log_counts / log_counts.sum(dim=1, keepdim=True)
+                genes_sampled = torch.multinomial(expr_weights.squeeze(), down_umis, replacement=True)
+                counts_aug = torch.zeros_like(original_counts_raw)
+                counts_aug.scatter_add_(1, genes_sampled.unsqueeze(0), torch.ones(down_umis, dtype=counts_aug.dtype, device=counts_aug.device))
+            else:
+                counts_aug = original_counts_raw
 
+            # if we are using an augmentation, update the raw counts here. note that we stored the original counts so those are safe
+            counts_raw = counts_aug
+
+        # logic to sample a single cell sentence and task sentence here
         ds_emb_idxs = torch.tensor(self.dataset_to_protein_embeddings[dataset], dtype=torch.long)
-        counts = counts_raw # counts_raw is needed below so make a copy
+        original_counts = original_counts_raw
+        counts = counts_raw
         if valid_gene_mask is not None:
             if ds_emb_idxs.shape[0] == valid_gene_mask.shape[0]:
                 # IF THE MASK IS THE SAME SIZE AS THE DATASET
@@ -464,7 +487,14 @@ class VCIDatasetSentenceCollator(object):
                 assert valid_gene_mask.sum() == ds_emb_idxs.shape[0], f"Something wrong with filtering or mask for dataset {dataset}"
             if counts_raw.shape[1] == valid_gene_mask.shape[0]:
                 # however, COUNTS ARE NEVER FILTERED
-                counts = counts_raw[:, valid_gene_mask] # filtered version of copy
+                counts = counts_raw[:, valid_gene_mask]
+                original_counts = original_counts_raw[:, valid_gene_mask]
+
+        if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
+            counts = torch.log1p(counts)
+            counts_raw = torch.log1p(counts_raw)
+            original_counts = torch.log1p(original_counts)
+            original_counts_raw = torch.log1p(original_counts_raw)
 
         if counts.sum() == 0:
             expression_weights = F.softmax(counts, dim=1)
@@ -537,7 +567,8 @@ class VCIDatasetSentenceCollator(object):
                 task_sentence[c, self.cfg.dataset.P:unshared_num] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
 
             # set counts for unshared genes
-            task_counts[c, :unshared_num] = cell[task_sentence[c, :unshared_num].to(torch.int32)]
+            task_idxs = task_sentence[c, :unshared_num].to(torch.int32)
+            task_counts[c, :unshared_num] = original_counts[c, task_idxs]
 
             # convert from dataset specific gene indices to global gene indices
             # only do this for everything up to shared genes, which are already global indices
@@ -557,7 +588,7 @@ class VCIDatasetSentenceCollator(object):
                 shared_counts = torch.zeros(local_indices.shape, dtype=cell.dtype, device=cell.device)
                 valid_mask = local_indices != -1
                 if valid_mask.any():
-                    shared_counts[valid_mask] = counts_raw[c, local_indices[valid_mask]]
+                    shared_counts[valid_mask] = original_counts_raw[c, local_indices[valid_mask]]
 
                 # for indices which are -1, count is 0, else index into cell
                 task_counts[c, unshared_num:] = shared_counts

@@ -179,6 +179,7 @@ model:
   ema_update_interval: 1000
   sample_rda: false
   batch_tabular_loss: false
+  num_downsample: 1
 
 task:
   mask: 0.2
