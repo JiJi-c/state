@@ -15,6 +15,11 @@ import pandas as pd
 
 log = logging.getLogger(__file__)
 
+# Threshold for flagging implausibly high UMIs when we undo a log1p
+EXPONENTIATED_UMIS_LIMIT = 5_000_000  
+# If any count exceeds this, we confidently treat the tensor as raw integers
+RAW_COUNT_HEURISTIC_THRESHOLD = 35
+
 # THIS SHOULD ONLY BE USED FOR INFERENCE
 def create_dataloader(cfg,
                       workers=1,
@@ -408,7 +413,10 @@ class VCIDatasetSentenceCollator(object):
                     valid_mask = None
             else:
                 valid_mask = None
-            (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask)
+            
+            # compute downsample fraction. this is 1.0 if num_aug > 1
+            downsample_fraction = 1.0 if (num_aug > 1 and i % num_aug == 0) else None
+            (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask, downsample_fraction)
 
             batch_sentences[i, :] = bs
             masks[i, :] = mask
@@ -444,36 +452,80 @@ class VCIDatasetSentenceCollator(object):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
 
+    def is_raw_integer_counts(self, counts: torch.Tensor) -> bool:
+        """
+        Heuristic check to decide whether `counts` are raw integer UMI counts
+        versus log1p-transformed counts.
+        
+        1. If any entry > RAW_COUNT_HEURISTIC_THRESHOLD, assume raw ints.
+        2. Otherwise, invert log1p (via expm1) and sum:
+        - If the total UMIs exceeds EXPONENTIATED_UMIS_LIMIT, it means 
+            the data were actually raw ints that we mistakenly log-transformed.
+        - Otherwise, assume the data were correctly log1p counts.
+        """
+        max_val = torch.max(counts).item()
+
+        # Primary heuristic: very large individual counts => raw counts
+        if max_val > RAW_COUNT_HEURISTIC_THRESHOLD:
+            return True
+
+        # Ambiguous case: try undoing log1p
+        total_umis = int(torch.expm1(counts).sum().item())
+        if total_umis > EXPONENTIATED_UMIS_LIMIT:
+            return True
+
+        return False
+
     # sampling a single cell sentence
-    def sample_cell_sentences(self, counts_raw, dataset, shared_genes=None, valid_gene_mask=None):
+    # counts_raw is a view of a cell
+    def sample_cell_sentences(self, counts_raw, dataset, shared_genes=None, valid_gene_mask=None, downsample_frac=None):
         if torch.isnan(counts_raw).any():
             log.error(f"NaN values in counts for dataset {dataset}")
 
         if torch.any(counts_raw < 0):
             counts_raw = F.relu(counts_raw)
 
-        # store the raw counts here
+        if self.is_raw_integer_counts(counts_raw): # CAN WE CHANGE THIS TO INT VS REAL
+            total_umis = int(counts_raw.sum(axis=1).item())
+            count_expr_dist = counts_raw / counts_raw.sum(axis=1, keepdim=True)
+            counts_raw = torch.log1p(counts_raw)
+        else: # counts are already log1p
+            exp_log_counts = torch.expm1(counts_raw)
+            total_umis = int(exp_log_counts.sum(axis=1).item())
+            count_expr_dist = exp_log_counts / exp_log_counts.sum(axis=1, keepdim=True)
+        
+
+        ### At this point, counts_raw is assumed to be log counts ###
+
+        # store the raw counts here, we need them as targets
         original_counts_raw = counts_raw.clone()
+
+        # if we are using downsample augmentation, decide if we need to update counts_raw
         num_aug = getattr(self.cfg.model, "num_downsample", 1)
         if num_aug > 1:
-            f = torch.empty(1).uniform_(0.3, 1.0).item()
-            total_umis = int(original_counts_raw.sum().item())
-            down_umis = int(total_umis * f)
+            if downsample_frac is None:
+                downsample_frac = torch.empty(1).uniform_(0.3, 1.0).item()
+            
+            down_umis = int(total_umis * downsample_frac)
             if down_umis > 0:
                 # build a distribution over log1p counts
-                log_counts = torch.log1p(original_counts_raw)
-                expr_weights = log_counts / log_counts.sum(dim=1, keepdim=True)
-                genes_sampled = torch.multinomial(expr_weights.squeeze(), down_umis, replacement=True)
-                counts_aug = torch.zeros_like(original_counts_raw)
-                counts_aug.scatter_add_(1, genes_sampled.unsqueeze(0), torch.ones(down_umis, dtype=counts_aug.dtype, device=counts_aug.device))
+                genes_sampled = torch.multinomial(count_expr_dist.squeeze(), down_umis, replacement=True)
+                # flatten to a 1D gene vector, and get the counts for the newly sampled genes
+                flat = counts_raw.view(-1)  
+                counts_aug_flat = torch.zeros_like(flat)
+                counts_aug_flat.scatter_add_(0, genes_sampled, torch.ones(down_umis, dtype=counts_aug_flat.dtype,))
+                # restore original shape (1, D)
+                counts_aug = counts_aug_flat.view_as(counts_raw)
+                counts_aug = torch.log1p(counts_aug)
             else:
-                counts_aug = original_counts_raw
+                counts_aug = counts_raw
 
-            # if we are using an augmentation, update the raw counts here. note that we stored the original counts so those are safe
+            # if we are using an augmentation, update the raw counts here
             counts_raw = counts_aug
 
         # logic to sample a single cell sentence and task sentence here
         ds_emb_idxs = torch.tensor(self.dataset_to_protein_embeddings[dataset], dtype=torch.long)
+
         original_counts = original_counts_raw
         counts = counts_raw
         if valid_gene_mask is not None:
@@ -489,12 +541,6 @@ class VCIDatasetSentenceCollator(object):
                 # however, COUNTS ARE NEVER FILTERED
                 counts = counts_raw[:, valid_gene_mask]
                 original_counts = original_counts_raw[:, valid_gene_mask]
-
-        if torch.max(counts) > 35: # CAN WE CHANGE THIS TO INT VS REAL
-            counts = torch.log1p(counts)
-            counts_raw = torch.log1p(counts_raw)
-            original_counts = torch.log1p(original_counts)
-            original_counts_raw = torch.log1p(original_counts_raw)
 
         if counts.sum() == 0:
             expression_weights = F.softmax(counts, dim=1)
@@ -595,7 +641,7 @@ class VCIDatasetSentenceCollator(object):
 
             assert self.cfg.model.rda
             # sum the counts of the task sentence
-            cell_total_counts[c] = torch.sum(task_counts[c])
+            cell_total_counts[c] = torch.log(total_umis) # this should actually be the 
 
             if self.cfg.loss.name == "cross_entropy":
                 # binarize the counts to 0/1
