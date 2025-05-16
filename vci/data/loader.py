@@ -641,7 +641,7 @@ class VCIDatasetSentenceCollator(object):
 
             assert self.cfg.model.rda
             # sum the counts of the task sentence
-            cell_total_counts[c] = torch.log(total_umis) # this should actually be the 
+            cell_total_counts[c] = torch.sum(task_counts[c])
 
             if self.cfg.loss.name == "cross_entropy":
                 # binarize the counts to 0/1
