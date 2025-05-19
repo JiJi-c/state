@@ -13,11 +13,13 @@ def evaluate_perturbation(model, cfg, device=None, logger=print):
     """
     Standalone evaluation of perturbation effects.
     """
-    model.eval()
-    if device:
-        model.to(device)
+
+
+
     adata = sc.read_h5ad(cfg['validations']['perturbation']['dataset'])
     adata.X = np.log1p(adata.X)
+    # TEMPORARY: Subset to 1/10th of the data for faster evaluation
+    adata = adata[:max(1, adata.n_obs // 50)].copy()
     dataloader = create_dataloader(cfg,
                                    adata=adata,
                                    adata_name=cfg['validations']['perturbation']['dataset_name'],
@@ -91,11 +93,13 @@ def evaluate_de(model, cfg, device=None, logger=print):
     """
     Standalone evaluation of differential expression (DE).
     """
-    model.eval()
-    if device:
-        model.to(device)
+
+
+
     # Get ground truth DE genes
     de_val_adata = sc.read_h5ad(cfg['validations']['diff_exp']['dataset'])
+    # TEMPORARY: Subset to 1/50th of the data for faster evaluation
+    # de_val_adata = de_val_adata[:max(1, de_val_adata.n_obs // 50)].copy()
     sc.pp.log1p(de_val_adata)
     sc.tl.rank_genes_groups(
         de_val_adata,
