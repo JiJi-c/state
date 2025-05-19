@@ -382,18 +382,40 @@ class VCIDatasetSentenceCollator(object):
                         dtype=torch.long
                     )
             else:
-                dataset = datasets[0]
-                valid_indices = torch.where(self.global_to_local[dataset] >= 0)[0]
+                # Find genes shared across all datasets
+                shared_mask = None
+                for dataset in datasets:
+                    dataset_mask = self.global_to_local[dataset] >= 0
+                    if shared_mask is None:
+                        shared_mask = dataset_mask
+                    else:
+                        shared_mask &= dataset_mask
                 
-                # same sampling but for only valid indices essentially
-                idx = torch.randint(
-                    low=0,
-                    high=valid_indices.size(0),
-                    size=(self.S,),
-                    device=masks.device,
-                    dtype=torch.long
-                )
-                shared_genes = valid_indices[idx]
+                # Get indices of shared genes
+                shared_indices = torch.where(shared_mask)[0]
+                
+                # Repeat shared genes to reach size S
+                n_shared = shared_indices.size(0)
+                if n_shared > 0:
+                    # Calculate how many times to repeat and remainder
+                    repeats = self.S // n_shared
+                    remainder = self.S % n_shared
+                    
+                    # Repeat the full sequence
+                    shared_genes = shared_indices.repeat(repeats)
+                    
+                    # Add remaining genes needed
+                    if remainder > 0:
+                        shared_genes = torch.cat([shared_genes, shared_indices[:remainder]])
+                else:
+                    # If no shared genes, sample randomly from global gene space
+                    shared_genes = torch.randint(
+                        low=0,
+                        high=self.global_size,
+                        size=(self.S,),
+                        device=masks.device,
+                        dtype=torch.long
+                    )
         else:
             shared_genes = None
 
