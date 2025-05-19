@@ -31,9 +31,12 @@ def main():
 
     cfg = load_config(args.config)
     logger.info(f"Loading model from {args.checkpoint}")
-    model = LitUCEModel.load_from_checkpoint(args.checkpoint, cfg=cfg)
-    model.eval()
+    from vci.inference import Inference
+    inference = Inference(cfg)
+    inference.load_model(args.checkpoint)
+    model = inference.model
     model.to(args.device)
+    # inference handles pe_embedding and eval mode
 
     if args.eval_type in ['perturbation', 'both']:
         logger.info("Starting Perturbation Evaluation...")
