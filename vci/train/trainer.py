@@ -63,6 +63,8 @@ def main(cfg):
                                   collate_fn=dataset_sentence_collator,
                                   num_workers=cfg.dataset.num_train_workers,
                                   persistent_workers=True,
+                                  pin_memory=True,
+                                  prefetch_factor=4,
                                   generator=generator)
 
     val_dataset = DatasetClass(cfg, test=True)
@@ -86,14 +88,15 @@ def main(cfg):
                         max_lr=cfg.optimizer.max_lr,
                         emb_size=get_embedding_cfg(cfg).size,
                         collater=dataset_sentence_collator,
-                        cfg=cfg).cuda()
+                        cfg=cfg)
+    # Apply torch.compile for graph optimization (PyTorch 2.0+)
+    model = torch.compile(model, dynamic=False)
+    model = model.cuda()
     all_pe = get_embeddings(cfg)
     all_pe.requires_grad = False
     model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
 
     model = model.train()
-    if cfg.experiment.compiled:
-        model = torch.compile(model, dynamic=False)
 
     run_name, chk = get_latest_checkpoint(cfg)
     checkpoint_callback = ModelCheckpoint(
