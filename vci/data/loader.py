@@ -388,23 +388,33 @@ class VCIDatasetSentenceCollator(object):
 
         if self.cfg.loss.name == "tabular":
             if self.batch_tabular_loss:
-                batch_ds = set(datasets)
-                presence_masks = [ (self.global_to_local[ds] >= 0) for ds in batch_ds ]
-                inter = presence_masks[0].clone()
-                for m in presence_masks[1:]:
-                    inter &= m
-                candidates = torch.where(inter)[0]     # all global IDs present in every dataset
-                n = candidates.numel()
-                if n >= self.S:
-                    # sample without replacement
-                    idx = torch.randperm(n, device=candidates.device)[:self.S]
-                    shared_genes = candidates[idx]
-                elif n > 0:
-                    # sample with replacement
-                    idx = torch.randint(n, (self.S,), device=candidates.device)
-                    shared_genes = candidates[idx]
+                # Find genes shared across all datasets
+                shared_mask = None
+                for dataset in datasets:
+                    dataset_mask = self.global_to_local[dataset] >= 0
+                    if shared_mask is None:
+                        shared_mask = dataset_mask
+                    else:
+                        shared_mask &= dataset_mask
+                
+                # Get indices of shared genes
+                shared_indices = torch.where(shared_mask)[0]
+                
+                # Repeat shared genes to reach size S
+                n_shared = shared_indices.size(0)
+                if n_shared > 0:
+                    # Calculate how many times to repeat and remainder
+                    repeats = self.S // n_shared
+                    remainder = self.S % n_shared
+                    
+                    # Repeat the full sequence
+                    shared_genes = shared_indices.repeat(repeats)
+                    
+                    # Add remaining genes needed
+                    if remainder > 0:
+                        shared_genes = torch.cat([shared_genes, shared_indices[:remainder]])
                 else:
-                    # truly no overlap → random global pick
+                    # If no shared genes, sample randomly from global gene space
                     shared_genes = torch.randint(
                         low=0,
                         high=self.global_size,
