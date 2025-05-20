@@ -196,7 +196,7 @@ model:
   sample_rda: false
   batch_tabular_loss: false
   num_downsample: 1
-  variable_masking: false
+  variable_masking: true
 
 task:
   mask: 0.2
