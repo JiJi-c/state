@@ -94,8 +94,10 @@ def create_dataloader(cfg,
                                       adata_name=adata_name)
         if sentence_collator is None:
             sentence_collator = VCIDatasetSentenceCollator(cfg, valid_gene_mask=dataset.valid_gene_index, is_train=False)
+
         # validation should not use cell augmentations
         sentence_collator.training = False
+
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=shuffle,
@@ -417,6 +419,7 @@ class VCIDatasetSentenceCollator(object):
            batch = [item for item in batch for _ in range(num_aug)]
 
         batch_size = len(batch)
+        
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
         batch_sentences_counts = torch.zeros((batch_size, self.pad_length))
         masks = torch.zeros((batch_size, self.pad_length), dtype=torch.bool)

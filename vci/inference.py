@@ -26,6 +26,7 @@ class Inference():
         self.collator = None
         self.protein_embeds = None
         self._vci_conf = cfg
+           
 
     def __load_dataset_meta(self, adata_path):
         with h5.File(adata_path) as h5f:
@@ -83,7 +84,7 @@ class Inference():
             raise ValueError('Model already initialized')
 
         # Load and initialize model for eval
-        self.model = LitUCEModel.load_from_checkpoint(checkpoint, strict=False)
+        self.model = LitUCEModel.load_from_checkpoint(checkpoint, strict=False, cfg=self._vci_conf)
         all_pe = get_embeddings(self._vci_conf)
         all_pe.requires_grad = False
         self.model.pe_embedding = nn.Embedding.from_pretrained(all_pe)

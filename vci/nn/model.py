@@ -317,6 +317,7 @@ class LitUCEModel(L.LightningModule):
         return combine
 
     def _predict_exp_for_adata(self, adata, dataset_name, pert_col):
+        
         dataloader = create_dataloader(self.cfg,
                                        adata=adata,
                                        adata_name=dataset_name,
@@ -356,14 +357,17 @@ class LitUCEModel(L.LightningModule):
             else:
                 ds_emb = None
 
+
             merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts, sampled_rda, ds_emb)
             logprobs_batch = self.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
-            logprobs_batchs.append(logprobs_batch.squeeze())
-
+            
+        logprobs_batchs.append(logprobs_batch.squeeze())
         logprobs_batchs = np.vstack(logprobs_batchs)
-        
+        # Free up memory from logprobs_batchs if possible
         probs_df = pd.DataFrame(logprobs_batchs)
+        del logprobs_batchs
+        torch.cuda.empty_cache()
         probs_df[pert_col] = adata.obs[pert_col].values
 
         # Read config properties
@@ -381,6 +385,7 @@ class LitUCEModel(L.LightningModule):
 
         return de_genes
 
+    
     def forward(self, src: Tensor, mask: Tensor, counts=None, dataset_nums=None):
         """
         Args:
