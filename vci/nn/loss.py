@@ -80,32 +80,40 @@ class KLDivergenceLoss(nn.Module):
         return torch.sum(p * torch.log(p / q))
 
 class MMDLoss(nn.Module):
-    def __init__(self, kernel="energy", blur=0.05, scaling=0.5):
+    def __init__(self, kernel="energy", blur=0.05, scaling=0.5, downsample=1):
         super().__init__()
         self.mmd_loss = SamplesLoss(loss=kernel, blur=blur, scaling=scaling)
+        self.downsample = downsample
 
     def forward(self, input, target):
-        return self.mmd_loss(input.unsqueeze(1), target.unsqueeze(1)).mean()
+        input = input.reshape(-1, self.downsample, input.shape[-1])
+        target = target.reshape(-1, self.downsample, target.shape[-1])
+
+        return self.mmd_loss(input, target).mean()
 
 class TabularLoss(nn.Module):
-    def __init__(self, shared=128):
+    def __init__(self, shared=128, downsample=1):
         super().__init__()
         self.shared = shared
+        self.downsample = downsample
 
         self.gene_loss = SamplesLoss(loss="energy")
         self.cell_loss = SamplesLoss(loss="energy")
 
     def forward(self, input, target):
-        gene_mmd = self.gene_loss(input.unsqueeze(1), target.unsqueeze(1)).mean()
+        input = input.reshape(-1, self.downsample, input.shape[-1])
+        target = target.reshape(-1, self.downsample, target.shape[-1])
+        gene_mmd = self.gene_loss(input, target).mean()
 
         # cell_mmd should only be on the shared genes, and match scale to mse loss
-        cell_inputs = input[:, -self.shared:]
-        cell_targets = target[:, -self.shared:]
-        
-        # need to reshape each from (B, F) to (F, 1, B)
-        cell_inputs = cell_inputs.permute(1, 0).unsqueeze(1)
-        cell_targets = cell_targets.permute(1, 0).unsqueeze(1)
+        cell_inputs = input[:, :, -self.shared:]
+        cell_targets = target[:, :, -self.shared:]
+
+        # need to reshape each from (B, self.downsample, F) to (F, self.downsample, B)
+        cell_inputs = cell_inputs.transpose(2, 0)
+        cell_targets = cell_targets.transpose(2, 0)
         cell_mmd = self.cell_loss(cell_inputs, cell_targets).mean()
+
         return gene_mmd + cell_mmd
 
 class IndependenceLoss(nn.Module):

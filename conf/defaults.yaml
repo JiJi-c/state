@@ -40,6 +40,13 @@ embeddings:
     size: 5120
     num: 19790
 
+  esm2-cellxgene-tahoe:
+    all_embeddings: /large_storage/ctc/ML/data/cell/misc/Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt
+    ds_emb_mapping: /large_storage/ctc/datasets/updated1_gene_embidx_mapping_tahoe_basecamp_cellxgene.torch
+    valid_genes_masks: /large_storage/ctc/datasets/updated1_valid_gene_index_tahoe_basecamp_cellxgene.torch
+    size: 5120
+    num: 19790
+
   evo2-scbasecamp:
     all_embeddings: /large_storage/ctc/projects/vci/scbasecamp/Evo2/all_species_Evo2.torch
     ds_emb_mapping: /large_storage/ctc/projects/vci/scbasecamp/Evo2/dataset_emb_idx_Evo2_fixed.torch
@@ -132,6 +139,15 @@ dataset:
     filter_by_species: null
     num_datasets: 15700
 
+  cellxgene-tahoe:
+    ds_type: filtered_h5ad
+    train: /large_storage/ctc/datasets/tahoe_cellxgene_train.csv
+    val: /large_storage/ctc/datasets/tahoe_cellxgene_val.csv
+    filter: true
+    filter_by_species: null
+    num_datasets: 1139
+
+
   tahoe:
     ds_type: filtered_h5ad
     train: /scratch/ctc/ML/uce/full_train_datasets.csv
@@ -179,6 +195,8 @@ model:
   ema_update_interval: 1000
   sample_rda: false
   batch_tabular_loss: false
+  num_downsample: 1
+  variable_masking: true
 
 task:
   mask: 0.2

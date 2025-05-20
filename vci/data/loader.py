@@ -15,6 +15,11 @@ import pandas as pd
 
 log = logging.getLogger(__file__)
 
+# Threshold for flagging implausibly high UMIs when we undo a log1p
+EXPONENTIATED_UMIS_LIMIT = 5_000_000  
+# If any count exceeds this, we confidently treat the tensor as raw integers
+RAW_COUNT_HEURISTIC_THRESHOLD = 35
+
 # THIS SHOULD ONLY BE USED FOR INFERENCE
 def create_dataloader(cfg,
                       workers=1,
@@ -232,11 +237,32 @@ class FilteredGenesCounts(H5adSentenceDataset):
         # make sure we get training datasets
         _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict('/home/aadduri/state/h5ad_all.csv')
 
+        emb_cfg    = utils.get_embedding_cfg(self.cfg)
+        try:
+            ds_emb_map = torch.load(emb_cfg.ds_emb_mapping)
+        except (FileNotFoundError, IOError):
+            ds_emb_map = {}
+
         # for inference, let's make sure this dataset's valid mask is available
         if adata_name is not None:
             # append it to self.datasets
             self.datasets.append(adata_name)
             self.shapes_dict[adata_name] = adata.shape
+
+            # compute its embedding‐index vector
+            esm_data         = torch.load(emb_cfg.all_embeddings)
+            valid_genes_list = list(esm_data.keys())
+            # make a gene→global‐index lookup
+            global_pos = {g:i for i,g in enumerate(valid_genes_list)}
+
+            # grab var_names from the AnnData
+            gene_names = np.array(adata.var_names)
+            # for each gene in this dataset, find its global idx or -1 if missing
+            new_mapping = [ global_pos.get(g, -1) for g in gene_names ]
+
+            # inject & re‐save so the collator sees it
+            ds_emb_map[adata_name] = new_mapping
+            torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
 
         if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg)['all_embeddings'])
@@ -331,6 +357,11 @@ class VCIDatasetSentenceCollator(object):
         print(len(self.global_to_local))
 
     def __call__(self, batch):
+        num_aug = getattr(self.cfg.model, "num_downsample", 1)
+        if num_aug > 1:
+           # for each original sample, duplicate it num_aug times
+           batch = [item for item in batch for _ in range(num_aug)]
+
         batch_size = len(batch)
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
         batch_sentences_counts = torch.zeros((batch_size, self.pad_length))
@@ -404,7 +435,11 @@ class VCIDatasetSentenceCollator(object):
                     valid_mask = None
             else:
                 valid_mask = None
-            (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask)
+            
+            # compute downsample fraction. this is the first sample of the augmentation then
+            # use no downsampling
+            downsample_fraction = 1.0 if (num_aug > 1 and i % num_aug == 0) else None
+            (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask, downsample_fraction)
 
             batch_sentences[i, :] = bs
             masks[i, :] = mask
@@ -440,19 +475,82 @@ class VCIDatasetSentenceCollator(object):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
 
+    def is_raw_integer_counts(self, counts: torch.Tensor) -> bool:
+        """
+        Heuristic check to decide whether `counts` are raw integer UMI counts
+        versus log1p-transformed counts.
+        
+        1. If any entry > RAW_COUNT_HEURISTIC_THRESHOLD, assume raw ints.
+        2. Otherwise, invert log1p (via expm1) and sum:
+        - If the total UMIs exceeds EXPONENTIATED_UMIS_LIMIT, it means 
+            the data were actually raw ints that we mistakenly log-transformed.
+        - Otherwise, assume the data were correctly log1p counts.
+        """
+        max_val = torch.max(counts).item()
+
+        # Primary heuristic: very large individual counts => raw counts
+        if max_val > RAW_COUNT_HEURISTIC_THRESHOLD:
+            return True
+
+        # Ambiguous case: try undoing log1p
+        total_umis = int(torch.expm1(counts).sum().item())
+        if total_umis > EXPONENTIATED_UMIS_LIMIT:
+            return True
+
+        return False
+
     # sampling a single cell sentence
-    def sample_cell_sentences(self, counts_raw, dataset, shared_genes=None, valid_gene_mask=None):
+    # counts_raw is a view of a cell
+    def sample_cell_sentences(self, counts_raw, dataset, shared_genes=None, valid_gene_mask=None, downsample_frac=None):
         if torch.isnan(counts_raw).any():
             log.error(f"NaN values in counts for dataset {dataset}")
 
         if torch.any(counts_raw < 0):
             counts_raw = F.relu(counts_raw)
 
-        if torch.max(counts_raw) > 35: # CAN WE CHANGE THIS TO INT VS REAL
+        if self.is_raw_integer_counts(counts_raw): # CAN WE CHANGE THIS TO INT VS REAL
+            total_umis = int(counts_raw.sum(axis=1).item())
+            count_expr_dist = counts_raw / counts_raw.sum(axis=1, keepdim=True)
             counts_raw = torch.log1p(counts_raw)
+        else: # counts are already log1p
+            exp_log_counts = torch.expm1(counts_raw)
+            total_umis = int(exp_log_counts.sum(axis=1).item())
+            count_expr_dist = exp_log_counts / exp_log_counts.sum(axis=1, keepdim=True)
+        
 
+        ### At this point, counts_raw is assumed to be log counts ###
+
+        # store the raw counts here, we need them as targets
+        original_counts_raw = counts_raw.clone()
+
+        # if we are using downsample augmentation, decide if we need to update counts_raw
+        num_aug = getattr(self.cfg.model, "num_downsample", 1)
+        if num_aug > 1:
+            if downsample_frac is None:
+                downsample_frac = torch.empty(1).uniform_(0.3, 1.0).item()
+            
+            down_umis = int(total_umis * downsample_frac)
+            if down_umis > 0:
+                # build a distribution over log1p counts
+                genes_sampled = torch.multinomial(count_expr_dist.squeeze(), down_umis, replacement=True)
+                # flatten to a 1D gene vector, and get the counts for the newly sampled genes
+                flat = counts_raw.view(-1)  
+                counts_aug_flat = torch.zeros_like(flat)
+                counts_aug_flat.scatter_add_(0, genes_sampled, torch.ones(down_umis, dtype=counts_aug_flat.dtype,))
+                # restore original shape (1, D)
+                counts_aug = counts_aug_flat.view_as(counts_raw)
+                counts_aug = torch.log1p(counts_aug)
+            else:
+                counts_aug = counts_raw
+
+            # if we are using an augmentation, update the raw counts here
+            counts_raw = counts_aug
+
+        # logic to sample a single cell sentence and task sentence here
         ds_emb_idxs = torch.tensor(self.dataset_to_protein_embeddings[dataset], dtype=torch.long)
-        counts = counts_raw # counts_raw is needed below so make a copy
+
+        original_counts = original_counts_raw
+        counts = counts_raw
         if valid_gene_mask is not None:
             if ds_emb_idxs.shape[0] == valid_gene_mask.shape[0]:
                 # IF THE MASK IS THE SAME SIZE AS THE DATASET
@@ -464,7 +562,8 @@ class VCIDatasetSentenceCollator(object):
                 assert valid_gene_mask.sum() == ds_emb_idxs.shape[0], f"Something wrong with filtering or mask for dataset {dataset}"
             if counts_raw.shape[1] == valid_gene_mask.shape[0]:
                 # however, COUNTS ARE NEVER FILTERED
-                counts = counts_raw[:, valid_gene_mask] # filtered version of copy
+                counts = counts_raw[:, valid_gene_mask]
+                original_counts = original_counts_raw[:, valid_gene_mask]
 
         if counts.sum() == 0:
             expression_weights = F.softmax(counts, dim=1)
@@ -537,7 +636,8 @@ class VCIDatasetSentenceCollator(object):
                 task_sentence[c, self.cfg.dataset.P:unshared_num] = unexp_genes[torch.randint(len(unexp_genes), (self.cfg.dataset.N,))]
 
             # set counts for unshared genes
-            task_counts[c, :unshared_num] = cell[task_sentence[c, :unshared_num].to(torch.int32)]
+            task_idxs = task_sentence[c, :unshared_num].to(torch.int32)
+            task_counts[c, :unshared_num] = original_counts[c, task_idxs]
 
             # convert from dataset specific gene indices to global gene indices
             # only do this for everything up to shared genes, which are already global indices
@@ -557,7 +657,7 @@ class VCIDatasetSentenceCollator(object):
                 shared_counts = torch.zeros(local_indices.shape, dtype=cell.dtype, device=cell.device)
                 valid_mask = local_indices != -1
                 if valid_mask.any():
-                    shared_counts[valid_mask] = counts_raw[c, local_indices[valid_mask]]
+                    shared_counts[valid_mask] = original_counts_raw[c, local_indices[valid_mask]]
 
                 # for indices which are -1, count is 0, else index into cell
                 task_counts[c, unshared_num:] = shared_counts

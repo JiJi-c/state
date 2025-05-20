@@ -413,7 +413,11 @@ class LitUCEModel(L.LightningModule):
             src = src + count_emb  # should both be B x H x self.d_model, or B x H + 1 x self.d_model if dataset correction
 
         if self.training:
-            mask = mask.to(self.device)
+            # random chance 10% to set mask to None
+            if self.cfg.model.get("variable_masking", False) and np.random.rand() < 0.1:
+                mask = None
+            else:
+                mask = mask.to(self.device)
             output = self.transformer_encoder(src, src_key_padding_mask=mask)
         else:
             output = self.transformer_encoder(src, src_key_padding_mask=None)
@@ -479,10 +483,10 @@ class LitUCEModel(L.LightningModule):
             target = batch_weights
         elif self.cfg.loss.name == 'mmd':
             kernel = self.cfg.loss.get('kernel', 'energy')
-            criterion = MMDLoss(kernel=kernel)
+            criterion = MMDLoss(kernel=kernel, downsample=self.cfg.model.num_downsample)
             target = Y
         elif self.cfg.loss.name == 'tabular':
-            criterion = TabularLoss(shared=self.cfg.dataset.S)
+            criterion = TabularLoss(shared=self.cfg.dataset.S, downsample=self.cfg.model.num_downsample)
             target = Y
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")
