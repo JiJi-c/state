@@ -89,8 +89,6 @@ def main(cfg):
                         emb_size=get_embedding_cfg(cfg).size,
                         collater=dataset_sentence_collator,
                         cfg=cfg)
-    # Apply torch.compile for graph optimization (PyTorch 2.0+)
-    model = torch.compile(model, dynamic=False)
     model = model.cuda()
     all_pe = get_embeddings(cfg)
     all_pe.requires_grad = False

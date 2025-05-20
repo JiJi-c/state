@@ -261,8 +261,9 @@ class FilteredGenesCounts(H5adSentenceDataset):
             new_mapping = [ global_pos.get(g, -1) for g in gene_names ]
 
             # inject & re‐save so the collator sees it
-            ds_emb_map[adata_name] = new_mapping
-            torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
+            if adata_name not in ds_emb_map:
+                ds_emb_map[adata_name] = new_mapping
+                torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
 
         if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg)['all_embeddings'])

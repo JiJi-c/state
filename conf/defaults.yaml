@@ -125,11 +125,11 @@ dataset:
 
   scbasecamp-cellxgene-tahoe-filtered:
     ds_type: filtered_h5ad
-    train: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_train_filtered.csv
-    val: /large_storage/ctc/datasets/scbasecamp_filtered_tahoe_cellxgene_val_filtered.csv
+    train: /large_storage/ctc/userspace/rohankshah/19kfilt_combined_train.csv
+    val: /large_storage/ctc/userspace/rohankshah/19kfilt_combined_val.csv
     filter: true
     filter_by_species: null
-    num_datasets: 15700 
+    num_datasets: 14420
 
   scbasecamp-cellxgene-tahoe:
     ds_type: filtered_h5ad
