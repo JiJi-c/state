@@ -392,13 +392,13 @@ class VCIDatasetSentenceCollator(object):
                         dtype=torch.long
                     )
             else:
-                    shared_genes = torch.randint(
-                        low=0,
-                        high=self.global_size,
-                        size=(self.S,),
-                        device=masks.device,
-                        dtype=torch.long
-                    )
+                shared_genes = torch.randint(
+                    low=0,
+                    high=self.global_size,
+                    size=(self.S,),
+                    device=masks.device,
+                    dtype=torch.long
+                )
         else:
             shared_genes = None
 
