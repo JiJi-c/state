@@ -530,7 +530,7 @@ class VCIDatasetSentenceCollator(object):
                 downsample_frac = torch.empty(1).uniform_(0.3, 1.0).item()
             
             down_umis = int(total_umis * downsample_frac)
-            if down_umis > 0:
+            if down_umis > 0 and downsample_frac < 1.0:
                 # build a distribution over log1p counts
                 genes_sampled = torch.multinomial(count_expr_dist.squeeze(), down_umis, replacement=True)
                 # flatten to a 1D gene vector, and get the counts for the newly sampled genes
