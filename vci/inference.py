@@ -113,28 +113,8 @@ class Inference():
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
                 torch.cuda.empty_cache()
-                batch_sentences = batch[0].to(self.model.device)
-
-                batch_sentences_counts = batch[7]  # Get counts for scFoundation-style binning
-                if batch_sentences_counts is not None:
-                    batch_sentences_counts = batch_sentences_counts.to(self.model.device)
-
-                dataset_nums = batch[8]  # Get dataset numbers for dataset correction
-                if dataset_nums is not None:
-                    dataset_nums = dataset_nums.to(self.model.device)
-
-                batch_sentences = self.model.pe_embedding(batch_sentences.long())
-                batch_sentences = nn.functional.normalize(batch_sentences, dim=2)
-                batch_sentences[:, 0, :] = self.model.cls_token.expand(batch_sentences.size(0), -1)
-
-                gene_output, embedding, dataset_emb = self.model.forward(
-                    batch_sentences,
-                    mask=None,  # During inference, we don't use the mask
-                    counts=batch_sentences_counts,
-                    dataset_nums=dataset_nums
-                )
-
-                embeddings = embedding.detach().cpu().numpy()
+                _, _, _, emb, ds_emb = self.model._compute_embedding_for_batch(batch)
+                embeddings = emb.detach().cpu().numpy()
 
                 yield embeddings
 

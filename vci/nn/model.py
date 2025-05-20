@@ -483,10 +483,10 @@ class LitUCEModel(L.LightningModule):
             target = batch_weights
         elif self.cfg.loss.name == 'mmd':
             kernel = self.cfg.loss.get('kernel', 'energy')
-            criterion = MMDLoss(kernel=kernel)
+            criterion = MMDLoss(kernel=kernel, downsample=self.cfg.model.num_downsample)
             target = Y
         elif self.cfg.loss.name == 'tabular':
-            criterion = TabularLoss(shared=self.cfg.dataset.S)
+            criterion = TabularLoss(shared=self.cfg.dataset.S, downsample=self.cfg.model.num_downsample)
             target = Y
         else:
             raise ValueError(f"Loss {self.cfg.loss.name} not supported")

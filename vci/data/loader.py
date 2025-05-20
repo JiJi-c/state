@@ -237,11 +237,32 @@ class FilteredGenesCounts(H5adSentenceDataset):
         # make sure we get training datasets
         _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict('/home/aadduri/state/h5ad_all.csv')
 
+        emb_cfg    = utils.get_embedding_cfg(self.cfg)
+        try:
+            ds_emb_map = torch.load(emb_cfg.ds_emb_mapping)
+        except (FileNotFoundError, IOError):
+            ds_emb_map = {}
+
         # for inference, let's make sure this dataset's valid mask is available
         if adata_name is not None:
             # append it to self.datasets
             self.datasets.append(adata_name)
             self.shapes_dict[adata_name] = adata.shape
+
+            # compute its embedding‐index vector
+            esm_data         = torch.load(emb_cfg.all_embeddings)
+            valid_genes_list = list(esm_data.keys())
+            # make a gene→global‐index lookup
+            global_pos = {g:i for i,g in enumerate(valid_genes_list)}
+
+            # grab var_names from the AnnData
+            gene_names = np.array(adata.var_names)
+            # for each gene in this dataset, find its global idx or -1 if missing
+            new_mapping = [ global_pos.get(g, -1) for g in gene_names ]
+
+            # inject & re‐save so the collator sees it
+            ds_emb_map[adata_name] = new_mapping
+            torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
 
         if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg)['all_embeddings'])
