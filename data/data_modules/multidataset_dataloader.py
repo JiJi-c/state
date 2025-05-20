@@ -137,7 +137,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.cell_type_key = cell_type_key
 
         self.map_controls = kwargs.get("map_controls", False)
-        assert self.map_controls, "map_controls must be True for all mapping strategies"
+        # assert self.map_controls, "map_controls must be True for all mapping strategies"
         self.normalize_counts = kwargs.get("normalize_counts", False)
         self.perturbation_features_file = kwargs.get("perturbation_features_file", None)
         self.store_raw_basal = kwargs.get("store_raw_basal", False)

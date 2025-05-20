@@ -210,8 +210,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.freeze_pert = kwargs.get("freeze_pert", False)
         if self.freeze_pert:
             modules_to_freeze = [
-                self.pert_encoder,
-                self.basal_encoder,
                 self.transformer_backbone,
                 self.project_out,
                 self.convolve,
