@@ -361,6 +361,7 @@ class VCIDatasetSentenceCollator(object):
         if num_aug > 1:
            # for each original sample, duplicate it num_aug times
            batch = [item for item in batch for _ in range(num_aug)]
+
         batch_size = len(batch)
         batch_sentences = torch.zeros((batch_size, self.pad_length), dtype=torch.int32)
         batch_sentences_counts = torch.zeros((batch_size, self.pad_length))
@@ -435,7 +436,8 @@ class VCIDatasetSentenceCollator(object):
             else:
                 valid_mask = None
             
-            # compute downsample fraction. this is 1.0 if num_aug > 1
+            # compute downsample fraction. this is the first sample of the augmentation then
+            # use no downsampling
             downsample_fraction = 1.0 if (num_aug > 1 and i % num_aug == 0) else None
             (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask, downsample_fraction)
 
