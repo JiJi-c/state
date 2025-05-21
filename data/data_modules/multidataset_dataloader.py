@@ -1,10 +1,11 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Literal, Set, Tuple
-from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
-from data.utils.data_utils import generate_onehot_map, safe_decode_array, GlobalH5MetadataCache
+from typing import Dict, List, Optional, Literal, Set
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
+from data.utils.data_utils import generate_onehot_map, safe_decode_array, GlobalH5MetadataCache, parse_tahoe_style_pert_col
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
+from data.dataset.scgpt_perturbation_dataset import scGPTPerturbationDataset
 from data.data_modules.samplers import PerturbationBatchSampler
 from data.data_modules.tasks import TaskSpec, TaskType
 from data.mapping_strategies import (
@@ -71,6 +72,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         random_seed: int = 42, # this should be removed by seed everything
         val_split: float = 0.10,
         pert_col: str = "gene",
+        pert_dosage_col: Optional[str] = None,
         batch_col: str = "gem_group",
         cell_type_key: str = "cell_type",
         control_pert: str = "non-targeting",
@@ -99,6 +101,11 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             few_shot_percent: Fraction of data to use for few-shot tasks
             random_seed: For reproducible splits & sampling
             val_split: Fraction of data to use as validation portion
+            pert_col: Column name in the H5 file that contains the perturbation information
+            pert_dosage_col: Column name in the H5 file that contains the perturbation dosage information (optional, in case of chemical perturbations)
+            batch_col: Column name in the H5 file that contains the batch information
+            cell_type_key: Column name in the H5 file that contains the cell type information
+            control_pert: Name of the control perturbation
             embed_key: Embedding key or matrix in the H5 file to use for feauturizing cells
             output_space: The output space for model predictions (gene or latent, which uses embed_key)
             basal_mapping_strategy: One of {"batch","random","nearest","ot"}
@@ -132,6 +139,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             logger.info("Using int_counts=False, will use log counts for training")
 
         self.pert_col = pert_col
+        self.pert_dosage_col = pert_dosage_col
         self.control_pert = control_pert
         self.batch_col = batch_col
         self.cell_type_key = cell_type_key
@@ -141,8 +149,35 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.normalize_counts = kwargs.get("normalize_counts", False)
         self.perturbation_features_file = kwargs.get("perturbation_features_file", None)
         self.store_raw_basal = kwargs.get("store_raw_basal", False)
+        self.dataset_cls = kwargs.get("dataset_cls", "PerturbationDataset")
+        
+        self.process_pert_col = kwargs.get("process_pert_col", None)
+        
+        if self.dataset_cls == "PerturbationDataset":
+            self.dataset_cls = PerturbationDataset
+            
+            self.hvg_names_uns_key = None # not required for PerturbationDataset
+            
+            self.dataset_kwargs = {}
+        elif self.dataset_cls == "scGPTPerturbationDataset":
+            self.dataset_cls = scGPTPerturbationDataset
+            
+            self.hvg_names_uns_key = kwargs.get("hvg_names_uns_key", None)
+            if self.hvg_names_uns_key is None:
+                logger.warning("hvg_names_uns_key is not provided for scGPTPerturbationDataset, using all genes")
+            
+            self.vocab = kwargs.get("vocab", None)
+            assert self.vocab is not None, "vocab must be provided for scGPTPerturbationDataset"
+            
+            self.dataset_kwargs = {
+                'hvg_names_uns_key': self.hvg_names_uns_key,
+                'vocab': self.vocab,
+                'perturbation_type': kwargs.get("perturbation_type", "chemical"),
+            }
+        else:
+            raise ValueError(f"Invalid dataset class: {self.dataset_cls}")
 
-        self.train_datasets: List[Dataset] = []
+        self.train_datasets: List[Dataset] = [] 
         self.val_datasets: List[Dataset] = []
         self.test_datasets: List[Dataset] = []
 
@@ -163,13 +198,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             self.store_raw_expression = True
 
         # TODO-Abhi: is there a way to detect if the transform is needed?
-        self.transform = False
+        self.transform = kwargs.get("transform", None)
         if embed_key == "X_hvg" or embed_key is None:
             # basically, make sure we do this for tahoe because I forgot to 
             # log transform the hvg's... but don't do this for replogle
             # TODO: fix this before we ship
             if self.pert_col == "drug" or self.pert_col == "drugname_drugconc":
-                self.transform = True
+                self.transform = kwargs.get("transform", True)
 
         # Few-shot store: (dataset_name, cell_type) -> dict of splits
         self.fewshot_splits: Dict[(str, str), Dict[str, np.ndarray]] = {}
@@ -209,13 +244,22 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         """
         all_perts = set()
         all_batches = set()
+        all_cell_types = set()
         dataset_names = {spec.dataset for spec in (self.train_specs + self.test_specs)}
-        for ds_name in dataset_names:
+        for ds_name in tqdm(dataset_names, desc="Setting up global maps across datasets", position=0, leave=True):
             files = self._find_dataset_files(ds_name)
-            for fname, fpath in files.items():
+            for fpath in files:
                 with h5py.File(fpath, "r") as f:
                     pert_arr = f["obs/{}/categories".format(self.pert_col)][:]
                     perts = set(safe_decode_array(pert_arr))
+                    
+                    # For datasets like Tahoe, we need to process the perturbation names to extract the perturbation name and dosage
+                    if self.process_pert_col is not None: 
+                        if self.process_pert_col == 'tahoe_style':
+                            perts = {parse_tahoe_style_pert_col(pert)[0] for pert in perts}
+                        else:
+                            raise ValueError(f"Invalid process_pert_col: {self.process_pert_col}")
+                    
                     all_perts.update(perts)
 
                     try:
@@ -224,6 +268,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                         batch_arr = f["obs/{}".format(self.batch_col)][:]
                     batches = set(safe_decode_array(batch_arr))
                     all_batches.update(batches)
+                    
+                    try:
+                        cell_type_arr = f["obs/{}/categories".format(self.cell_type_key)][:]
+                    except KeyError:
+                        cell_type_arr = f["obs/{}".format(self.cell_type_key)][:]
+                    cell_types = set(safe_decode_array(cell_type_arr))
+                    all_cell_types.update(cell_types)
 
         # Create one-hot maps
         if self.perturbation_features_file:
@@ -245,7 +296,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             # Fall back to default: generate one-hot mapping
             self.pert_onehot_map = generate_onehot_map(all_perts)
         self.batch_onehot_map = generate_onehot_map(all_batches)
-
+        self.celltype_onehot_map = generate_onehot_map(all_cell_types)
+        
+        logger.info(f"Found {len(all_perts)} perturbations, {len(all_batches)} batches, {len(all_cell_types)} cell types")
+        
     def _group_specs_by_dataset(self, specs: List[TaskSpec]) -> Dict[str, List[TaskSpec]]:
         """
         Group TaskSpec objects by dataset name.
@@ -264,7 +318,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         metadata_caches = {}
         for ds_name in {spec.dataset for spec in self.test_specs}:
             files = self._find_dataset_files(ds_name)
-            for fname, fpath in files.items():
+            # for fname, fpath in files.items():
+            for fpath in files:
                 metadata_caches[fpath] = GlobalH5MetadataCache().get_cache(
                     str(fpath),
                     self.pert_col,
@@ -281,7 +336,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
             
             # Aggregate counts across files
             files = self._find_dataset_files(spec.dataset)
-            for fname, fpath in files.items():
+            # for fname, fpath in files.items():
+            for fpath in files:
                 cache = metadata_caches[fpath]
                 try:
                     ct_code = np.where(cache.cell_type_categories == ct)[0][0]
@@ -353,7 +409,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 if spec.cell_type is None:
                     # add all the cell types from this dataset
                     files = self._find_dataset_files(spec.dataset)
-                    for fname, fpath in files.items():
+                    # for fname, fpath in files.items():
+                    for fpath in files:
                         with h5py.File(fpath, "r") as f:
                             cats = [x.decode('utf-8') for x in f[f"obs/{self.cell_type_key}/categories"][:]]
                             train_cts.extend(cats)
@@ -386,10 +443,14 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         for ds_name in all_datasets:
             files = self._find_dataset_files(ds_name)
             # Outer progress bar: iterate over plates (files) in the dataset
-            for fname, fpath in tqdm(list(files.items()),
-                                    desc=f"Processing plates in dataset {ds_name}",
-                                    position=0,
-                                    leave=True):
+            # for fname, fpath in tqdm(list(files.items()),
+            #                         desc=f"Processing plates in dataset {ds_name}",
+            #                         position=0,
+            #                         leave=True):
+            for fpath in tqdm(files,
+                              desc=f"Processing plates in dataset {ds_name}",
+                              position=0,
+                              leave=True):
                 logger.info(f"Processing file: {fpath}")
 
                 # Create metadata cache for this file
@@ -404,9 +465,9 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                 mapping_kwargs = {
                     "map_controls": self.map_controls,
                 }
-
+                
                 # Create base dataset
-                ds = PerturbationDataset(
+                ds = self.dataset_cls(
                     name=ds_name,
                     h5_path=fpath,
                     mapping_strategy=self.mapping_strategy_cls(
@@ -416,8 +477,10 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     ),
                     embed_key=self.embed_key,
                     pert_onehot_map=self.pert_onehot_map,
+                    celltype_onehot_map=self.celltype_onehot_map,
                     batch_onehot_map=self.batch_onehot_map,
                     pert_col=self.pert_col,
+                    pert_dosage_col=self.pert_dosage_col,
                     cell_type_key=self.cell_type_key,
                     batch_col=self.batch_col,
                     control_pert=self.control_pert,
@@ -426,6 +489,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                     store_raw_expression=self.store_raw_expression,
                     output_space=self.output_space,
                     store_raw_basal=self.store_raw_basal,
+                    process_pert_col=self.process_pert_col,
+                    **self.dataset_kwargs,
                 )
 
                 train_sum = 0
@@ -587,8 +652,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
                             train_sum += len(train_subset)
 
                 # Write progress information (using tqdm.write to avoid breaking the progress bars)
+                # tqdm.write(
+                #     f"Processed {fname} with {cache.n_cells} cells, "
+                #     f"{train_sum} train, {val_sum} val, {test_sum} test."
+                # )
                 tqdm.write(
-                    f"Processed {fname} with {cache.n_cells} cells, "
+                    f"Processed {fpath} with {cache.n_cells} cells, "
                     f"{train_sum} train, {val_sum} val, {test_sum} test."
                 )
 
@@ -617,7 +686,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         if len(self.train_datasets) == 0:
             return None
         use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
+        collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.train_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
@@ -627,7 +696,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         if len(self.val_datasets) == 0:
             return None
         use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
+        collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.val_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
@@ -637,7 +706,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         if len(self.test_datasets) == 0:
             return None
         use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
+        collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
@@ -648,7 +717,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         if len(self.test_datasets) == 0:
             return None
         use_int_counts = 'int_counts' in self.__dict__ and self.int_counts
-        collate_fn = lambda batch: PerturbationDataset.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
+        collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
@@ -665,13 +734,13 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.mapping_strategy_kwargs = strategy_kwargs
 
         for ds_subset in self.test_datasets:
-            ds: PerturbationDataset = ds_subset.dataset
+            ds: self.dataset_cls = ds_subset.dataset
             ds.reset_mapping_strategy(strategy_cls, stage="inference", **strategy_kwargs)
 
         logger.info("Mapping strategy set to %s for test datasets.", strategy_cls.__name__)
 
     def get_var_dims(self):
-        underlying_ds: PerturbationDataset = self.test_datasets[0].dataset
+        underlying_ds: self.dataset_cls = self.test_datasets[0].dataset
         if self.embed_key:
             input_dim = underlying_ds.get_dim_for_obsm(self.embed_key)
         else:
@@ -748,7 +817,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
 
         return shared_perts
 
-    
+
     def get_control_pert(self):
         # Return the control perturbation name
         return self.train_datasets[0].dataset.control_pert
@@ -825,27 +894,28 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
     ############################
     # FILE DISCOVERY + HELPERS
     ############################
-    def _find_dataset_files(self, dataset_name: str) -> Dict[str, Path]:
-        """
-        Locate *.h5 files for a given dataset_name inside self.data_dir.
-        Return a dict: {cell_type -> file_path}.
+    # this method is duplicated above
+    # def _find_dataset_files(self, dataset_name: str) -> Dict[str, Path]:
+    #     """
+    #     Locate *.h5 files for a given dataset_name inside self.data_dir.
+    #     Return a dict: {cell_type -> file_path}.
 
-        """
-        pattern = "*.h5"
+    #     """
+    #     pattern = "*.h5"
 
-        # TODO-Abhi: currently using a debug prefix to use unmerged replogle
-        # datasets for testing, change this.
-        working_folder = self.data_dir / f"{dataset_name}"
-        if not working_folder.exists():
-            raise FileNotFoundError(f"No directory named {working_folder}")
+    #     # TODO-Abhi: currently using a debug prefix to use unmerged replogle
+    #     # datasets for testing, change this.
+    #     working_folder = self.data_dir / f"{dataset_name}"
+    #     if not working_folder.exists():
+    #         raise FileNotFoundError(f"No directory named {working_folder}")
 
-        files = sorted(working_folder.glob(pattern))
-        cell_types = {}
-        for fpath in files:
-            # Typically naming: <cell_type>.h5
-            cell_type = fpath.stem.split(".")[0]
-            cell_types[cell_type] = fpath
-        return cell_types
+    #     files = sorted(working_folder.glob(pattern))
+    #     cell_types = {}
+    #     for fpath in files:
+    #         # Typically naming: <cell_type>.h5
+    #         cell_type = fpath.stem.split(".")[0]
+    #         cell_types[cell_type] = fpath
+    #     return cell_types
 
     def _group_specs_by_dataset(self, specs: List[TaskSpec]) -> Dict[str, List[TaskSpec]]:
         """
