@@ -155,100 +155,6 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
-    elif model_type.lower() == "celltypemean":
-        return CellTypeMeanModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            hvg_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            batch_dim=var_dims["batch_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "decoder_only":
-        return DecoderOnlyPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            hvg_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            batch_dim=var_dims["batch_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "pseudobulk":
-        return PseudobulkPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            hvg_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            batch_dim=var_dims["batch_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "cpa":
-        return CPAPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            gene_dim=gene_dim,
-            **module_config,
-        )
-    elif model_type.lower() == "scvi":
-        return SCVIPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "celltypemean":
-        return CellTypeMeanModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "decoder_only":
-        return DecoderOnlyPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "cpa":
-        return CPAPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            gene_dim=gene_dim,
-            **module_config,
-        )
-    elif model_type.lower() == "scvi":
-        return SCVIPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "celltypemean":
-        return CellTypeMeanModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "decoder_only":
-        return DecoderOnlyPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            **module_config,
-        )
     elif model_type.lower() == "scgpt-chemical" or model_type.lower() == "scgpt-genetic":
         pretrained_path = module_config["pretrained_path"]
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
@@ -382,7 +288,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_eve
     best_ckpt = ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="step={step}-val_loss={val_loss:.4f}",
-        save_last=True,  # Will create last.ckpt symlink to best checkpoint
+        save_last=link,  # Will create last.ckpt symlink to best checkpoint
         monitor="val_loss",
         mode="min",
         save_top_k=1,  # Only keep the best checkpoint
