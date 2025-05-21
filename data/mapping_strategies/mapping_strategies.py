@@ -42,9 +42,9 @@ class BaseMappingStrategy(ABC):
         """
         # First, restore all attributes that were pickled
         self.__dict__.update(state)
-        
+
         # If the new attribute doesn't exist in the pickled state, set it to a default value
-        if not hasattr(self, 'map_controls'):
+        if not hasattr(self, "map_controls"):
             self.map_controls = False
             logger.info(f"Adding missing 'map_controls' attribute to {self.name} mapping strategy.")
 
@@ -85,7 +85,7 @@ class BaseMappingStrategy(ABC):
         For perturbed cells:
             - Returns (perturbed_expr, control_expr) using get_control_indices()
 
-        If get_basal_raw is True, returns the raw expression of the basal cells as well 
+        If get_basal_raw is True, returns the raw expression of the basal cells as well
         (control_expr, control_expr, control_raw), or (perturbed_expr, control_expr, control_raw) for perturbed cells.
         """
 
@@ -94,9 +94,9 @@ class BaseMappingStrategy(ABC):
             control_index = self.get_control_index(dataset, split, perturbed_idx)
             pert_expr = torch.tensor(dataset.fetch_obsm_expression(perturbed_idx, dataset.embed_key))
             if control_index is None:
-                ctrl_expr = torch.zeros_like(pert_expr) # default to zero vector 
+                ctrl_expr = torch.zeros_like(pert_expr)  # default to zero vector
             else:
-                ctrl_expr = dataset.fetch_obsm_expression(control_index, dataset.embed_key) 
+                ctrl_expr = dataset.fetch_obsm_expression(control_index, dataset.embed_key)
             return pert_expr, ctrl_expr, control_index
         else:
             control_index = self.get_control_index(dataset, split, perturbed_idx)

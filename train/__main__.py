@@ -7,7 +7,8 @@ import re
 from os.path import join, exists
 from typing import List
 import sys
-sys.path.append('./vci_pretrain')
+
+sys.path.append("./vci_pretrain")
 
 import hydra
 import torch
@@ -20,6 +21,7 @@ from lightning.pytorch.plugins.precision import MixedPrecision
 
 from data.utils.modules import get_datamodule
 from data.data_modules.tasks import parse_dataset_specs  # TODO-Abhi: Should this move?
+
 # from models.decoders import UCELogProbDecoder # commented out since it's not used yet
 from models import (
     SimpleSumPerturbationModel,
@@ -41,6 +43,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
+
 
 def get_lightning_module(model_type: str, data_config: dict, model_config: dict, training_config: dict, var_dims: dict):
     """Create model instance based on config."""
@@ -158,14 +161,14 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
     elif model_type.lower() == "scgpt-chemical" or model_type.lower() == "scgpt-genetic":
         pretrained_path = module_config["pretrained_path"]
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
-        
+
         model_dir = Path(pretrained_path)
         model_config_file = model_dir / "args.json"
         model_file = model_dir / "best_model.pt"
-        
+
         model = scGPTForPerturbation(
             ntoken=module_config["ntoken"],
-            n_drug_tokens=module_config["n_perts"], # only used for chemical perturbations
+            n_drug_tokens=module_config["n_perts"],  # only used for chemical perturbations
             d_model=module_config["d_model"],
             nhead=module_config["nhead"],
             d_hid=module_config["d_hid"],
@@ -186,9 +189,9 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             embed_key=module_config["embed_key"],
             perturbation_type=module_config["perturbation_type"],
         )
-        
+
         load_param_prefixes = module_config["load_param_prefixes"]
-        
+
         if load_param_prefixes is not None:
             model_dict = model.model.state_dict()
             pretrained_dict = torch.load(model_file)
@@ -199,7 +202,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             }
             for k, v in pretrained_dict.items():
                 print(f"Loading params {k} with shape {v.shape}")
-                
+
             model_dict.update(pretrained_dict)
             model.model.load_state_dict(model_dict)
         else:
@@ -211,43 +214,43 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
                 model_dict = model.model.state_dict()
                 pretrained_dict = torch.load(model_file)
                 pretrained_dict = {
-                    k: v
-                    for k, v in pretrained_dict.items()
-                    if k in model_dict and v.shape == model_dict[k].shape
+                    k: v for k, v in pretrained_dict.items() if k in model_dict and v.shape == model_dict[k].shape
                 }
                 for k, v in pretrained_dict.items():
                     print(f"Loading params {k} with shape {v.shape}")
-                    
+
                 model_dict.update(pretrained_dict)
                 model.model.load_state_dict(model_dict)
-        
+
         return model
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
+
 def get_latest_step_checkpoint(directory):
     # Get all checkpoint files
     files = os.listdir(directory)
-    
+
     # Extract step numbers using regex, excluding files with 'val_loss'
     step_numbers = []
     for f in files:
-        if f.startswith('step=') and 'val_loss' not in f:
+        if f.startswith("step=") and "val_loss" not in f:
             # Extract the number between 'step=' and '.ckpt'
-            match = re.search(r'step=(\d+)(?:-v\d+)?\.ckpt', f)
+            match = re.search(r"step=(\d+)(?:-v\d+)?\.ckpt", f)
             if match:
                 step_numbers.append(int(match.group(1)))
-    
+
     if not step_numbers:
         raise ValueError("No checkpoint files found")
-        
+
     # Get the maximum step number
     max_step = max(step_numbers)
-    
+
     # Construct the checkpoint path
     checkpoint_path = join(directory, f"step={max_step}.ckpt")
-    
+
     return checkpoint_path
+
 
 def get_loggers(
     output_dir: str,
@@ -279,7 +282,9 @@ def get_loggers(
     return loggers
 
 
-def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_every_n_steps: int) -> List[ModelCheckpoint]:
+def get_checkpoint_callbacks(
+    output_dir: str, name: str, val_freq: int, ckpt_every_n_steps: int
+) -> List[ModelCheckpoint]:
     """Create checkpoint callbacks based on validation frequency."""
     checkpoint_dir = join(output_dir, name, "checkpoints")
     callbacks = []
@@ -334,7 +339,7 @@ def train(cfg: DictConfig) -> None:
     # Set random seeds
     if "train_seed" in cfg["training"]:
         pl.seed_everything(cfg["training"]["train_seed"])
-        
+
     # if the provided pert_col is drugname_drugconc, hard code the value of control pert
     # this is because it's surprisingly hard to specify a list of tuples in the config as a string
     if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
@@ -362,20 +367,22 @@ def train(cfg: DictConfig) -> None:
         if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
             if "cell_sentence_len" in cfg["model"]["kwargs"] and cfg["model"]["kwargs"]["cell_sentence_len"] > 1:
                 sentence_len = cfg["model"]["kwargs"]["cell_sentence_len"]
-                cfg['training']['batch_size'] = 1
+                cfg["training"]["batch_size"] = 1
             else:
                 sentence_len = 1
         else:
             sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
-            
-    if cfg["model"]["name"].lower().startswith("scgpt"): # scGPT uses log-normalized expression
+
+    if cfg["model"]["name"].lower().startswith("scgpt"):  # scGPT uses log-normalized expression
         cfg["data"]["kwargs"]["transform"] = "log-normalize"
-        cfg["data"]["kwargs"]["hvg_names_uns_key"] = "hvg_names" if cfg["data"]["kwargs"]["train_task"] != "replogle" else None # TODO: better to not hardcode this
-        
-        cfg['data']['kwargs']['dataset_cls'] = 'scGPTPerturbationDataset'
-        
+        cfg["data"]["kwargs"]["hvg_names_uns_key"] = (
+            "hvg_names" if cfg["data"]["kwargs"]["train_task"] != "replogle" else None
+        )  # TODO: better to not hardcode this
+
+        cfg["data"]["kwargs"]["dataset_cls"] = "scGPTPerturbationDataset"
+
         model_dir = Path(cfg["model"]["kwargs"]["pretrained_path"])
-        
+
         vocab_file = model_dir / "vocab.json"
 
         vocab = json.load(open(vocab_file, "r"))
@@ -383,19 +390,19 @@ def train(cfg: DictConfig) -> None:
         for s in cfg["model"]["kwargs"]["special_tokens"]:
             if s not in vocab:
                 vocab[s] = len(vocab)
-        
+
         cfg["data"]["kwargs"]["vocab"] = vocab
         cfg["data"]["kwargs"]["perturbation_type"] = cfg["model"]["kwargs"]["perturbation_type"]
         cfg["model"]["kwargs"]["ntoken"] = len(vocab)
         cfg["model"]["kwargs"]["d_model"] = cfg["model"]["kwargs"]["embsize"]
-        
+
         logger.info(f"Added vocab and hvg_names_uns_key to data kwargs for scGPT")
-        
+
     elif cfg["model"]["name"].lower() == "cpa" and cfg["model"]["kwargs"]["recon_loss"] == "gauss":
         cfg["data"]["kwargs"]["transform"] = "log-normalize"
     elif cfg["model"]["name"].lower() == "scvi":
         cfg["data"]["kwargs"]["transform"] = None
-    
+
     data_module = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
@@ -461,8 +468,8 @@ def train(cfg: DictConfig) -> None:
     batch_speed_monitor = BatchSpeedMonitorCallback()
     callbacks = ckpt_callbacks + [batch_speed_monitor]
 
-    logger.info('Loggers and callbacks set up.')
-    
+    logger.info("Loggers and callbacks set up.")
+
     if cfg["model"]["name"].lower().startswith("scgpt"):
         plugins = [
             MixedPrecision(
@@ -507,25 +514,28 @@ def train(cfg: DictConfig) -> None:
     else:
         logging.info(f"!! Resuming training from {checkpoint_path} !!")
 
-    logger.info('Starting trainer fit.')
+    logger.info("Starting trainer fit.")
 
     # if a checkpoint does not exist, start with the provided checkpoint
     # this is mainly used for pretrain -> finetune workflows
     manual_init = cfg["model"]["kwargs"].get("init_from", None)
     if checkpoint_path is None and manual_init is not None:
         checkpoint_path = manual_init
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model_state = model.state_dict()
-        checkpoint_state = checkpoint['state_dict']
+        checkpoint_state = checkpoint["state_dict"]
 
         pert_encoder_weight_key = "pert_encoder.0.weight"
         if pert_encoder_weight_key in checkpoint_state:
             checkpoint_pert_dim = checkpoint_state[pert_encoder_weight_key].shape[1]
             if checkpoint_pert_dim != model.pert_dim:
-                print(f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder.")
+                print(
+                    f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
+                )
                 # Rebuild the pert_encoder with the new pert input dimension
                 from models.utils import build_mlp
+
                 model.pert_encoder = build_mlp(
                     in_dim=model.pert_dim,
                     out_dim=model.hidden_dim,
@@ -542,10 +552,12 @@ def train(cfg: DictConfig) -> None:
                 if param.shape == model_state[name].shape:
                     filtered_state[name] = param
                 else:
-                    print(f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, model={model_state[name].shape}")
+                    print(
+                        f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, model={model_state[name].shape}"
+                    )
             else:
                 print(f"Skipping parameter {name} as it doesn't exist in the current model")
-        
+
         # Load the filtered state dict
         model.load_state_dict(filtered_state, strict=False)
 
@@ -567,6 +579,7 @@ def train(cfg: DictConfig) -> None:
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "final.ckpt")
     if not exists(checkpoint_path):
         trainer.save_checkpoint(checkpoint_path)
+
 
 if __name__ == "__main__":
     train()

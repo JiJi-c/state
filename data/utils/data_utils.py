@@ -23,16 +23,19 @@ from scanpy import AnnData
 
 log = logging.getLogger(__name__)
 
+
 class H5MetadataCache:
     """Cache for H5 file metadata to avoid repeated disk reads."""
-    
-    def __init__(self, h5_path: str, 
-                 pert_col: str = 'drug',
-                 cell_type_key: str = 'cell_name',
-                 control_pert: str = 'DMSO_TF',
-                 batch_col: str = 'sample', # replace with plate number
-                 pert_dosage_col: Optional[str] = None,
-                ):
+
+    def __init__(
+        self,
+        h5_path: str,
+        pert_col: str = "drug",
+        cell_type_key: str = "cell_name",
+        control_pert: str = "DMSO_TF",
+        batch_col: str = "sample",  # replace with plate number
+        pert_dosage_col: Optional[str] = None,
+    ):
         """
         Args:
             h5_path: Path to H5 file
@@ -42,7 +45,7 @@ class H5MetadataCache:
             pert_dosage_col: Column name for perturbation dosage data (Optional)
         """
         self.h5_path = h5_path
-        with h5py.File(h5_path, 'r') as f:
+        with h5py.File(h5_path, "r") as f:
             # Load categories first
             self.pert_categories = safe_decode_array(f[f"obs/{pert_col}/categories"][:])
             self.cell_type_categories = safe_decode_array(f[f"obs/{cell_type_key}/categories"][:])
@@ -58,27 +61,29 @@ class H5MetadataCache:
                 raw_batches = f[f"obs/{batch_col}/categories"][:]
                 self.batch_is_categorical = True
                 self.batch_categories = safe_decode_array(raw_batches)
-            
+
             # Then load codes
             self.pert_codes = f[f"obs/{pert_col}/codes"][:].astype(np.int32)
             self.cell_type_codes = f[f"obs/{cell_type_key}/codes"][:].astype(np.int32)
             try:
                 self.batch_codes = f[f"obs/{batch_col}/codes"][:].astype(np.int32)
             except:
-                self.batch_codes = f[f"obs/{batch_col}"][:].astype(np.int32) # if batch is stored directly as numbers
-                
+                self.batch_codes = f[f"obs/{batch_col}"][:].astype(np.int32)  # if batch is stored directly as numbers
+
             # in case dosage is stored in a separate column
             if pert_dosage_col is not None:
-                self.pert_dosages = f[f"obs/{pert_dosage_col}"][:].astype(np.float32) # TODO: probably should check for the type 
+                self.pert_dosages = f[f"obs/{pert_dosage_col}"][:].astype(
+                    np.float32
+                )  # TODO: probably should check for the type
             else:
                 self.pert_dosages = None
-            
+
             # Create mask for control perturbations
             self.control_pert_code = np.where(self.pert_categories == control_pert)[0][0]
             self.control_mask = self.pert_codes == self.control_pert_code
-            
+
             self.n_cells = len(self.pert_codes)
-    
+
     def get_batch_names(self, indices: np.ndarray) -> np.ndarray:
         """Get batch names for given indices."""
         return self.batch_categories[indices]
@@ -91,23 +96,28 @@ class H5MetadataCache:
         """Get perturbation names for given indices."""
         return self.pert_categories[indices]
 
+
 class GlobalH5MetadataCache(metaclass=Singleton):
     """
     Singleton class to manage a global cache of H5MetadataCache objects.
-    
+
     Usage:
         from utils.data_utils import GlobalH5MetadataCache
         global_cache = GlobalH5MetadataCache()
         cache = global_cache.get_cache(h5_path, pert_col, cell_type_key, control_pert, batch_col)
     """
+
     def __init__(self):
         self._cache = {}  # dictionary mapping parameter tuple to H5MetadataCache instance
 
-    def get_cache(self, h5_path: str, 
-                  pert_col: str = 'drug', 
-                  cell_type_key: str = 'cell_name', 
-                  control_pert: str = 'DMSO_TF', 
-                  batch_col: str = 'drug') -> H5MetadataCache:
+    def get_cache(
+        self,
+        h5_path: str,
+        pert_col: str = "drug",
+        cell_type_key: str = "cell_name",
+        control_pert: str = "DMSO_TF",
+        batch_col: str = "drug",
+    ) -> H5MetadataCache:
         """
         Retrieve the H5MetadataCache for the given file and parameters.
         If it does not exist, it is created and stored.
@@ -117,12 +127,14 @@ class GlobalH5MetadataCache(metaclass=Singleton):
             self._cache[key] = H5MetadataCache(h5_path, pert_col, cell_type_key, control_pert, batch_col)
         return self._cache[key]
 
+
 # A small helper to decode arrays (so we can reuse it in this module if needed)
 def safe_decode_array(arr):
     try:
         return np.array([x.decode("utf-8") if isinstance(x, bytes) else str(x) for x in arr])
     except Exception:
         return np.array([str(x) for x in arr])
+
 
 def merge_adata(adata_list):
     """

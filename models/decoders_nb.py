@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import NegativeBinomial
 
+
 class NBDecoder(nn.Module):
     """
     scVI‑style decoder that maps a latent embedding (optionally with batch covariates)
@@ -15,6 +16,7 @@ class NBDecoder(nn.Module):
 
     Optionally, a zero‑inflation gate π_ig can be produced (not shown here).
     """
+
     def __init__(
         self,
         latent_dim: int,
@@ -36,11 +38,7 @@ class NBDecoder(nn.Module):
             in_features = h
         self.encoder = nn.Sequential(*modules)
 
-        self.skip = (
-            nn.Identity()
-            if in_features == latent_dim
-            else nn.Linear(latent_dim, in_features, bias=False)
-        )
+        self.skip = nn.Identity() if in_features == latent_dim else nn.Linear(latent_dim, in_features, bias=False)
         self.post_norm = nn.LayerNorm(in_features)
 
         # Mean parameter
@@ -68,18 +66,18 @@ class NBDecoder(nn.Module):
         returns μ, θ (and π if requested)
         """
         flat = False
-        if z.dim() == 3:                # [B,S,D]  → flatten
+        if z.dim() == 3:  # [B,S,D]  → flatten
             B, S, D = z.shape
             z = z.reshape(-1, D)
             flat = True
 
-        h = self.encoder(z)                             # [B* S, H]
+        h = self.encoder(z)  # [B* S, H]
         h = self.post_norm(h + self.skip(z))
 
         if log_library is None:
-            log_library = self.l_encoder(h)             # [B* S, 1]
-        px_scale = F.softplus(self.px_scale(h))         # [B* S, G]
-        mu = torch.exp(log_library) * px_scale          # NB mean
+            log_library = self.l_encoder(h)  # [B* S, 1]
+        px_scale = F.softplus(self.px_scale(h))  # [B* S, G]
+        mu = torch.exp(log_library) * px_scale  # NB mean
 
         if self.use_zero_inflation:
             pi = torch.sigmoid(self.px_dropout(h))
@@ -87,17 +85,18 @@ class NBDecoder(nn.Module):
         else:
             outs = (mu, self.theta)
 
-        if flat:                      # reshape back to [B,S,*]
+        if flat:  # reshape back to [B,S,*]
             mu = mu.reshape(B, S, -1)
             if self.use_zero_inflation:
                 pi = pi.reshape(B, S, -1)
-                return mu, self.theta, pi   # θ remains [G]
+                return mu, self.theta, pi  # θ remains [G]
             else:
                 return mu, self.theta
         return outs
 
     def gene_dim(self) -> int:
         return self.px_scale.out_features
+
 
 def nb_nll(x, mu, theta, eps: float = 1e-6):
     """
@@ -106,6 +105,6 @@ def nb_nll(x, mu, theta, eps: float = 1e-6):
         theta : [G] or [..., G]
     returns scalar
     """
-    logits = (mu + eps).log() - (theta + eps).log()             # NB parameterisation
-    dist   = NegativeBinomial(total_count=theta, logits=logits)
+    logits = (mu + eps).log() - (theta + eps).log()  # NB parameterisation
+    dist = NegativeBinomial(total_count=theta, logits=logits)
     return -dist.log_prob(x).mean()

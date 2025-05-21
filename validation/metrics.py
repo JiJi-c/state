@@ -22,7 +22,7 @@ from validation.metric_utils import (
     compute_downstream_DE_metrics,
     compute_sig_gene_counts,
     compute_sig_gene_spearman,
-    compute_directionality_agreement
+    compute_directionality_agreement,
 )
 from tqdm.auto import tqdm
 import numpy as np
@@ -62,7 +62,7 @@ def compute_metrics(
     output_space="gene",
     decoder=None,
     shared_perts=None,
-    outdir=None, # output directory to store raw de results
+    outdir=None,  # output directory to store raw de results
 ):
     pred_celltype_pert_dict = adata_pred.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
     real_celltype_pert_dict = adata_real.obs.groupby(celltype_col)[pert_col].agg(set).to_dict()
@@ -111,7 +111,7 @@ def compute_metrics(
                     pert_col=pert_col,
                     celltype_col=celltype_col,
                 )
-                
+
                 adata_real_gene_control = get_samples_by_pert_and_celltype(
                     adata_real_gene,
                     pert=control_pert,
@@ -134,9 +134,12 @@ def compute_metrics(
             pred_gene_groups = None
             real_gene_groups = None
             if adata_pred_gene is not None and adata_real_gene is not None:
-                pred_gene_groups = adata_pred_gene.obs[adata_pred_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
-                real_gene_groups = adata_real_gene.obs[adata_real_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
-
+                pred_gene_groups = (
+                    adata_pred_gene.obs[adata_pred_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+                )
+                real_gene_groups = (
+                    adata_real_gene.obs[adata_real_gene.obs[celltype_col] == celltype].groupby(pert_col).indices
+                )
 
             # use tqdm to track progress
             for pert in tqdm(all_perts, desc=f"Computing metrics for {celltype}", leave=False):
@@ -184,29 +187,34 @@ def compute_metrics(
                         )
 
                         # Add metrics for counts space if gene data is provided
-                        if adata_pred_gene is not None and adata_real_gene is not None and pred_gene_groups is not None and real_gene_groups is not None:
+                        if (
+                            adata_pred_gene is not None
+                            and adata_real_gene is not None
+                            and pred_gene_groups is not None
+                            and real_gene_groups is not None
+                        ):
                             # Get indices for counts space
                             pred_gene_idx = pred_gene_groups.get(pert, [])
                             true_gene_idx = real_gene_groups.get(pert, [])
-                            
+
                             if len(pred_gene_idx) > 0 and len(true_gene_idx) > 0:
                                 # Extract data slices for counts space
                                 adata_pred_gene_pert = adata_pred_gene[pred_gene_idx]
                                 adata_real_gene_pert = adata_real_gene[true_gene_idx]
-                                
+
                                 # Get the predictions and true values for counts space
                                 pert_preds_gene = to_dense(adata_pred_gene_pert.X)
                                 pert_true_gene = to_dense(adata_real_gene_pert.X)
                                 control_true_gene = to_dense(adata_real_gene_control.X)
                                 control_preds_gene = to_dense(adata_pred_gene_control.X)
-                                
+
                                 # If matrix is sparse convert to dense
                                 try:
                                     pert_true_gene = pert_true_gene.toarray()
                                     control_true_gene = control_true_gene.toarray()
                                 except:
                                     pass
-                                
+
                                 # Compute metrics for counts space
                                 gene_metrics = _compute_metrics_dict(
                                     pert_preds_gene,
@@ -216,7 +224,7 @@ def compute_metrics(
                                     suffix="cell_type_counts",
                                     include_dist_metrics=include_dist_metrics,
                                 )
-                                
+
                                 # Add counts metrics to current metrics
                                 curr_metrics.update(gene_metrics)
 
@@ -230,7 +238,6 @@ def compute_metrics(
 
             adata_real_ct = adata_real[adata_real.obs[celltype_col] == celltype]
             adata_pred_ct = adata_pred[adata_pred.obs[celltype_col] == celltype]
-
 
             # filter adata_real and adata_pred to only include control and shared perturbations
             assert control_pert in all_perts
@@ -260,9 +267,18 @@ def compute_metrics(
 
                 # 2) Actually compute DE for both truth & pred
                 logger.info(f"Computing DE for 50 genes")
-                DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval,\
-                DE_true_pval_fc, DE_pred_pval_fc, DE_true_sig_genes, DE_pred_sig_genes,\
-                DE_true_df, DE_pred_df = compute_DE_for_truth_and_pred(
+                (
+                    DE_true_fc,
+                    DE_pred_fc,
+                    DE_true_pval,
+                    DE_pred_pval,
+                    DE_true_pval_fc,
+                    DE_pred_pval_fc,
+                    DE_true_sig_genes,
+                    DE_pred_sig_genes,
+                    DE_true_df,
+                    DE_pred_df,
+                ) = compute_DE_for_truth_and_pred(
                     adata_real_gene_ct or adata_real_ct,
                     adata_pred_gene_ct or adata_pred_ct,
                     control_pert=control_pert,
@@ -279,7 +295,11 @@ def compute_metrics(
                 # use tqdm
                 gene_counts = adata_real_gene_ct or adata_real_ct
                 pred_gene_counts = adata_pred_gene_ct or adata_pred_ct
-                for pert in tqdm(metrics[celltype]["pert"], desc=f"Computing pearson for sig genes across perts in {celltype}", leave=False):
+                for pert in tqdm(
+                    metrics[celltype]["pert"],
+                    desc=f"Computing pearson for sig genes across perts in {celltype}",
+                    leave=False,
+                ):
                     # subset adata for this pert and for control
                     real_pert = gene_counts[gene_counts.obs[pert_col] == pert]
                     pred_pert = pred_gene_counts[pred_gene_counts.obs[pert_col] == pert]
@@ -316,82 +336,109 @@ def compute_metrics(
                     ctrl_pred_sub = X_ctrl_pred[:, gene_cols]
 
                     # compute the delta‐Pearson
-                    pearson_sig.append(
-                        compute_pearson_delta(pred_sub, true_sub, ctrl_true_sub, ctrl_pred_sub)
-                    )
+                    pearson_sig.append(compute_pearson_delta(pred_sub, true_sub, ctrl_true_sub, ctrl_pred_sub))
 
                 metrics[celltype]["pearson_delta_cell_type_sig_genes"] = pearson_sig
-    
 
                 clustering_agreement = compute_clustering_agreement(adata_real, adata_pred, embed_key=None)
-                metrics[celltype]['clustering_agreement'] = clustering_agreement
+                metrics[celltype]["clustering_agreement"] = clustering_agreement
 
                 # Compute overlap for fold change-based DE
                 DE_metrics_fc = compute_gene_overlap_cross_pert(DE_true_fc, DE_pred_fc, control_pert=control_pert, k=50)
-                metrics[celltype]['DE_fc'] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_fc_avg'] = np.mean(list(DE_metrics_fc.values()))
-                
-                # Compute overlap for p-value-based DE  
-                DE_metrics_pval = compute_gene_overlap_cross_pert(DE_true_pval, DE_pred_pval, control_pert=control_pert, k=50)
-                metrics[celltype]['DE_pval'] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_avg'] = np.mean(list(DE_metrics_pval.values()))
+                metrics[celltype]["DE_fc"] = [DE_metrics_fc.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]["DE_fc_avg"] = np.mean(list(DE_metrics_fc.values()))
 
+                # Compute overlap for p-value-based DE
+                DE_metrics_pval = compute_gene_overlap_cross_pert(
+                    DE_true_pval, DE_pred_pval, control_pert=control_pert, k=50
+                )
+                metrics[celltype]["DE_pval"] = [DE_metrics_pval.get(p, 0.0) for p in metrics[celltype]["pert"]]
+                metrics[celltype]["DE_pval_avg"] = np.mean(list(DE_metrics_pval.values()))
 
                 # Compute overlap for fold change-based DE thresholded with p-values
-                DE_metrics_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=50)
-                metrics[celltype]['DE_pval_fc_50'] = [DE_metrics_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_fc_avg_50'] = np.mean(list(DE_metrics_pval_fc_50.values()))
+                DE_metrics_pval_fc_50 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=50
+                )
+                metrics[celltype]["DE_pval_fc_50"] = [
+                    DE_metrics_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_pval_fc_avg_50"] = np.mean(list(DE_metrics_pval_fc_50.values()))
 
-                DE_metrics_pval_fc_100 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=100)
-                metrics[celltype]['DE_pval_fc_100'] = [DE_metrics_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_fc_avg_100'] = np.mean(list(DE_metrics_pval_fc_100.values()))
+                DE_metrics_pval_fc_100 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=100
+                )
+                metrics[celltype]["DE_pval_fc_100"] = [
+                    DE_metrics_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_pval_fc_avg_100"] = np.mean(list(DE_metrics_pval_fc_100.values()))
 
-                DE_metrics_pval_fc_200 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=200)
-                metrics[celltype]['DE_pval_fc_200'] = [DE_metrics_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_fc_avg_200'] = np.mean(list(DE_metrics_pval_fc_200.values()))
+                DE_metrics_pval_fc_200 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=200
+                )
+                metrics[celltype]["DE_pval_fc_200"] = [
+                    DE_metrics_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_pval_fc_avg_200"] = np.mean(list(DE_metrics_pval_fc_200.values()))
 
                 # Variable k
-                DE_metrics_pval_fc_N = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=-1)
-                metrics[celltype]['DE_pval_fc_N'] = [DE_metrics_pval_fc_N.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_pval_fc_avg_N'] = np.mean(list(DE_metrics_pval_fc_N.values()))
+                DE_metrics_pval_fc_N = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, k=-1
+                )
+                metrics[celltype]["DE_pval_fc_N"] = [
+                    DE_metrics_pval_fc_N.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_pval_fc_avg_N"] = np.mean(list(DE_metrics_pval_fc_N.values()))
 
                 # Compute precision at k for fold change-based DE thresholded with p-values
-                DE_metrics_patk_pval_fc_50 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=50)
-                metrics[celltype]['DE_patk_pval_fc_50'] = [DE_metrics_patk_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_patk_pval_fc_avg_50'] = np.mean(list(DE_metrics_patk_pval_fc_50.values()))
+                DE_metrics_patk_pval_fc_50 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=50
+                )
+                metrics[celltype]["DE_patk_pval_fc_50"] = [
+                    DE_metrics_patk_pval_fc_50.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_patk_pval_fc_avg_50"] = np.mean(list(DE_metrics_patk_pval_fc_50.values()))
 
-                DE_metrics_patk_pval_fc_100 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=100)
-                metrics[celltype]['DE_patk_pval_fc_100'] = [DE_metrics_patk_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_patk_pval_fc_avg_100'] = np.mean(list(DE_metrics_patk_pval_fc_100.values()))
+                DE_metrics_patk_pval_fc_100 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=100
+                )
+                metrics[celltype]["DE_patk_pval_fc_100"] = [
+                    DE_metrics_patk_pval_fc_100.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_patk_pval_fc_avg_100"] = np.mean(list(DE_metrics_patk_pval_fc_100.values()))
 
-                DE_metrics_patk_pval_fc_200 = compute_gene_overlap_cross_pert(DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=200)
-                metrics[celltype]['DE_patk_pval_fc_200'] = [DE_metrics_patk_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_patk_pval_fc_av_200'] = np.mean(list(DE_metrics_patk_pval_fc_200.values()))
-
+                DE_metrics_patk_pval_fc_200 = compute_gene_overlap_cross_pert(
+                    DE_true_pval_fc, DE_pred_pval_fc, control_pert=control_pert, topk=200
+                )
+                metrics[celltype]["DE_patk_pval_fc_200"] = [
+                    DE_metrics_patk_pval_fc_200.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_patk_pval_fc_av_200"] = np.mean(list(DE_metrics_patk_pval_fc_200.values()))
 
                 # Compute recall for significant genes
-                DE_metrics_sig_genes = compute_gene_overlap_cross_pert(DE_true_sig_genes, DE_pred_sig_genes, control_pert=control_pert)
-                metrics[celltype]['DE_sig_genes_recall'] = [DE_metrics_sig_genes.get(p, 0.0) for p in metrics[celltype]["pert"]]
-                metrics[celltype]['DE_sig_genes_recall_avg'] = np.mean(list(DE_metrics_sig_genes.values()))
+                DE_metrics_sig_genes = compute_gene_overlap_cross_pert(
+                    DE_true_sig_genes, DE_pred_sig_genes, control_pert=control_pert
+                )
+                metrics[celltype]["DE_sig_genes_recall"] = [
+                    DE_metrics_sig_genes.get(p, 0.0) for p in metrics[celltype]["pert"]
+                ]
+                metrics[celltype]["DE_sig_genes_recall_avg"] = np.mean(list(DE_metrics_sig_genes.values()))
 
                 # Record effect sizes
                 true_counts, pred_counts = compute_sig_gene_counts(DE_true_sig_genes, DE_pred_sig_genes, only_perts)
-                metrics[celltype]['DE_sig_genes_count_true'] = [true_counts.get(p, 0) for p in only_perts]
-                metrics[celltype]['DE_sig_genes_count_pred'] = [pred_counts.get(p, 0) for p in only_perts]
-
+                metrics[celltype]["DE_sig_genes_count_true"] = [true_counts.get(p, 0) for p in only_perts]
+                metrics[celltype]["DE_sig_genes_count_pred"] = [pred_counts.get(p, 0) for p in only_perts]
 
                 # Compute the Spearman correlation between the counts.
                 spearman_corr = compute_sig_gene_spearman(true_counts, pred_counts, only_perts)
-                metrics[celltype]['DE_sig_genes_spearman'] = spearman_corr
-
+                metrics[celltype]["DE_sig_genes_spearman"] = spearman_corr
 
                 # Compute the directionality agreement.
                 directionality_agreement = compute_directionality_agreement(DE_true_df, DE_pred_df, only_perts)
-                metrics[celltype]['DE_direction_match'] = [directionality_agreement.get(p, np.nan) for p in only_perts]
-                metrics[celltype]['DE_direction_match_avg'] = np.nanmean(list(directionality_agreement.values()))
+                metrics[celltype]["DE_direction_match"] = [directionality_agreement.get(p, np.nan) for p in only_perts]
+                metrics[celltype]["DE_direction_match_avg"] = np.nanmean(list(directionality_agreement.values()))
 
                 # Compute clustering overlap
-            
+
                 # Compute the actual top-k gene lists per perturbation
                 de_pred_genes_col = []
                 de_true_genes_col = []
@@ -423,8 +470,9 @@ def compute_metrics(
 
                 # Compute additional DE metrics
                 print("Computing additional metrics")
-                get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir=outdir, 
-                                          celltype=celltype, n_workers=None, p_value_threshold=0.05)
+                get_downstream_DE_metrics(
+                    DE_pred_df, DE_true_df, outdir=outdir, celltype=celltype, n_workers=None, p_value_threshold=0.05
+                )
 
             if class_score_flag:
                 ## Compute classification score
@@ -445,6 +493,7 @@ def compute_metrics(
         print(e)
         return metrics
 
+
 def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="", include_dist_metrics=False):
     metrics = {}
     metrics["mse_" + suffix] = compute_mse(pert_pred, pert_true, ctrl_true, ctrl_pred)
@@ -462,11 +511,13 @@ def _compute_metrics_dict(pert_pred, pert_true, ctrl_true, ctrl_pred, suffix="",
             metrics["mmd_" + suffix] = compute_mmd(pert_pred, pert_true, ctrl_true, ctrl_pred)
     return metrics
 
+
 def get_samples_by_pert_and_celltype(adata, pert, celltype, pert_col, celltype_col):
     pert_idx = (adata.obs[pert_col] == pert).to_numpy()
     celltype_idx = (adata.obs[celltype_col] == celltype).to_numpy()
     out = adata[pert_idx & celltype_idx]
     return out
+
 
 def init_worker(global_pred_df, global_true_df):
     global PRED_DF
@@ -474,51 +525,48 @@ def init_worker(global_pred_df, global_true_df):
     PRED_DF = global_pred_df
     TRUE_DF = global_true_df
 
+
 def compute_downstream_DE_metrics_parallel(target_gene, p_value_threshold):
     return compute_downstream_DE_metrics(target_gene, PRED_DF, TRUE_DF, p_value_threshold)
+
 
 def interpolate_curves(curves, x_grid, min_max=(0, 1)):
     """Interpolate a list of curves onto a common x grid."""
     y_values = []
     min_val, max_val = min_max
-    
+
     for curve in curves:
         x, y = curve
-        
+
         # Skip if too few points
         if len(x) < 2:
             continue
-            
+
         # Create interpolation function
-        f = interp1d(
-            x, y, 
-            kind='linear', 
-            bounds_error=False, 
-            fill_value=(y[0], y[-1])
-        )
-        
+        f = interp1d(x, y, kind="linear", bounds_error=False, fill_value=(y[0], y[-1]))
+
         # Interpolate y values at the grid points
         interp_y = f(x_grid)
-        
+
         # Apply bounds
         interp_y = np.clip(interp_y, min_val, max_val)
         y_values.append(interp_y)
-    
+
     # Convert to numpy array
     if y_values:
         return np.array(y_values)
     return np.array([])
 
-def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
-                              n_workers=10, p_value_threshold=0.05):
+
+def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype, n_workers=10, p_value_threshold=0.05):
     for df in (DE_pred_df, DE_true_df):
-        df['abs_fold_change'] = np.abs(df['fold_change'])
-        with np.errstate(divide='ignore'):
-            df['log_fold_change'] = np.log10(df['fold_change'])
+        df["abs_fold_change"] = np.abs(df["fold_change"])
+        with np.errstate(divide="ignore"):
+            df["log_fold_change"] = np.log10(df["fold_change"])
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df['abs_log_fold_change'] = np.abs(df['log_fold_change'].fillna(0))
-    
-    target_genes = DE_true_df['target'].unique()
+        df["abs_log_fold_change"] = np.abs(df["log_fold_change"].fillna(0))
+
+    target_genes = DE_true_df["target"].unique()
     os.makedirs(outdir, exist_ok=True)
 
     with mp.Pool(processes=n_workers, initializer=init_worker, initargs=(DE_pred_df, DE_true_df)) as pool:
@@ -526,110 +574,116 @@ def get_downstream_DE_metrics(DE_pred_df, DE_true_df, outdir, celltype,
         results = list(tqdm(pool.imap(func, target_genes), total=len(target_genes)))
 
     # Create the main results DataFrame (without the curve data)
-    scalar_results = [{k: v for k, v in r.items() 
-                       if k not in ['recall_raw', 'precision_raw', 'fpr_raw', 'tpr_raw']} 
-                      for r in results]
+    scalar_results = [
+        {k: v for k, v in r.items() if k not in ["recall_raw", "precision_raw", "fpr_raw", "tpr_raw"]} for r in results
+    ]
     results_df = pd.DataFrame(scalar_results)
-    
+
     # Save the main results
     outpath = os.path.join(outdir, f"{celltype}_downstream_de_results.csv")
     results_df.to_csv(outpath, index=False)
 
     # Get all valid curve data
-    pr_curves = [(np.array(r['recall_raw']), np.array(r['precision_raw'])) 
-                 for r in results if len(r['recall_raw']) > 0 and len(r['precision_raw']) > 0]
-    roc_curves = [(np.array(r['fpr_raw']), np.array(r['tpr_raw']))
-                  for r in results if len(r['fpr_raw']) > 0 and len(r['tpr_raw']) > 0]
-    
+    pr_curves = [
+        (np.array(r["recall_raw"]), np.array(r["precision_raw"]))
+        for r in results
+        if len(r["recall_raw"]) > 0 and len(r["precision_raw"]) > 0
+    ]
+    roc_curves = [
+        (np.array(r["fpr_raw"]), np.array(r["tpr_raw"]))
+        for r in results
+        if len(r["fpr_raw"]) > 0 and len(r["tpr_raw"]) > 0
+    ]
+
     # Create common x-axis grids for interpolation
     pr_grid = np.linspace(0, 1, 100)
     roc_grid = np.linspace(0, 1, 100)
-    
+
     # Interpolate all curves onto the common grid
     pr_interp = interpolate_curves(pr_curves, pr_grid)
     roc_interp = interpolate_curves(roc_curves, roc_grid)
-    
+
     # Calculate mean and std for each curve type
     pr_mean = np.mean(pr_interp, axis=0) if len(pr_interp) > 0 else np.array([])
     pr_std = np.std(pr_interp, axis=0) if len(pr_interp) > 0 else np.array([])
-    
+
     roc_mean = np.mean(roc_interp, axis=0) if len(roc_interp) > 0 else np.array([])
     roc_std = np.std(roc_interp, axis=0) if len(roc_interp) > 0 else np.array([])
-    
+
     # Calculate average AUC values
     mean_pr_auc = auc(pr_grid, pr_mean) if len(pr_mean) > 0 else np.nan
     mean_roc_auc = auc(roc_grid, roc_mean) if len(roc_mean) > 0 else np.nan
-    
+
     # Save curve data to CSV
     if len(pr_mean) > 0:
-        pr_df = pd.DataFrame({
-            'recall': pr_grid,
-            'precision_mean': pr_mean,
-            'precision_std': pr_std
-        })
+        pr_df = pd.DataFrame({"recall": pr_grid, "precision_mean": pr_mean, "precision_std": pr_std})
         pr_df.to_csv(os.path.join(outdir, f"{celltype}_avg_pr_curve.csv"), index=False)
-    
+
     if len(roc_mean) > 0:
-        roc_df = pd.DataFrame({
-            'fpr': roc_grid,
-            'tpr_mean': roc_mean,
-            'tpr_std': roc_std
-        })
+        roc_df = pd.DataFrame({"fpr": roc_grid, "tpr_mean": roc_mean, "tpr_std": roc_std})
         roc_df.to_csv(os.path.join(outdir, f"{celltype}_avg_roc_curve.csv"), index=False)
-    
+
     # Save mean metrics
     mean_metrics = {
-        'mean_aupr': float(mean_pr_auc) if not np.isnan(mean_pr_auc) else None,
-        'mean_auroc': float(mean_roc_auc) if not np.isnan(mean_roc_auc) else None,
-        'pr_curves_count': len(pr_curves),
-        'roc_curves_count': len(roc_curves)
+        "mean_aupr": float(mean_pr_auc) if not np.isnan(mean_pr_auc) else None,
+        "mean_auroc": float(mean_roc_auc) if not np.isnan(mean_roc_auc) else None,
+        "pr_curves_count": len(pr_curves),
+        "roc_curves_count": len(roc_curves),
     }
-    
-    with open(os.path.join(outdir, f"{celltype}_avg_curve_metrics.json"), 'w') as f:
+
+    with open(os.path.join(outdir, f"{celltype}_avg_curve_metrics.json"), "w") as f:
         json.dump(mean_metrics, f)
-    
+
     # Plot PR curve with shaded std dev
     if len(pr_mean) > 0:
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(pr_grid, pr_mean, 'b-', label=f'Mean AUPR = {mean_pr_auc:.3f} (n={len(pr_curves)})')
-        ax.fill_between(pr_grid, 
-                      np.maximum(0, pr_mean - pr_std),
-                      np.minimum(1, pr_mean + pr_std),
-                      color='b', alpha=0.2, label='±1 std dev')
-        ax.set_xlabel('Recall')
-        ax.set_ylabel('Precision')
-        ax.set_title(f'Average Precision-Recall Curve - {celltype}')
+        ax.plot(pr_grid, pr_mean, "b-", label=f"Mean AUPR = {mean_pr_auc:.3f} (n={len(pr_curves)})")
+        ax.fill_between(
+            pr_grid,
+            np.maximum(0, pr_mean - pr_std),
+            np.minimum(1, pr_mean + pr_std),
+            color="b",
+            alpha=0.2,
+            label="±1 std dev",
+        )
+        ax.set_xlabel("Recall")
+        ax.set_ylabel("Precision")
+        ax.set_title(f"Average Precision-Recall Curve - {celltype}")
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.legend()
         ax.grid(True, alpha=0.3)
         plt.tight_layout()
-        fig.savefig(os.path.join(outdir, f"{celltype}_avg_pr_curve.svg"), dpi=300, bbox_inches='tight')
+        fig.savefig(os.path.join(outdir, f"{celltype}_avg_pr_curve.svg"), dpi=300, bbox_inches="tight")
         plt.close(fig)
-    
+
     # Plot ROC curve with shaded std dev
     if len(roc_mean) > 0:
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(roc_grid, roc_mean, 'r-', label=f'Mean AUROC = {mean_roc_auc:.3f} (n={len(roc_curves)})')
-        ax.fill_between(roc_grid, 
-                      np.maximum(0, roc_mean - roc_std), 
-                      np.minimum(1, roc_mean + roc_std), 
-                      color='r', alpha=0.2, label='±1 std dev')
-        ax.plot([0, 1], [0, 1], 'k--', alpha=0.5)  # Diagonal line
-        ax.set_xlabel('False Positive Rate')
-        ax.set_ylabel('True Positive Rate')
-        ax.set_title(f'Average ROC Curve - {celltype}')
+        ax.plot(roc_grid, roc_mean, "r-", label=f"Mean AUROC = {mean_roc_auc:.3f} (n={len(roc_curves)})")
+        ax.fill_between(
+            roc_grid,
+            np.maximum(0, roc_mean - roc_std),
+            np.minimum(1, roc_mean + roc_std),
+            color="r",
+            alpha=0.2,
+            label="±1 std dev",
+        )
+        ax.plot([0, 1], [0, 1], "k--", alpha=0.5)  # Diagonal line
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.set_title(f"Average ROC Curve - {celltype}")
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.legend()
         ax.grid(True, alpha=0.3)
         plt.tight_layout()
-        fig.savefig(os.path.join(outdir, f"{celltype}_avg_roc_curve.svg"), dpi=300, bbox_inches='tight')
+        fig.savefig(os.path.join(outdir, f"{celltype}_avg_roc_curve.svg"), dpi=300, bbox_inches="tight")
         plt.close(fig)
-    
+
     # Log completion message
     logger.info(f"Completed downstream DE metrics for {celltype}, results saved to {outdir}")
-    
+
     return results_df
 
 

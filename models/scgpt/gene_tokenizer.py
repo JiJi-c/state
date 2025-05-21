@@ -43,9 +43,7 @@ class GeneVocab(Vocab):
         if isinstance(gene_list_or_vocab, Vocab):
             _vocab = gene_list_or_vocab
             if specials is not None:
-                raise ValueError(
-                    "receive non-empty specials when init from a Vocab object."
-                )
+                raise ValueError("receive non-empty specials when init from a Vocab object.")
         elif isinstance(gene_list_or_vocab, list):
             _vocab = self._build_vocab_from_iterator(
                 gene_list_or_vocab,
@@ -53,9 +51,7 @@ class GeneVocab(Vocab):
                 special_first=special_first,
             )
         else:
-            raise ValueError(
-                "gene_list_or_vocab must be a list of gene names or a Vocab object."
-            )
+            raise ValueError("gene_list_or_vocab must be a list of gene names or a Vocab object.")
         super().__init__(_vocab.vocab)
         if default_token is not None and default_token in self:
             self.set_default_token(default_token)
@@ -77,10 +73,7 @@ class GeneVocab(Vocab):
                 token2idx = json.load(f)
                 return cls.from_dict(token2idx)
         else:
-            raise ValueError(
-                f"{file_path} is not a valid file type. "
-                "Only .pkl and .json are supported."
-            )
+            raise ValueError(f"{file_path} is not a valid file type. Only .pkl and .json are supported.")
 
     @classmethod
     def from_dict(
@@ -200,9 +193,7 @@ def get_default_gene_vocab() -> GeneVocab:
     """
     vocab_file = Path(__file__).parent / "default_gene_vocab.json"
     if not vocab_file.exists():
-        logger.info(
-            f"No existing default vocab, will build one and save to {vocab_file}"
-        )
+        logger.info(f"No existing default vocab, will build one and save to {vocab_file}")
         return _build_default_gene_vocab(save_vocab_to=vocab_file)
     logger.info(f"Loading gene vocabulary from {vocab_file}")
     return GeneVocab.from_file(vocab_file)
@@ -220,9 +211,7 @@ def _build_default_gene_vocab(
         save_vocab_to (Path or str): Path to save the vocabulary. If None,
             the vocabulary will not be saved. Default to None.
     """
-    gene_collection_file = (
-        Path(download_source_to) / "human.gene_name_symbol.from_genenames.org.tsv"
-    )
+    gene_collection_file = Path(download_source_to) / "human.gene_name_symbol.from_genenames.org.tsv"
     if not gene_collection_file.exists():
         # download and save file from url
         url = (
@@ -267,8 +256,7 @@ def tokenize_batch(
     """
     if data.shape[1] != len(gene_ids):
         raise ValueError(
-            f"Number of features in data ({data.shape[1]}) does not match "
-            f"number of gene_ids ({len(gene_ids)})."
+            f"Number of features in data ({data.shape[1]}) does not match number of gene_ids ({len(gene_ids)})."
         )
     tokenized_data = []
     for i in range(len(data)):
@@ -329,9 +317,7 @@ def pad_batch(
             gene_ids = torch.cat(
                 [
                     gene_ids,
-                    torch.full(
-                        (max_len - len(gene_ids),), pad_id, dtype=gene_ids.dtype
-                    ),
+                    torch.full((max_len - len(gene_ids),), pad_id, dtype=gene_ids.dtype),
                 ]
             )
             values = torch.cat(
@@ -373,9 +359,7 @@ def tokenize_and_pad_batch(
         include_zero_gene=include_zero_gene,
         cls_id=cls_id,
     )
-    batch_padded = pad_batch(
-        tokenized_data, max_len, vocab, pad_token, pad_value, cls_appended=append_cls
-    )
+    batch_padded = pad_batch(tokenized_data, max_len, vocab, pad_token, pad_value, cls_appended=append_cls)
     return batch_padded
 
 

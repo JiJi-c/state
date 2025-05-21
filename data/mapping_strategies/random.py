@@ -2,6 +2,7 @@ import numpy as np
 import random
 from .mapping_strategies import BaseMappingStrategy
 
+
 class RandomMappingStrategy(BaseMappingStrategy):
     """
     Maps a perturbed cell to random control cell(s) drawn from the same plate.
@@ -19,15 +20,16 @@ class RandomMappingStrategy(BaseMappingStrategy):
             "val": {},
             "test": {},
         }
-        
+
         # Initialize Python's random module with the same seed
         random.seed(random_state)
 
     def name():
         return "random"
 
-    def register_split_indices(self, dataset: "PerturbationDataset", split: str,
-                                 perturbed_indices: np.ndarray, control_indices: np.ndarray):
+    def register_split_indices(
+        self, dataset: "PerturbationDataset", split: str, perturbed_indices: np.ndarray, control_indices: np.ndarray
+    ):
         """
         For the given split, group all control indices by their cell type.
         We assume that if a filter is provided in the dataset then all indices belong to the same cell type;
@@ -36,17 +38,18 @@ class RandomMappingStrategy(BaseMappingStrategy):
 
         # Get cell types for all control indices
         cell_types = dataset.get_all_cell_types(control_indices)
-        
+
         # Group by cell type and store the control indices
         for ct in np.unique(cell_types):
             ct_mask = cell_types == ct
             ct_indices = control_indices[ct_mask]
-            
+
             if ct not in self.split_control_pool[split]:
                 self.split_control_pool[split][ct] = list(ct_indices)
             else:
                 self.split_control_pool[split][ct].extend(ct_indices)
-# # 
+
+    # #
     def get_control_indices(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int) -> np.ndarray:
         """
         Returns n_basal_samples control indices that are from the same cell type as the perturbed cell.
@@ -55,14 +58,14 @@ class RandomMappingStrategy(BaseMappingStrategy):
         # Get the cell type of the perturbed cell
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
         pool = self.split_control_pool[split].get(pert_cell_type, None)
-        
+
         if pool is None or len(pool) == 0:
             return None
-            
+
         # Use Python's random.choices which allows replacement by default
         # and returns a list of the specified length
         selected_indices = random.choices(pool, k=self.n_basal_samples)
-        
+
         # Convert to numpy array for compatibility with the rest of the code
         return np.array(selected_indices)
 
@@ -74,7 +77,7 @@ class RandomMappingStrategy(BaseMappingStrategy):
         # Get the cell type of the perturbed cell
         pert_cell_type = dataset.get_cell_type(perturbed_idx)
         pool = self.split_control_pool[split].get(pert_cell_type, None)
-        
+
         # Return None if there is no pool or the pool is empty
         if not pool:
             return None

@@ -13,7 +13,6 @@ from ._module import CPAModule
 from torchmetrics.functional import accuracy
 
 
-
 class CPAPerturbationModel(PerturbationModel):
     """
     Implementation of the CPA model. The outputs are always in
@@ -80,21 +79,21 @@ class CPAPerturbationModel(PerturbationModel):
         self.n_cell_types = n_cell_types
         self.n_perts = n_perts
         self.n_batches = n_batches
-        
+
         self.n_layers_encoder = kwargs.get("n_layers_encoder", 2)
         self.n_layers_decoder = kwargs.get("n_layers_decoder", 2)
         self.n_hidden_encoder = kwargs.get("n_hidden_encoder", 256)
         self.n_hidden_decoder = kwargs.get("n_hidden_decoder", 256)
         self.n_latent = kwargs.get("n_latent", 64)
         self.recon_loss = kwargs.get("recon_loss", "nb")
-        
+
         self.use_batch_norm = kwargs.get("use_batch_norm", "both")
         self.use_layer_norm = kwargs.get("use_layer_norm", "none")
-        
-        self.pert_embeddings = None # will be set in _build_networks
+
+        self.pert_embeddings = None  # will be set in _build_networks
         self.encode_dosage = encode_dosage
         self.dosage_non_linearity = dosage_non_linearity
-        
+
         self.dropout_rate_encoder = kwargs.get("dropout_rate_encoder", 0.0)
         self.dropout_rate_decoder = kwargs.get("dropout_rate_decoder", 0.0)
         self.n_hidden_adv = kwargs.get("n_hidden_adv", 128)
@@ -102,7 +101,7 @@ class CPAPerturbationModel(PerturbationModel):
         self.use_norm_adv = kwargs.get("use_norm_adv", "batch")
         self.dropout_rate_adv = kwargs.get("dropout_rate_adv", 0.0)
         self.seed = kwargs.get("seed", 0)
-        
+
         # training params
         self.lr = lr
         self.wd = wd
@@ -117,16 +116,16 @@ class CPAPerturbationModel(PerturbationModel):
         self.pen_adv = pen_adv
         self.adv_lr = adv_lr
         self.adv_wd = adv_wd
-        
+
         self.step_size_lr = step_size_lr
         self.do_clip_grad = do_clip_grad
         self.gradient_clip_value = gradient_clip_value
         self.check_val_every_n_epoch = check_val_every_n_epoch
-        
-        self.kl_weight = 0.0 # disabled for now
-        
+
+        self.kl_weight = 0.0  # disabled for now
+
         self.kwargs = kwargs
-        
+
         self.adv_loss = adv_loss.lower()
         self.gamma = kwargs.get("gamma", 2.0)
         if self.adv_loss == "focal":
@@ -134,9 +133,9 @@ class CPAPerturbationModel(PerturbationModel):
             raise NotImplementedError("Focal loss not implemented for CPA model yet")
         else:
             self.adv_loss_fn = torch.nn.CrossEntropyLoss()
-        
+
         assert self.output_space == "gene", "CPA model only supports gene-level output"
-        
+
         self.automatic_optimization = False
 
         # Build model components
@@ -171,7 +170,7 @@ class CPAPerturbationModel(PerturbationModel):
             dosage_non_linearity=self.dosage_non_linearity,
             seed=self.seed,
         )
-        
+
     def _forward_step(self, batch: Dict[str, torch.Tensor]):
         """
         Given
@@ -188,21 +187,21 @@ class CPAPerturbationModel(PerturbationModel):
         cell_type = batch["cell_type_onehot"]
         batch_ids = batch["gem_group"]
         pert_dosages = batch.get("pert_dosage", None)
-        
+
         # if pert is one-hot, convert to index
         if pert.dim() == 2 and pert.size(1) == self.n_perts:
             pert = pert.argmax(1)
-        
+
         if cell_type.dim() == 2 and cell_type.size(1) == self.n_cell_types:
             cell_type = cell_type.argmax(1)
-        
+
         if batch_ids.dim() == 2 and batch_ids.size(1) == self.n_batches:
             batch_ids = batch_ids.argmax(1)
-            
+
         encoder_outputs, decoder_outputs = self.module.forward(basal, pert, cell_type, batch_ids, pert_dosages)
-        
+
         return encoder_outputs, decoder_outputs
-    
+
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """Map perturbation to an effect vector in embedding space."""
         raise NotImplementedError("Perturbation encoding not supported for CPA model")
@@ -217,17 +216,17 @@ class CPAPerturbationModel(PerturbationModel):
         """
         # Project perturbation and basal cell state to latent space
         raise NotImplementedError("Perturbation not supported for CPA model")
-    
+
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         encoder_outputs, decoder_outputs = self._forward_step(batch)
-        
+
         if self.recon_loss == "gauss":
             output_key = "loc"
         else:
             output_key = "mu"
 
         x_pred = getattr(decoder_outputs["px"], output_key)
-        
+
         return x_pred
 
     def adversarial_loss(self, perts, cell_types, batch_ids, z_basal, compute_penalty=True):
@@ -320,7 +319,7 @@ class CPAPerturbationModel(PerturbationModel):
             total_penalty = torch.tensor(0.0, device=z_basal.device)
 
         return adv_loss, adv_acc, total_penalty
-    
+
     @property
     def do_start_adv_training(self):
         if self.n_steps_pretrain_ae is not None:
@@ -329,7 +328,7 @@ class CPAPerturbationModel(PerturbationModel):
             return self.current_epoch > self.n_epochs_pretrain_ae
         else:
             return True
-        
+
     @property
     def adv_lambda(self):
         slope = self.reg_adv
@@ -357,11 +356,11 @@ class CPAPerturbationModel(PerturbationModel):
                 return slope
         else:
             return slope
-    
+
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic."""
         opt, opt_adv = self.optimizers()
-        
+
         enc_outputs, dec_outputs = self._forward_step(batch)
 
         recon_loss, kl_loss = self.module.loss(
@@ -369,7 +368,7 @@ class CPAPerturbationModel(PerturbationModel):
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
-        
+
         if self.do_start_adv_training:
             if self.adv_steps is None:
                 opt.zero_grad()
@@ -384,9 +383,7 @@ class CPAPerturbationModel(PerturbationModel):
                     compute_penalty=False,
                 )
 
-                loss = (
-                    recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
-                )
+                loss = recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
 
                 self.manual_backward(loss)
 
@@ -436,7 +433,7 @@ class CPAPerturbationModel(PerturbationModel):
                 )
 
                 adv_loss = adv_loss + self.pen_adv * adv_penalty
-                
+
                 loss = adv_loss
 
                 self.manual_backward(adv_loss)
@@ -464,9 +461,7 @@ class CPAPerturbationModel(PerturbationModel):
                     compute_penalty=False,
                 )
 
-                loss = (
-                    recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
-                )
+                loss = recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
 
                 self.manual_backward(loss)
 
@@ -518,7 +513,7 @@ class CPAPerturbationModel(PerturbationModel):
                 )
 
             opt_adv.step()
-            
+
         r2_mean, pearson_lfc = self.module.r2_metric(
             x_pert=batch["X"],
             x_basal=batch["basal"],
@@ -601,9 +596,9 @@ class CPAPerturbationModel(PerturbationModel):
             sch, sch_adv = self.lr_schedulers()
             sch.step()
             sch_adv.step()
-        
+
         return loss
-        
+
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         enc_outputs, dec_outputs = self._forward_step(batch)
@@ -632,47 +627,45 @@ class CPAPerturbationModel(PerturbationModel):
         self.log("val_loss", recon_loss + self.kl_weight * kl_loss, prog_bar=True)
         self.log("val_r2_mean", r2_mean, prog_bar=True)
         self.log("val_pearson_lfc", pearson_lfc, prog_bar=True)
-        self.log(
-            "es_metric", r2_mean + math.e ** (disnt_after - disnt_basal), prog_bar=True
-        )
-        
+        self.log("es_metric", r2_mean + math.e ** (disnt_after - disnt_basal), prog_bar=True)
+
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         enc_outputs, dec_outputs = self._forward_step(batch)
-        
+
         recon_loss, kl_loss = self.module.loss(
             x_pert=batch["X"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
-        
+
         loss = recon_loss + self.kl_weight * kl_loss
-        
+
         if self.recon_loss == "gauss":
             output_key = "loc"
         else:
             output_key = "mu"
 
         x_pred = getattr(dec_outputs["px"], output_key)
-        
+
         self.log("test_loss", loss, prog_bar=True)
-        
+
         return x_pred
-        
+
     def predict_step(self, batch, batch_idx, **kwargs):
         """
         Typically used for final inference. We'll replicate old logic:
          returning 'preds', 'X', 'pert_name', etc.
         """
-        
+
         enc_outputs, dec_outputs = self._forward_step(batch)
-        
+
         if self.recon_loss == "gauss":
             output_key = "loc"
         else:
             output_key = "mu"
 
         x_pred = getattr(dec_outputs["px"], output_key)
-        
+
         outputs = {
             "preds": x_pred,
             "X": batch.get("X", None),
@@ -683,11 +676,11 @@ class CPAPerturbationModel(PerturbationModel):
             "gem_group": batch.get("gem_group_name", None),
             "basal": batch.get("basal", None),
         }
-        
+
         outputs = {k: v for k, v in outputs.items() if v is not None}
-        
+
         return outputs
-        
+
     def configure_optimizers(self):
         """Set up optimizer."""
         ae_params = (
@@ -705,23 +698,15 @@ class CPAPerturbationModel(PerturbationModel):
                     self.module.cell_type_embeddings.parameters(),
                 )
             )
-            + list(
-                filter(
-                    lambda p: p.requires_grad, self.module.batch_embeddings.parameters()
-                )
-            )
+            + list(filter(lambda p: p.requires_grad, self.module.batch_embeddings.parameters()))
         )
 
         if self.module.recon_loss in ["zinb", "nb"]:
             ae_params += [self.module.px_r]
 
-        optimizer_autoencoder = torch.optim.Adam(
-            ae_params, lr=self.lr, weight_decay=self.wd
-        )
+        optimizer_autoencoder = torch.optim.Adam(ae_params, lr=self.lr, weight_decay=self.wd)
 
-        scheduler_autoencoder = StepLR(
-            optimizer_autoencoder, step_size=self.step_size_lr, gamma=0.9
-        )
+        scheduler_autoencoder = StepLR(optimizer_autoencoder, step_size=self.step_size_lr, gamma=0.9)
 
         adv_params = (
             list(
@@ -736,19 +721,11 @@ class CPAPerturbationModel(PerturbationModel):
                     self.module.cell_type_classifier.parameters(),
                 )
             )
-            + list(
-                filter(
-                    lambda p: p.requires_grad, self.module.batch_classifier.parameters()
-                )
-            )
+            + list(filter(lambda p: p.requires_grad, self.module.batch_classifier.parameters()))
         )
 
-        optimizer_adversaries = torch.optim.Adam(
-            adv_params, lr=self.adv_lr, weight_decay=self.adv_wd
-        )
-        scheduler_adversaries = StepLR(
-            optimizer_adversaries, step_size=self.step_size_lr, gamma=0.9
-        )
+        optimizer_adversaries = torch.optim.Adam(adv_params, lr=self.adv_lr, weight_decay=self.adv_wd)
+        scheduler_adversaries = StepLR(optimizer_adversaries, step_size=self.step_size_lr, gamma=0.9)
 
         optimizers = [optimizer_autoencoder, optimizer_adversaries]
         schedulers = [scheduler_autoencoder, scheduler_adversaries]

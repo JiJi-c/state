@@ -38,17 +38,13 @@ def knn_purity(data, labels, n_neighbors=15):
     distances = pairwise_euclidean_distance(data)
     # sort each row in distances to get nearest neighbors
 
-    _, indices = torch.topk(
-        distances, k=n_neighbors + 1, dim=1, largest=False, sorted=True
-    )
+    _, indices = torch.topk(distances, k=n_neighbors + 1, dim=1, largest=False, sorted=True)
     indices = indices[:, 1:]  # remove self
     # neighbors_labels = np.vectorize(lambda i: labels[i])(indices)
     neighbors_labels = labels[indices]  # (n_samples, n_neighbors)
 
     # pre cell purity scores
-    scores = (
-        ((neighbors_labels - labels.reshape(-1, 1)) == 0).float().mean(axis=1)
-    )  # (n_samples,)
+    scores = ((neighbors_labels - labels.reshape(-1, 1)) == 0).float().mean(axis=1)  # (n_samples,)
     res = scatter_mean(scores, labels).mean()  # per category purity
 
     return res
@@ -146,7 +142,9 @@ class scVIModule(nn.Module):
                 use_norm=(
                     "batch"
                     if use_batch_norm in ["both", "decoder"]
-                    else "layer" if use_layer_norm in ["both", "decoder"] else "none"
+                    else "layer"
+                    if use_layer_norm in ["both", "decoder"]
+                    else "none"
                 ),
             )
 
@@ -160,7 +158,9 @@ class scVIModule(nn.Module):
                 use_norm=(
                     "batch"
                     if use_batch_norm in ["both", "decoder"]
-                    else "layer" if use_layer_norm in ["both", "decoder"] else "none"
+                    else "layer"
+                    if use_layer_norm in ["both", "decoder"]
+                    else "none"
                 ),
                 var_activation=nn.Softplus(),
             )
@@ -170,9 +170,7 @@ class scVIModule(nn.Module):
 
         # Embeddings
         if pert_embeddings is not None:
-            self.pert_embeddings = nn.Embedding.from_pretrained(
-                torch.FloatTensor(pert_embeddings), freeze=True
-            )
+            self.pert_embeddings = nn.Embedding.from_pretrained(torch.FloatTensor(pert_embeddings), freeze=True)
             self.n_pert_latent = pert_embeddings.shape[1]
         else:
             self.pert_embeddings = nn.Embedding(n_perts, n_pert_latent)
@@ -229,9 +227,7 @@ class scVIModule(nn.Module):
             sampled_z = qz.sample((n_samples,))
             z_basal = self.encoder.z_transformation(sampled_z)
             if self.recon_loss in ["nb", "zinb"]:
-                library = library.unsqueeze(0).expand(
-                    (n_samples, library.size(0), library.size(1))
-                )
+                library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
 
         z_covs = self.cell_type_embeddings(cell_types.long())
         z_batch = self.batch_embeddings(batch_ids.long())
@@ -299,16 +295,12 @@ class scVIModule(nn.Module):
 
             x_pred_mean = torch.nan_to_num(x_pred_mean, nan=0, posinf=1e3, neginf=-1e3)
 
-            r2_mean = torch.nan_to_num(
-                self.metrics["r2_score"](x_pred_mean.mean(0), x_pert.mean(0)), nan=0.0
-            ).item()
+            r2_mean = torch.nan_to_num(self.metrics["r2_score"](x_pred_mean.mean(0), x_pert.mean(0)), nan=0.0).item()
 
             lfc_true = (x_pert - x_basal).mean(0)
             lfc_pred = (x_pred_mean - x_basal).mean(0)
 
-            r2_lfc = torch.nan_to_num(
-                self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0
-            ).item()
+            r2_lfc = torch.nan_to_num(self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0).item()
 
         elif self.recon_loss in ["nb", "zinb"]:
             x_pert = torch.log(1 + x_pert)
@@ -318,16 +310,12 @@ class scVIModule(nn.Module):
 
             x_pred = torch.nan_to_num(x_pred, nan=0, posinf=1e3, neginf=-1e3)
 
-            r2_mean = torch.nan_to_num(
-                self.metrics["r2_score"](x_pred.mean(0), x_pert.mean(0)), nan=0.0
-            ).item()
+            r2_mean = torch.nan_to_num(self.metrics["r2_score"](x_pred.mean(0), x_pert.mean(0)), nan=0.0).item()
 
             lfc_true = (x_pert - x_basal).mean(0)
             lfc_pred = (x_pred - x_basal).mean(0)
 
-            r2_lfc = torch.nan_to_num(
-                self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0
-            ).item()
+            r2_lfc = torch.nan_to_num(self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0).item()
 
         return r2_mean, r2_lfc
 

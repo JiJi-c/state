@@ -249,23 +249,15 @@ class CPATrainer(L.LightningModule):
                     self.module.cell_type_embeddings.parameters(),
                 )
             )
-            + list(
-                filter(
-                    lambda p: p.requires_grad, self.module.batch_embeddings.parameters()
-                )
-            )
+            + list(filter(lambda p: p.requires_grad, self.module.batch_embeddings.parameters()))
         )
 
         if self.module.recon_loss in ["zinb", "nb"]:
             ae_params += [self.module.px_r]
 
-        optimizer_autoencoder = torch.optim.Adam(
-            ae_params, lr=self.lr, weight_decay=self.wd
-        )
+        optimizer_autoencoder = torch.optim.Adam(ae_params, lr=self.lr, weight_decay=self.wd)
 
-        scheduler_autoencoder = StepLR(
-            optimizer_autoencoder, step_size=self.step_size_lr, gamma=0.9
-        )
+        scheduler_autoencoder = StepLR(optimizer_autoencoder, step_size=self.step_size_lr, gamma=0.9)
 
         adv_params = (
             list(
@@ -280,19 +272,11 @@ class CPATrainer(L.LightningModule):
                     self.module.cell_type_classifier.parameters(),
                 )
             )
-            + list(
-                filter(
-                    lambda p: p.requires_grad, self.module.batch_classifier.parameters()
-                )
-            )
+            + list(filter(lambda p: p.requires_grad, self.module.batch_classifier.parameters()))
         )
 
-        optimizer_adversaries = torch.optim.Adam(
-            adv_params, lr=self.adv_lr, weight_decay=self.adv_wd
-        )
-        scheduler_adversaries = StepLR(
-            optimizer_adversaries, step_size=self.step_size_lr, gamma=0.9
-        )
+        optimizer_adversaries = torch.optim.Adam(adv_params, lr=self.adv_lr, weight_decay=self.adv_wd)
+        scheduler_adversaries = StepLR(optimizer_adversaries, step_size=self.step_size_lr, gamma=0.9)
 
         optimizers = [optimizer_autoencoder, optimizer_adversaries]
         schedulers = [scheduler_autoencoder, scheduler_adversaries]
@@ -325,9 +309,7 @@ class CPATrainer(L.LightningModule):
                     compute_penalty=False,
                 )
 
-                loss = (
-                    recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
-                )
+                loss = recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
 
                 self.manual_backward(loss)
 
@@ -397,9 +379,7 @@ class CPATrainer(L.LightningModule):
                     compute_penalty=False,
                 )
 
-                loss = (
-                    recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
-                )
+                loss = recon_loss + self.kl_weight * kl_loss - self.adv_lambda * adv_loss
 
                 self.manual_backward(loss)
 
@@ -452,9 +432,7 @@ class CPATrainer(L.LightningModule):
 
         r2_mean, r2_lfc = self.module.r2_metric(batch, enc_outputs, dec_outputs)
 
-        disnt_basal, disnt_after = self.module.disentanglement(
-            batch, enc_outputs, dec_outputs
-        )
+        disnt_basal, disnt_after = self.module.disentanglement(batch, enc_outputs, dec_outputs)
 
         results = {
             "recon_loss": recon_loss.item(),
@@ -550,15 +528,11 @@ class CPATrainer(L.LightningModule):
 
         r2_mean, r2_lfc = self.module.r2_metric(batch, enc_outputs, dec_outputs)
 
-        disnt_basal, disnt_after = self.module.disentanglement(
-            batch, enc_outputs, dec_outputs
-        )
+        disnt_basal, disnt_after = self.module.disentanglement(batch, enc_outputs, dec_outputs)
 
         self.log("val_r2_mean", r2_mean, prog_bar=True)
         self.log("val_r2_lfc", r2_lfc, prog_bar=True)
-        self.log(
-            "es_metric", r2_mean + math.e ** (disnt_after - disnt_basal), prog_bar=True
-        )
+        self.log("es_metric", r2_mean + math.e ** (disnt_after - disnt_basal), prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         enc_outputs, dec_outputs = self.module.forward(batch)

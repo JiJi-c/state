@@ -48,6 +48,7 @@ from functools import partial
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def to_dense(X):
     if scipy.sparse.issparse(X):
         return np.asarray(X.todense())
@@ -110,6 +111,7 @@ def compute_mse(pred, true, ctrl, pred_ctrl):
     """Computes mean squared error between x and y."""
     return mean_squared_error(pred.mean(0), true.mean(0))
 
+
 def compute_mae(pred, true):
     """Computes mean absolute error between x and y."""
     return np.mean(np.abs(pred.mean(0) - true.mean(0)))
@@ -152,10 +154,10 @@ def compute_pearson_delta_batched(batched_means, weightings):
 def compute_cosine_similarity(pred, true, ctrl, pred_ctrl):
     """Computes cosine similarity between predictions and the true centroid in a vectorized manner."""
     centroid_true = np.mean(true, axis=0, keepdims=True)  # shape (1, n_features)
-    pred_norms = np.linalg.norm(pred, axis=1)             # shape (n_samples,)
+    pred_norms = np.linalg.norm(pred, axis=1)  # shape (n_samples,)
     true_norm = np.linalg.norm(centroid_true)
     # Compute dot products in one go
-    dot_products = np.dot(pred, centroid_true.T).flatten() # shape (n_samples,)
+    dot_products = np.dot(pred, centroid_true.T).flatten()  # shape (n_samples,)
     cos_sim_scores = dot_products / (pred_norms * true_norm)
     return np.mean(cos_sim_scores)
 
@@ -208,14 +210,14 @@ def compute_gene_overlap_pert(pert_pred, pert_true, ctrl_true, ctrl_pred, gene_n
 def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targeting", k=None, topk=None):
     """
     Compute the fraction of overlapping genes for each perturbation between DE_true and DE_pred.
-    
-    The overlap is calculated as the number of genes (ignoring NaNs) that appear in both DE_true and 
+
+    The overlap is calculated as the number of genes (ignoring NaNs) that appear in both DE_true and
     DE_pred divided by the appropriate denominator:
-    - If k is None and topk is None, this function measures recall of true DE genes, and the denominator 
+    - If k is None and topk is None, this function measures recall of true DE genes, and the denominator
     is the set of all true genes
-    - If k is not None, this function measures topk overlap, and the denominator is min(true DE genes, k)    
+    - If k is not None, this function measures topk overlap, and the denominator is min(true DE genes, k)
     - If topk is not None, this function measure precision at k and the denominator is min(pred DE genes, topk)
-    
+
     Parameters
     ----------
     DE_true : pd.DataFrame
@@ -225,9 +227,9 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
     control_pert : str, optional
         Name of the control perturbation to ignore (default is "non-targeting").
     k : int, optional
-        Number of top genes to consider from DE_pred (if more than k genes are present). 
+        Number of top genes to consider from DE_pred (if more than k genes are present).
         If k is none, this function measures recall
-        
+
     Returns
     -------
     dict
@@ -238,18 +240,18 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
         raise ValueError("Please provide only one of k or topk, not both.")
 
     all_overlaps = {}
-    
+
     # Loop over each perturbation in the predicted DataFrame.
     for c in DE_pred.index:
         # Skip control perturbation or if the perturbation is not in DE_true.
         if c == control_pert or c not in DE_true.index:
             continue
-        
+
         try:
             # Convert the row values to lists while filtering out NaNs.
             true_genes = [gene for gene in DE_true.loc[c].values if pd.notnull(gene)]
             pred_genes = [gene for gene in DE_pred.loc[c].values if pd.notnull(gene)]
-            
+
             # If k=-1, then set k to be the number of true DE genes
             if k == -1:
                 k = len(true_genes)
@@ -257,18 +259,18 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
             # Use only the top k predicted genes (if available).
             if k is not None:
                 true_genes = true_genes[:k]
-                pred_genes = pred_genes[:len(true_genes)]
+                pred_genes = pred_genes[: len(true_genes)]
 
             elif topk is not None:
                 pred_genes = pred_genes[:topk]
-            
+
             # If there are no non-NaN genes in DE_true, skip the computation.
             if not true_genes:
                 continue
-            
+
             # Compute the overlap: number of genes common to both, divided by the number of true genes.
             if topk is not None:
-                overlap =  len(set(true_genes).intersection(pred_genes)) / len(pred_genes)
+                overlap = len(set(true_genes).intersection(pred_genes)) / len(pred_genes)
             else:
                 overlap = len(set(true_genes).intersection(pred_genes)) / len(true_genes)
             all_overlaps[c] = overlap
@@ -284,15 +286,17 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
 
     return all_overlaps
 
+
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
+
 def compute_sig_gene_counts(DE_true_sig, DE_pred_sig, pert_list):
     """
-    For each perturbation in pert_list, count the number of non-NaN significantly DE genes 
+    For each perturbation in pert_list, count the number of non-NaN significantly DE genes
     in both the true and predicted DataFrames.
-    
+
     Parameters
     ----------
     DE_true_sig : pd.DataFrame
@@ -301,7 +305,7 @@ def compute_sig_gene_counts(DE_true_sig, DE_pred_sig, pert_list):
         Pivoted DataFrame of predicted significant DE genes (perturbations as index, ranked genes as columns).
     pert_list : list
         List of perturbation identifiers to compute counts for.
-        
+
     Returns
     -------
     tuple of dicts
@@ -311,27 +315,27 @@ def compute_sig_gene_counts(DE_true_sig, DE_pred_sig, pert_list):
     """
     true_counts = {}
     pred_counts = {}
-    
+
     for p in pert_list:
         # Count non-NaN entries for true significant genes
         if p in DE_true_sig.index:
             true_counts[p] = DE_true_sig.loc[p].dropna().shape[0]
         else:
             true_counts[p] = 0
-        
+
         # Count non-NaN entries for predicted significant genes
         if p in DE_pred_sig.index:
             pred_counts[p] = DE_pred_sig.loc[p].dropna().shape[0]
         else:
             pred_counts[p] = 0
-    
+
     return true_counts, pred_counts
 
 
 def compute_sig_gene_spearman(true_counts, pred_counts, pert_list):
     """
     Compute the Spearman correlation between the number of significantly DE genes in true and predicted data.
-    
+
     Parameters
     ----------
     true_counts : dict
@@ -340,7 +344,7 @@ def compute_sig_gene_spearman(true_counts, pred_counts, pert_list):
         Dictionary mapping perturbation -> count of non-NaN predicted DE genes.
     pert_list : list
         List of perturbation identifiers to compute the correlation on.
-    
+
     Returns
     -------
     float
@@ -349,7 +353,7 @@ def compute_sig_gene_spearman(true_counts, pred_counts, pert_list):
     # Prepare lists of counts for the perturbations in the provided order.
     true_list = [true_counts.get(p, 0) for p in pert_list]
     pred_list = [pred_counts.get(p, 0) for p in pert_list]
-    
+
     # Compute and return the Spearman correlation coefficient
     corr, _ = spearmanr(true_list, pred_list)
     return corr
@@ -412,6 +416,7 @@ def _centroid_ann(
     ad_centroids.obs[category_key] = unique_cats
     return ad_centroids
 
+
 def compute_clustering_agreement(
     adata_real: sc.AnnData,
     adata_pred: sc.AnnData,
@@ -452,13 +457,13 @@ def compute_clustering_agreement(
         key_added=real_key,
         n_neighbors=n_neighbors,
     )
-    ad_real_cent.obs = ad_real_cent.obs.set_index('pert_name')
+    ad_real_cent.obs = ad_real_cent.obs.set_index("pert_name")
     ad_real_cent.obs = ad_real_cent.obs.loc[cats_sorted]
     real_labels = pd.Categorical(ad_real_cent.obs[real_key])
 
     # 4. Sweep resolutions on predicted centroids
     best_score = 0.0
-    ad_pred_cent.obs = ad_pred_cent.obs.set_index('pert_name', drop=False)
+    ad_pred_cent.obs = ad_pred_cent.obs.set_index("pert_name", drop=False)
     ad_pred_cent.obs = ad_pred_cent.obs.loc[cats_sorted]
 
     for r in pred_resolutions:
@@ -470,20 +475,19 @@ def compute_clustering_agreement(
             n_neighbors=n_neighbors,
         )
         pred_labels = pd.Categorical(ad_pred_cent.obs[pred_key])
-        #pred_labels = (
+        # pred_labels = (
         #    pd.Categorical(ad_pred_cent.obs[pred_key]).reindex(cats_sorted).codes
-        #)
+        # )
 
         best_score = max(best_score, _score(real_labels, pred_labels, metric))
 
     return float(best_score)
 
 
-
 def compute_directionality_agreement(DE_true_df, DE_pred_df, pert_list, p_val_thresh=0.05):
     """
     For each perturbation in pert_list, compute the fraction of overlapping genes that have
-    matching fold change directionality, only considering significantly DE genes in the true data 
+    matching fold change directionality, only considering significantly DE genes in the true data
     (i.e. those with p_value < 0.05).
 
     Parameters
@@ -492,46 +496,47 @@ def compute_directionality_agreement(DE_true_df, DE_pred_df, pert_list, p_val_th
         DataFrame of true DE results. Should include columns: 'target', 'feature', 'fold_change',
         and 'p_value'.
     DE_pred_df : pd.DataFrame
-        DataFrame of predicted DE results. Should include columns: 'target', 'feature', and 
+        DataFrame of predicted DE results. Should include columns: 'target', 'feature', and
         'fold_change'.
     pert_list : list
         List of perturbation names to compute the metric for.
-    
+
     Returns
     -------
     dict
-        Dictionary mapping each perturbation to the fraction of overlapping genes (from the 
-        significantly DE true data) for which the sign of the fold change matches between 
+        Dictionary mapping each perturbation to the fraction of overlapping genes (from the
+        significantly DE true data) for which the sign of the fold change matches between
         DE_true_df and DE_pred_df. If no overlapping genes exist, NaN is recorded.
     """
-    
+
     directionality_matches = {}
 
     for p in pert_list:
         # Filter and merge the relevant rows for each perturbation
-        true_sub = DE_true_df[(DE_true_df['target'] == p) & (DE_true_df['p_value'] < p_val_thresh)]
-        pred_sub = DE_pred_df[DE_pred_df['target'] == p]
+        true_sub = DE_true_df[(DE_true_df["target"] == p) & (DE_true_df["p_value"] < p_val_thresh)]
+        pred_sub = DE_pred_df[DE_pred_df["target"] == p]
 
         if true_sub.empty or pred_sub.empty:
             directionality_matches[p] = np.nan
             continue
 
         # Merge on feature (gene)
-        merged = pd.merge(true_sub[['feature', 'fold_change']], 
-                          pred_sub[['feature', 'fold_change']], 
-                          on='feature', 
-                          suffixes=('_true', '_pred'))
+        merged = pd.merge(
+            true_sub[["feature", "fold_change"]],
+            pred_sub[["feature", "fold_change"]],
+            on="feature",
+            suffixes=("_true", "_pred"),
+        )
 
         if merged.empty:
             directionality_matches[p] = np.nan
             continue
 
         # Vectorized sign comparison: True if both FCs are < 1 or both >= 1
-        same_direction = ((merged['fold_change_true'] < 1) == (merged['fold_change_pred'] < 1))
+        same_direction = (merged["fold_change_true"] < 1) == (merged["fold_change_pred"] < 1)
         directionality_matches[p] = same_direction.mean()
 
     return directionality_matches
-
 
 
 def compute_DE_for_truth_and_pred(
@@ -559,27 +564,31 @@ def compute_DE_for_truth_and_pred(
         (DE_true, DE_pred) as two data frames (index=pert_name, columns=top_k DE genes).
     """
 
-    if 'DMSO_TF' in control_pert: # only for tahoe dataset for now
+    if "DMSO_TF" in control_pert:  # only for tahoe dataset for now
         # attach var names to adata_real_ct, which consists of HVGs
         # real data is either just hvgs, or full transcriptome
-        if adata_real_ct.X.shape[1] == 2000: # tahoe hvg
-            hvg_gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
+        if adata_real_ct.X.shape[1] == 2000:  # tahoe hvg
+            hvg_gene_names = np.load(
+                "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy", allow_pickle=True
+            )
             adata_real_ct.var.index = hvg_gene_names
-        else: # tahoe transcriptome
-            gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
+        else:  # tahoe transcriptome
+            gene_names = np.load("/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy", allow_pickle=True)
             adata_real_ct.var.index = gene_names
-    else: # genetic dataset
-        if 'non-targeting' in control_pert and adata_real_ct.X.shape[1] == 3609: # I hate this. replogle hvg
-            temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5')
+    else:  # genetic dataset
+        if "non-targeting" in control_pert and adata_real_ct.X.shape[1] == 3609:  # I hate this. replogle hvg
+            temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5")
             adata_real_ct.var.index = temp.var.index.values
         # add more for replogle gene space, and other datasets, etc
-    
+
     # 2) HVG filtering (applied to each or to the combined data).
     # This happens to the ground truth regardless of input space.
     adata_real_hvg = adata_real_ct
     adata_real_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
     start_true = time.time()
-    DE_true_fc, DE_true_pval, DE_true_pval_fc, DE_true_sig_genes, DE_true_df = parallel_compute_de(adata_real_hvg, control_pert, pert_col, outdir=outdir, split='real')
+    DE_true_fc, DE_true_pval, DE_true_pval_fc, DE_true_sig_genes, DE_true_df = parallel_compute_de(
+        adata_real_hvg, control_pert, pert_col, outdir=outdir, split="real"
+    )
     print("Time taken for true DE: ", time.time() - start_true)
 
     start_pred = time.time()
@@ -600,11 +609,25 @@ def compute_DE_for_truth_and_pred(
         adata_pred_gene.obs.index = adata_pred_gene.obs.index.astype(str)
         adata_pred_hvg = adata_pred_gene
         adata_pred_hvg.obs["pert_name"] = pd.Categorical(adata_real_hvg.obs["pert_name"])
-        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc, DE_pred_sig_genes, DE_pred_df = parallel_compute_de(adata_pred_hvg, control_pert, pert_col, outdir=outdir, split='pred')
+        DE_pred_fc, DE_pred_pval, DE_pred_pval_fc, DE_pred_sig_genes, DE_pred_df = parallel_compute_de(
+            adata_pred_hvg, control_pert, pert_col, outdir=outdir, split="pred"
+        )
     print("Time taken for predicted DE: ", time.time() - start_pred)
 
     # return DE_true, DE_pred
-    return DE_true_fc, DE_pred_fc, DE_true_pval, DE_pred_pval, DE_true_pval_fc, DE_pred_pval_fc, DE_true_sig_genes, DE_pred_sig_genes, DE_true_df, DE_pred_df
+    return (
+        DE_true_fc,
+        DE_pred_fc,
+        DE_true_pval,
+        DE_pred_pval,
+        DE_true_pval_fc,
+        DE_pred_pval_fc,
+        DE_true_sig_genes,
+        DE_pred_sig_genes,
+        DE_true_df,
+        DE_pred_df,
+    )
+
 
 def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transform=None):
     """
@@ -626,62 +649,63 @@ def compute_DE_pca(adata_pred, gene_names, pert_col, control_pert, k=50, transfo
     de_genes = pd.DataFrame(decoded_adata.uns["rank_genes_groups"]["names"])
     return de_genes.T
 
-def compute_downstream_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
-    true_target = true_df[true_df['target'] == target_gene]
-    pred_target = pred_df[pred_df['target'] == target_gene]
 
-    sig_genes = true_target[true_target['p_value'] < p_value_threshold]['feature'].tolist()
+def compute_downstream_DE_metrics(target_gene, pred_df, true_df, p_value_threshold):
+    true_target = true_df[true_df["target"] == target_gene]
+    pred_target = pred_df[pred_df["target"] == target_gene]
+
+    sig_genes = true_target[true_target["p_value"] < p_value_threshold]["feature"].tolist()
 
     result = {
-        'target_gene': target_gene,
-        'spearman': np.nan,
-        'pr_auc': np.nan,
-        'roc_auc': np.nan,
-        'recall_raw': np.array([]),
-        'precision_raw': np.array([]),
-        'fpr_raw': np.array([]),
-        'tpr_raw': np.array([]),
-        'significant_genes_count': len(sig_genes)
+        "target_gene": target_gene,
+        "spearman": np.nan,
+        "pr_auc": np.nan,
+        "roc_auc": np.nan,
+        "recall_raw": np.array([]),
+        "precision_raw": np.array([]),
+        "fpr_raw": np.array([]),
+        "tpr_raw": np.array([]),
+        "significant_genes_count": len(sig_genes),
     }
 
     if not sig_genes:
         return result
 
-    true_filtered = true_target[true_target['feature'].isin(sig_genes)]
-    pred_filtered = pred_target[pred_target['feature'].isin(sig_genes)]
+    true_filtered = true_target[true_target["feature"].isin(sig_genes)]
+    pred_filtered = pred_target[pred_target["feature"].isin(sig_genes)]
 
     merged = pd.merge(
-        true_filtered[['feature', 'fold_change']],
-        pred_filtered[['feature', 'fold_change']],
-        on='feature',
-        suffixes=('_true', '_pred')
+        true_filtered[["feature", "fold_change"]],
+        pred_filtered[["feature", "fold_change"]],
+        on="feature",
+        suffixes=("_true", "_pred"),
     )
 
     # Assume no change for NaN
-    merged['fold_change_pred'] = merged['fold_change_pred'].fillna(1)
+    merged["fold_change_pred"] = merged["fold_change_pred"].fillna(1)
 
     if len(merged) > 1:
         try:
-            result['spearman'] = spearmanr(merged['fold_change_true'], merged['fold_change_pred'])[0]
+            result["spearman"] = spearmanr(merged["fold_change_true"], merged["fold_change_pred"])[0]
         except:
             pass
 
-    true_target = true_target.assign(label=(true_target['p_value'] < p_value_threshold).astype(int))
-    merged_curve = pd.merge(true_target[['feature', 'label']], pred_target[['feature', 'p_value']], on='feature')
+    true_target = true_target.assign(label=(true_target["p_value"] < p_value_threshold).astype(int))
+    merged_curve = pd.merge(true_target[["feature", "label"]], pred_target[["feature", "p_value"]], on="feature")
 
-    if len(merged_curve) > 1 and 0 < merged_curve['label'].sum() < len(merged_curve):
-        y_true = merged_curve['label']
-        y_scores = -np.log10(merged_curve['p_value'])
+    if len(merged_curve) > 1 and 0 < merged_curve["label"].sum() < len(merged_curve):
+        y_true = merged_curve["label"]
+        y_scores = -np.log10(merged_curve["p_value"])
 
         try:
             precision, recall, _ = precision_recall_curve(y_true, y_scores)
             fpr, tpr, _ = roc_curve(y_true, y_scores)
-            result['pr_auc'] = auc(recall, precision)
-            result['roc_auc'] = auc(fpr, tpr)
-            result['recall_raw'] = recall
-            result['precision_raw'] = precision
-            result['fpr_raw'] = fpr
-            result['tpr_raw'] = tpr
+            result["pr_auc"] = auc(recall, precision)
+            result["roc_auc"] = auc(fpr, tpr)
+            result["recall_raw"] = recall
+            result["precision_raw"] = precision
+            result["fpr_raw"] = fpr
+            result["tpr_raw"] = tpr
         except:
             pass
 
@@ -718,6 +742,7 @@ def compute_perturbation_id_score(adata_pred, adata_real, pert_col="gene", ctrl_
 
     return accuracy_score
 
+
 def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", ctrl_pert="non-targeting"):
     ## Compute true mean perturbation effect
     mean_real_effect = compute_mean_perturbation_effect(adata_real, pert_col, ctrl_pert)
@@ -746,13 +771,15 @@ def compute_perturbation_ranking_score(adata_pred, adata_real, pert_col="gene", 
 
     return mean_rank
 
+
 # PASTED FROM ARC SEQ #
 
-def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='real'):
+
+def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split="real"):
     """
     Compute differential expression using parallel_differential_expression,
     returns two DataFrames: one sorted by fold change and one by p-value
-    
+
     Parameters
     ----------
     adata_gene : AnnData
@@ -763,7 +790,7 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='
         Column in adata_gene.obs that contains perturbation information
     k : int
         Number of top genes to return for each perturbation
-        
+
     Returns
     -------
     tuple of pd.DataFrame
@@ -772,19 +799,19 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='
     """
     import time
     import pandas as pd
-    
+
     # Start timer
     start_time = time.time()
-    
+
     # Filter groups to only include those with more than 1 cell
     group_counts = adata_gene.obs[pert_col].value_counts()
     valid_groups = group_counts[group_counts > 1].index.tolist()
     adata_gene = adata_gene[adata_gene.obs[pert_col].isin(valid_groups)]
-    
+
     # Make sure the control perturbation is included in the valid groups
     if control_pert not in valid_groups:
         raise ValueError(f"Control perturbation '{control_pert}' has fewer than 2 cells")
-    
+
     # Run parallel differential expression
     de_results = parallel_differential_expression(
         adata=adata_gene,
@@ -792,7 +819,7 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='
         reference=control_pert,
         groupby_key=pert_col,
         num_workers=120,  # Adjust based on your system
-        batch_size=1000  # Adjust based on memory constraints
+        batch_size=1000,  # Adjust based on memory constraints
     )
 
     celltype = adata_gene.obs["celltype_name"].values[0]
@@ -805,20 +832,21 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split='
             de_results.to_csv(outfile, index=False)
         logger.info(f"Saved DE results to {outfile}")
     # #
-    
+
     logger.info(f"Time taken for parallel_differential_expression: {time.time() - start_time:.2f}s")
-    
+
     # Get DE genes sorted by fold change
-    de_genes_fc = vectorized_de(de_results, control_pert, sort_by='abs_fold_change')
-    
+    de_genes_fc = vectorized_de(de_results, control_pert, sort_by="abs_fold_change")
+
     # Get DE genes sorted by p-value
-    de_genes_pval = vectorized_de(de_results, control_pert, sort_by='p_value')
+    de_genes_pval = vectorized_de(de_results, control_pert, sort_by="p_value")
 
     de_genes_pval_fc = vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05)
 
     de_genes_sig = vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05)
-    
+
     return de_genes_fc, de_genes_pval, de_genes_pval_fc, de_genes_sig, de_results
+
 
 def _build_shared_matrix(
     data: np.ndarray,
@@ -829,11 +857,13 @@ def _build_shared_matrix(
     matrix[:] = data
     return shared_matrix.name, data.shape, data.dtype
 
+
 def _conclude_shared_memory(name: str):
     """Close and unlink a shared memory."""
     shm = SharedMemory(name=name)
     shm.close()
     shm.unlink()
+
 
 def _combinations_generator(
     target_masks: dict[str, np.ndarray],
@@ -854,6 +884,7 @@ def _combinations_generator(
                 feature,
             )
 
+
 def _batch_generator(
     combinations: Iterator[tuple],
     batch_size: int,
@@ -868,6 +899,7 @@ def _batch_generator(
             except StopIteration:
                 break
         yield subset
+
 
 def _process_target_batch_shm(
     batch_tasks: list[tuple],
@@ -922,6 +954,7 @@ def _process_target_batch_shm(
     existing_shm.close()
     return results
 
+
 def parallel_differential_expression(
     adata: ad.AnnData,
     groups: list[str] | None = None,
@@ -953,11 +986,7 @@ def parallel_differential_expression(
     """
     unique_targets = adata.obs[groupby_key].unique()
     if groups is not None:
-        unique_targets = [
-            target
-            for target in unique_targets
-            if target in groups or target == reference
-        ]
+        unique_targets = [target for target in unique_targets if target in groups or target == reference]
     unique_features = adata.var.index
 
     # Precompute the number of combinations and batches
@@ -967,19 +996,14 @@ def parallel_differential_expression(
     # Precompute masks for each target gene
     logger.info("Precomputing masks for each target gene")
     target_masks = {
-        target: _get_obs_mask(
-            adata=adata, target_name=target, variable_name=groupby_key
-        )
+        target: _get_obs_mask(adata=adata, target_name=target, variable_name=groupby_key)
         for target in tqdm(unique_targets, desc="Identifying target masks")
     }
 
     # Precompute variable index for each feature
     logger.info("Precomputing variable indices for each feature")
     var_indices = {
-        feature: idx
-        for idx, feature in enumerate(
-            tqdm(unique_features, desc="Identifying variable indices")
-        )
+        feature: idx for idx, feature in enumerate(tqdm(unique_features, desc="Identifying variable indices"))
     }
 
     # Isolate the data matrix from the AnnData object
@@ -1033,6 +1057,7 @@ def parallel_differential_expression(
 
     return dataframe
 
+
 def _get_obs_mask(
     adata: ad.AnnData,
     target_name: str,
@@ -1058,6 +1083,7 @@ def _get_var_index(
         raise ValueError(f"Target gene {target_gene} not found in dataset")
     return var_index[0]
 
+
 def _fold_change(
     μ_tgt: float,
     μ_ref: float,
@@ -1068,6 +1094,7 @@ def _fold_change(
     except ZeroDivisionError:
         return np.nan
 
+
 def _percent_change(
     μ_tgt: float,
     μ_ref: float,
@@ -1075,10 +1102,11 @@ def _percent_change(
     """Calculate the percent change between two means."""
     return (μ_tgt - μ_ref) / μ_ref
 
-def vectorized_de(de_results, control_pert, sort_by='abs_fold_change'):
+
+def vectorized_de(de_results, control_pert, sort_by="abs_fold_change"):
     """
     Create a DataFrame with top k DE genes for each perturbation sorted by the specified metric.
-    
+
     Parameters
     ----------
     de_results : pd.DataFrame
@@ -1089,44 +1117,45 @@ def vectorized_de(de_results, control_pert, sort_by='abs_fold_change'):
         Number of top genes to return for each perturbation
     sort_by : str
         Metric to sort by ('abs_log_fold_change' or 'p_value')
-        
+
     Returns
     -------
     pd.DataFrame
         DataFrame with rows as perturbations and columns as top K genes
     """
     # Filter out the control perturbation rows
-    df = de_results[de_results['target'] != control_pert]
-    
-    # Compute absolute fold change (if not already computed)
-    df['abs_fold_change'] = df['fold_change'].abs()
+    df = de_results[de_results["target"] != control_pert]
 
-    if df[sort_by].dtype == 'float16':
-        df[sort_by] = df[sort_by].astype('float32')
-    
+    # Compute absolute fold change (if not already computed)
+    df["abs_fold_change"] = df["fold_change"].abs()
+
+    if df[sort_by].dtype == "float16":
+        df[sort_by] = df[sort_by].astype("float32")
+
     # Sort direction depends on metric (descending for fold change, ascending for p-value)
-    ascending = True if sort_by == 'p_value' else False
-    
+    ascending = True if sort_by == "p_value" else False
+
     # Sort the DataFrame by target and the chosen metric
-    df_sorted = df.sort_values(['target', sort_by], ascending=[True, ascending])
-    
+    df_sorted = df.sort_values(["target", sort_by], ascending=[True, ascending])
+
     # For each target, pick the top k rows
-    df_sorted['rank'] = df_sorted.groupby('target').cumcount()
-    
+    df_sorted["rank"] = df_sorted.groupby("target").cumcount()
+
     # Pivot the DataFrame so that rows are targets and columns are the ranked top genes
-    de_genes = df_sorted.pivot(index='target', columns='rank', values='feature')
-    
+    de_genes = df_sorted.pivot(index="target", columns="rank", values="feature")
+
     # Optionally, sort the columns so that they are in order from 0 to k-1
     de_genes = de_genes.sort_index(axis=1)
-    
+
     return de_genes
+
 
 def vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05):
     """
     Create a DataFrame with DE genes for each perturbation.
 
     Two modes:
-    - If k is None: returns all genes passing the significance threshold, sorted 
+    - If k is None: returns all genes passing the significance threshold, sorted
       by descending absolute fold change.
     - Otherwise, returns only the top k genes sorted by descending absolute fold change.
       For perturbations with fewer than k significant genes, the resulting pivot table
@@ -1149,27 +1178,27 @@ def vectorized_sig_genes_fc_sort(de_results, control_pert, pvalue_threshold=0.05
         DataFrame with rows as perturbations and columns as the ranked significant genes.
     """
     # Remove control perturbation rows and compute absolute fold change
-    df = de_results[de_results['target'] != control_pert].copy()
-    df['abs_fold_change'] = df['fold_change'].abs()
+    df = de_results[de_results["target"] != control_pert].copy()
+    df["abs_fold_change"] = df["fold_change"].abs()
 
     # Convert types if necessary
-    if df['abs_fold_change'].dtype == 'float16':
-        df['abs_fold_change'] = df['abs_fold_change'].astype('float32')
-    if df['p_value'].dtype == 'float16':
-        df['p_value'] = df['p_value'].astype('float32')
-    
+    if df["abs_fold_change"].dtype == "float16":
+        df["abs_fold_change"] = df["abs_fold_change"].astype("float32")
+    if df["p_value"].dtype == "float16":
+        df["p_value"] = df["p_value"].astype("float32")
+
     # Filter for significant genes only
-    df_significant = df[df['p_value'] < pvalue_threshold].copy()
-    
+    df_significant = df[df["p_value"] < pvalue_threshold].copy()
+
     # Sort by target and descending absolute fold change
-    df_sorted = df_significant.sort_values(['target', 'abs_fold_change'], ascending=[True, False])
-    
+    df_sorted = df_significant.sort_values(["target", "abs_fold_change"], ascending=[True, False])
+
     # Within each target, assign a rank based on the ordering
-    df_sorted['rank'] = df_sorted.groupby('target').cumcount()
-    
+    df_sorted["rank"] = df_sorted.groupby("target").cumcount()
+
     # Pivot the results so that rows are targets and columns are ranked genes.
     # Note: If return_all is False, targets with fewer than k genes will have NaNs in missing positions.
-    result_df = df_sorted.pivot(index='target', columns='rank', values='feature')
+    result_df = df_sorted.pivot(index="target", columns="rank", values="feature")
     result_df = result_df.sort_index(axis=1)
-    
+
     return result_df

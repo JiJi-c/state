@@ -20,11 +20,11 @@ def map_raw_id_to_vocab_id(
         dtype = raw_ids.dtype
         return_pt = True
         raw_ids = raw_ids.cpu().numpy()
-    
+
     elif isinstance(raw_ids, np.ndarray):
         return_pt = False
         dtype = raw_ids.dtype
-    
+
     else:
         raise ValueError(f"raw_ids must be either torch.Tensor or np.ndarray.")
 

@@ -2,9 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def masked_mse_loss(
-    input: torch.Tensor, target: torch.Tensor, mask: torch.Tensor
-) -> torch.Tensor:
+def masked_mse_loss(input: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """
     Compute the masked MSE loss between input and target.
     """
@@ -13,9 +11,7 @@ def masked_mse_loss(
     return loss / mask.sum()
 
 
-def criterion_neg_log_bernoulli(
-    input: torch.Tensor, target: torch.Tensor, mask: torch.Tensor
-) -> torch.Tensor:
+def criterion_neg_log_bernoulli(input: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """
     Compute the negative log-likelihood of Bernoulli distribution
     """
@@ -25,9 +21,7 @@ def criterion_neg_log_bernoulli(
     return -masked_log_probs.sum() / mask.sum()
 
 
-def masked_relative_error(
-    input: torch.Tensor, target: torch.Tensor, mask: torch.LongTensor
-) -> torch.Tensor:
+def masked_relative_error(input: torch.Tensor, target: torch.Tensor, mask: torch.LongTensor) -> torch.Tensor:
     """
     Compute the masked relative error between input and target.
     """
