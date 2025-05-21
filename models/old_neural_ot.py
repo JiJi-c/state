@@ -10,6 +10,7 @@ from models.base import PerturbationModel
 from models.decoders import DecoderInterface
 from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
+
 class OldNeuralOTPerturbationModel(PerturbationModel):
     """
     This model:
@@ -65,7 +66,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
         self.distributional_loss = distributional_loss
-        self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
+        self.cell_sentence_len = self.transformer_backbone_kwargs["n_positions"]
         self.gene_dim = gene_dim
 
         # Build the distributional loss from geomloss
@@ -150,7 +151,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         """
         prediction = self.perturb(batch["pert"], batch["basal"])
         output = self.project_out(prediction)
-       
+
         return output
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -163,27 +164,26 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
         main_loss = self.loss_fn(pred, target).mean()
         self.log("train_loss", main_loss)
-        
+
         # Process decoder if available
         decoder_loss = None
         if self.gene_decoder is not None and "X_hvg" in batch:
             # Train decoder to map latent predictions to gene space
             with torch.no_grad():
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
-            
+
             gene_preds = self.gene_decoder(latent_preds)
             gene_targets = batch["X_hvg"]
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
             decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
-            
+
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
-            
+
             total_loss = main_loss + decoder_loss
         else:
             total_loss = main_loss
-        
-        
+
         return total_loss
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -204,14 +204,14 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
             latent_preds = outputs["predictions"]
 
             # Train decoder to map latent predictions to gene space
-            gene_preds = self.gene_decoder(latent_preds) # verify this is automatically detached
-            gene_targets = batch["X_hvg"] 
-            
+            gene_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
+            gene_targets = batch["X_hvg"]
+
             # Get decoder predictions
             gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
             decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
-            
+
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
 

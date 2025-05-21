@@ -18,10 +18,12 @@ from models.decoders_nb import NBDecoder, nb_nll
 
 logger = logging.getLogger(__name__)
 
+
 class ScaledSamplesLoss(nn.Module):
     """
     A wrapper around SamplesLoss that scales the output by a given factor.
     """
+
     def __init__(self, base_loss, scale_factor):
         super(ScaledSamplesLoss, self).__init__()
         self.base_loss = base_loss
@@ -30,18 +32,19 @@ class ScaledSamplesLoss(nn.Module):
     def forward(self, x, y):
         return self.base_loss(x, y) / self.scale_factor
 
+
 class ConfidenceHead(nn.Module):
     """
     A confidence head that predicts the expected loss value for a set of cells.
-    
+
     The confidence head takes the transformer hidden states and predicts a single
     scalar value representing the expected distribution loss.
     """
-    
-    def __init__(self, hidden_dim, pooling_method='mean', dropout=0.1):
+
+    def __init__(self, hidden_dim, pooling_method="mean", dropout=0.1):
         """
         Initialize the confidence head.
-        
+
         Args:
             hidden_dim: Dimension of the transformer hidden states
             pooling_method: Method to pool the hidden states ('mean', 'max', or 'attention')
@@ -49,15 +52,13 @@ class ConfidenceHead(nn.Module):
         """
         super().__init__()
         self.pooling_method = pooling_method
-        
+
         # If using attention pooling, create an attention mechanism
-        if pooling_method == 'attention':
+        if pooling_method == "attention":
             self.attention = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim // 2),
-                nn.Tanh(),
-                nn.Linear(hidden_dim // 2, 1)
+                nn.Linear(hidden_dim, hidden_dim // 2), nn.Tanh(), nn.Linear(hidden_dim // 2, 1)
             )
-        
+
         # MLP to predict confidence/uncertainty
         self.confidence_net = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -66,42 +67,42 @@ class ConfidenceHead(nn.Module):
             nn.Linear(hidden_dim // 2, hidden_dim // 2),
             nn.LayerNorm(hidden_dim // 2),
             nn.LeakyReLU(),
-            nn.Linear(hidden_dim // 2, 1)
-
+            nn.Linear(hidden_dim // 2, 1),
         )
-    
+
     def forward(self, hidden_states):
         """
         Forward pass of the confidence head.
-        
+
         Args:
             hidden_states: Hidden states from the transformer [B, S, H]
-            
+
         Returns:
             confidence: Predicted confidence value [B, 1]
         """
         # Pool the hidden states based on the specified method
-        if self.pooling_method == 'mean':
+        if self.pooling_method == "mean":
             # Mean pooling across sequence dimension
             pooled = hidden_states.mean(dim=1)  # [B, H]
-        
-        elif self.pooling_method == 'max':
+
+        elif self.pooling_method == "max":
             # Max pooling across sequence dimension
             pooled, _ = hidden_states.max(dim=1)  # [B, H]
-        
-        elif self.pooling_method == 'attention':
+
+        elif self.pooling_method == "attention":
             # Attention pooling
             attention_weights = self.attention(hidden_states)  # [B, S, 1]
             attention_weights = F.softmax(attention_weights, dim=1)  # [B, S, 1]
             pooled = torch.sum(hidden_states * attention_weights, dim=1)  # [B, H]
-        
+
         else:
             raise ValueError(f"Unknown pooling method: {self.pooling_method}")
-        
+
         # Predict confidence/uncertainty value
         confidence = self.confidence_net(pooled)  # [B, 1]
-        
+
         return confidence
+
 
 class PseudobulkPerturbationModel(PerturbationModel):
     """
@@ -160,7 +161,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
         self.distributional_loss = distributional_loss
-        self.cell_sentence_len =  self.transformer_backbone_kwargs['n_positions']
+        self.cell_sentence_len = self.transformer_backbone_kwargs["n_positions"]
         self.gene_dim = gene_dim
         self.batch_dim = batch_dim
         self.residual_decoder = kwargs.get("residual_decoder", False)
@@ -195,13 +196,13 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         # if the model is outputting to counts space, apply softplus
         # otherwise its in embedding space and we don't want to
-        is_gene_space = kwargs['embed_key'] == 'X_hvg' or kwargs['embed_key'] is None
-        if kwargs.get('softplus', False) and is_gene_space:
+        is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
+        if kwargs.get("softplus", False) and is_gene_space:
             # actually just set this to a relu for now
             self.softplus = torch.nn.ReLU()
 
-        if 'confidence_head' in kwargs and kwargs['confidence_head']:
-            self.confidence_head = ConfidenceHead(hidden_dim, pooling_method='attention')
+        if "confidence_head" in kwargs and kwargs["confidence_head"]:
+            self.confidence_head = ConfidenceHead(hidden_dim, pooling_method="attention")
             self.confidence_loss_fn = nn.MSELoss()
         else:
             self.confidence_head = None
@@ -230,6 +231,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         if kwargs.get("transformer_decoder", False):
             from models.decoders import TransformerLatentToGeneDecoder
+
             self.gene_decoder = TransformerLatentToGeneDecoder(
                 latent_dim=self.output_dim,
                 gene_dim=self.gene_dim,
@@ -243,21 +245,25 @@ class PseudobulkPerturbationModel(PerturbationModel):
         if kwargs.get("finetune_vci_decoder", False):
             gene_names = []
 
-            if output_space == 'gene':
+            if output_space == "gene":
                 # hvg's but for which dataset?
-                if 'DMSO_TF' in control_pert:
-                    gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy', allow_pickle=True)
-                elif 'non-targeting' in control_pert:
-                    temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5')
+                if "DMSO_TF" in control_pert:
+                    gene_names = np.load(
+                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy", allow_pickle=True
+                    )
+                elif "non-targeting" in control_pert:
+                    temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5")
                     gene_names = temp.var.index.values
             else:
-                assert output_space == 'all'
-                if 'DMSO_TF' in control_pert:
-                    gene_names = np.load('/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy', allow_pickle=True)
-                elif 'non-targeting' in control_pert:
+                assert output_space == "all"
+                if "DMSO_TF" in control_pert:
+                    gene_names = np.load(
+                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy", allow_pickle=True
+                    )
+                elif "non-targeting" in control_pert:
                     # temp = ad.read_h5ad('/scratch/ctc/ML/vci/paper_replogle/jurkat.h5')
                     # gene_names = temp.var.index.values
-                    temp = ad.read_h5ad('/large_storage/ctc/userspace/aadduri/cross_dataset/replogle/jurkat.h5')
+                    temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/cross_dataset/replogle/jurkat.h5")
                     gene_names = temp.var.index.values
 
             self.gene_decoder = FinetuneVCICountsDecoder(
@@ -318,7 +324,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         """
         The main forward call. Batch is a flattened sequence of cell sentences,
         which we reshape into sequences of length cell_sentence_len.
-        
+
         Expects input tensors of shape (B, S, N) where:
         B = batch size
         S = sequence length (cell_sentence_len)
@@ -337,27 +343,26 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         # Shape: [B, S, hidden_dim]
         pert_embedding = self.encode_perturbation(pert)
-        control_cells = self.encode_basal_expression(basal)        
+        control_cells = self.encode_basal_expression(basal)
 
-        seq_input = torch.cat([pert_embedding, control_cells], dim=2) # Shape: [B, S, 2 * hidden_dim]
+        seq_input = torch.cat([pert_embedding, control_cells], dim=2)  # Shape: [B, S, 2 * hidden_dim]
         seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
 
         batch_size = seq_input.shape[0]
-
 
         if self.batch_encoder is not None:
             if padded:
                 batch = batch["gem_group"].reshape(-1, self.cell_sentence_len, self.batch_dim)
             else:
                 batch = batch["gem_group"].reshape(1, -1, self.batch_dim)
-            
+
             seq_input = seq_input + self.batch_encoder(batch)  # Shape: [B, S, hidden_dim]
-        
+
         # take the average across the sequence dimension
         seq_input = seq_input.mean(dim=1, keepdim=True)  # Shape: [B, 1, hidden_dim]
 
         # forward pass + extract CLS last hidden state
-        res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state # Shape: [B, 1, hidden_dim]
+        res_pred = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state  # Shape: [B, 1, hidden_dim]
         out_dim = res_pred.shape[-1]
 
         # broadcast to the sequence length
@@ -374,8 +379,8 @@ class PseudobulkPerturbationModel(PerturbationModel):
             out_pred = self.project_out(res_pred)
 
         # apply softplus if specified and we output to HVG space
-        is_gene_space = self.hparams['embed_key'] == 'X_hvg' or self.hparams['embed_key'] is None
-        if self.hparams.get('softplus', False) and is_gene_space:
+        is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
+        if self.hparams.get("softplus", False) and is_gene_space:
             out_pred = self.softplus(out_pred)
 
         output = out_pred.reshape(-1, self.output_dim)
@@ -406,7 +411,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         main_loss = self.loss_fn(pred, target).nanmean()
         self.log("train_loss", main_loss)
-        
+
         # Process decoder if available
         decoder_loss = None
         total_loss = main_loss
@@ -417,7 +422,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
             latent_preds = pred
             # with torch.no_grad():
             #     latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
-            
+
             batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
             # concatenate on the last axis
             if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
@@ -438,10 +443,10 @@ class PseudobulkPerturbationModel(PerturbationModel):
                     gene_targets = gene_targets.reshape(1, -1, self.gene_decoder.gene_dim())
 
                 decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
-                
+
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
-            
+
             total_loss = total_loss + 0.1 * decoder_loss
 
         if confidence_pred is not None:
@@ -451,10 +456,10 @@ class PseudobulkPerturbationModel(PerturbationModel):
             # Compute confidence loss
             confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
             self.log("train/confidence_loss", confidence_loss)
-            
+
             # Add to total loss
             total_loss = total_loss + confidence_loss
-        
+
         return total_loss
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -473,7 +478,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         self.log("val_loss", loss)
 
         if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_targets = batch["X_hvg"] 
+            gene_targets = batch["X_hvg"]
 
             # Get model predictions from validation step
             latent_preds = pred
@@ -488,16 +493,16 @@ class PseudobulkPerturbationModel(PerturbationModel):
                 gene_targets = batch["X_hvg"].reshape_as(mu)
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
-                gene_preds = self.gene_decoder(latent_preds) # verify this is automatically detached
+                gene_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
                 if self.residual_decoder:
                     basal_hvg = batch["basal_hvg"].reshape(gene_preds.shape)
                     gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
-                
+
                 # Get decoder predictions
                 gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
                 gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
                 decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
-            
+
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
 
@@ -584,7 +589,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
     #             read_depth_params.append(param)
     #         else:
     #             other_params.append(param)
-        
+
     #     optimizer = torch.optim.Adam([
     #         {'params': other_params, 'lr': self.lr},
     #         {'params': read_depth_params, 'lr': self.lr * read_depth_lr_multiplier}

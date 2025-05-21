@@ -7,16 +7,17 @@ from geomloss import SamplesLoss
 from models.base import PerturbationModel
 from models.utils import build_mlp, get_activation_class
 
+
 class DecoderOnlyPerturbationModel(PerturbationModel):
     """
-    DecoderOnlyPerturbationModel learns to map the ground truth latent embedding 
+    DecoderOnlyPerturbationModel learns to map the ground truth latent embedding
     (provided in batch["X"]) to the ground truth HVG space (batch["X_hvg"]).
-    
+
     Unlike the other perturbation models that compute a control mapping (e.g. via a mapping strategy),
-    this model simply feeds the latent representation through a decoder network. The loss is computed 
+    this model simply feeds the latent representation through a decoder network. The loss is computed
     between the decoder output and the target HVG expression.
-    
-    It keeps the overall architectural style (and uses the SamplesLoss loss function from geomloss) 
+
+    It keeps the overall architectural style (and uses the SamplesLoss loss function from geomloss)
     as in the OldNeuralOT model.
     """
 
@@ -30,7 +31,7 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
         dropout: float = 0.0,
         distributional_loss: str = "energy",
         output_space: str = "gene",
-        gene_dim = None,
+        gene_dim=None,
         **kwargs,
     ):
         super().__init__(

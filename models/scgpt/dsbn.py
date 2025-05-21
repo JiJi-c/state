@@ -21,10 +21,7 @@ class _DomainSpecificBatchNorm(nn.Module):
         self._cur_domain = None
         self.num_domains = num_domains
         self.bns = nn.ModuleList(
-            [
-                self.bn_handle(num_features, eps, momentum, affine, track_running_stats)
-                for _ in range(num_domains)
-            ]
+            [self.bn_handle(num_features, eps, momentum, affine, track_running_stats) for _ in range(num_domains)]
         )
 
     @property
@@ -53,9 +50,7 @@ class _DomainSpecificBatchNorm(nn.Module):
     def forward(self, x: torch.Tensor, domain_label: int) -> torch.Tensor:
         self._check_input_dim(x)
         if domain_label >= self.num_domains:
-            raise ValueError(
-                f"Domain label {domain_label} exceeds the number of domains {self.num_domains}"
-            )
+            raise ValueError(f"Domain label {domain_label} exceeds the number of domains {self.num_domains}")
         bn = self.bns[domain_label]
         self.cur_domain = domain_label
         return bn(x)
@@ -68,9 +63,7 @@ class DomainSpecificBatchNorm1d(_DomainSpecificBatchNorm):
 
     def _check_input_dim(self, input: torch.Tensor):
         if input.dim() > 3:
-            raise ValueError(
-                "expected at most 3D input (got {}D input)".format(input.dim())
-            )
+            raise ValueError("expected at most 3D input (got {}D input)".format(input.dim()))
 
 
 class DomainSpecificBatchNorm2d(_DomainSpecificBatchNorm):

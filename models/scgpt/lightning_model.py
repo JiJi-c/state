@@ -55,7 +55,7 @@ class scGPTForPerturbation(PerturbationModel):
             pert_dim=None,
             dropout=dropout,
             lr=lr,
-            loss_fn='mse',
+            loss_fn="mse",
             embed_key=embed_key,
             output_space="gene",
             decoder=None,
@@ -84,10 +84,10 @@ class scGPTForPerturbation(PerturbationModel):
         self.fast_transformer_backend = fast_transformer_backend
         self.pre_norm = pre_norm
         self.perturbation_type = perturbation_type.lower()
-        
+
         for k, v in kwargs.items():
             print(f"WARNING: scGPTForPerturbation Model unused kwarg: {k}")
-            
+
         self.lr = lr
         self.step_size_lr = step_size_lr
         self.include_zero_gene = include_zero_gene
@@ -96,18 +96,20 @@ class scGPTForPerturbation(PerturbationModel):
         self.do_CCE = do_CCE
         self.do_MVC = do_MVC
         self.do_ECS = do_ECS
-        
-        assert self.perturbation_type in ["chemical", "genetic"], "perturbation_type must be either 'chemical' or 'genetic'"
-        
+
+        assert self.perturbation_type in ["chemical", "genetic"], (
+            "perturbation_type must be either 'chemical' or 'genetic'"
+        )
+
         if self.perturbation_type == "chemical":
             assert self.n_drug_tokens > 0, "n_drug_tokens must be greater than 0 for chemical perturbation"
 
         self.save_hyperparameters()
 
         self.validation_outputs = []
-        
+
         self._build_networks()
-        
+
     def _build_networks(self):
         generator_params = dict(
             ntoken=self.ntoken,
@@ -137,9 +139,7 @@ class scGPTForPerturbation(PerturbationModel):
                 **generator_params,
             )
         elif self.perturbation_type == "genetic":
-            self.model = TransformerGenerator(
-                **generator_params
-            )
+            self.model = TransformerGenerator(**generator_params)
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """Map perturbation to an effect vector in embedding space."""
@@ -155,12 +155,10 @@ class scGPTForPerturbation(PerturbationModel):
         """
         # Project perturbation and basal cell state to latent space
         raise NotImplementedError("Perturb function not supported for scGPT model")
-    
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, self.step_size_lr, gamma=0.9
-        )
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, self.step_size_lr, gamma=0.9)
         return [optimizer], [scheduler]
 
     def shared_step(
@@ -172,51 +170,43 @@ class scGPTForPerturbation(PerturbationModel):
         x_pert = batch["X"]  # (batch_size, n_genes)
         pert_ids = batch["pert"].argmax(dim=1)
         if self.perturbation_type == "chemical":
-            pert_flags = torch.zeros_like(x_pert, dtype=torch.long) # no genes are perturbed
+            pert_flags = torch.zeros_like(x_pert, dtype=torch.long)  # no genes are perturbed
         else:
-            pert_flags = batch["pert_flags"] # (batch_size, n_genes)
-            
+            pert_flags = batch["pert_flags"]  # (batch_size, n_genes)
+
         gene_ids = batch["gene_ids"][0]  # (n_genes,)
-        
+
         nonpad_genes_mask = gene_ids != self.pad_token_id
-        
+
         x_basal = x_basal[:, nonpad_genes_mask]
         x_pert = x_pert[:, nonpad_genes_mask]
         gene_ids = gene_ids[nonpad_genes_mask]
         pert_flags = pert_flags[:, nonpad_genes_mask]
-        
+
         batch_size, n_genes = x_basal.size()
-        
+
         if self.include_zero_gene == "all":
-            input_gene_ids = torch.arange(
-                n_genes, device=x_basal.device, dtype=torch.long
-            )
+            input_gene_ids = torch.arange(n_genes, device=x_basal.device, dtype=torch.long)
         else:
-            input_gene_ids = (
-                x_basal.nonzero()[:, 1].flatten().unique().sort()[0]
-            )  # TODO: need double-check
+            input_gene_ids = x_basal.nonzero()[:, 1].flatten().unique().sort()[0]  # TODO: need double-check
 
         # sample input_gene_id
         if truncate:
             if len(input_gene_ids) > self.max_seq_len:
-                input_gene_ids = torch.randperm(
-                    len(input_gene_ids), device=x_basal.device
-                )[: self.max_seq_len]
+                input_gene_ids = torch.randperm(len(input_gene_ids), device=x_basal.device)[: self.max_seq_len]
 
             x_basal = x_basal[:, input_gene_ids]
             x_pert = x_pert[:, input_gene_ids]
             pert_flags = pert_flags[:, input_gene_ids]
 
         mapped_input_gene_ids = map_raw_id_to_vocab_id(input_gene_ids, gene_ids)
-        mapped_input_gene_ids = mapped_input_gene_ids.repeat(
-            batch_size, 1
-        )  # (batch_size, max_seq_len)
+        mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)  # (batch_size, max_seq_len)
 
         src_key_padding_mask = mapped_input_gene_ids.eq(self.pad_token_id)
         # src_key_padding_mask = torch.zeros_like(
         #     x_basal, dtype=torch.bool, device=x_basal.device
         # )
-        
+
         if self.perturbation_type == "genetic":
             pert_ids = None
 
@@ -253,9 +243,7 @@ class scGPTForPerturbation(PerturbationModel):
         x_true : torch.Tensor of shape (batch_size, n_genes)
             The true perturbation response.
         """
-        r2_mean = r2_score(
-            x_pred.mean(0), x_true.mean(0)
-        )  # R2 score for mean gene expression
+        r2_mean = r2_score(x_pred.mean(0), x_true.mean(0))  # R2 score for mean gene expression
 
         change_pred = x_pred - x_basal
         change_true = x_true - x_basal
@@ -316,21 +304,21 @@ class scGPTForPerturbation(PerturbationModel):
 
         x_pred = batch_outputs["x_pred"]
         return x_pred
-    
+
     def predict_step(self, batch, batch_idx, **kwargs):
         """
         Typically used for final inference. We'll replicate old logic:
          returning 'pred', 'X', 'pert_name', etc.
         """
         loss, batch_outputs = self.shared_step(batch, truncate=False)
-        
+
         return {
             "preds": batch_outputs["x_pred"].float(),
             "X": batch_outputs["x_true"].float(),
             "X_gene": batch_outputs["x_true"].float(),
-            'pert': batch.get("pert", None),
+            "pert": batch.get("pert", None),
             "pert_name": batch.get("pert_name", None),
-            'cell_type': batch.get("cell_type", None),
-            'gem_group': batch.get("gem_group_name", None),
+            "cell_type": batch.get("cell_type", None),
+            "gem_group": batch.get("gem_group_name", None),
             "basal": batch_outputs["x_basal"].float(),
         }

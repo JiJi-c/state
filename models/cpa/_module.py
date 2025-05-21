@@ -38,17 +38,13 @@ def knn_purity(data, labels, n_neighbors=15):
     distances = pairwise_euclidean_distance(data)
     # sort each row in distances to get nearest neighbors
 
-    _, indices = torch.topk(
-        distances, k=n_neighbors + 1, dim=1, largest=False, sorted=True
-    )
+    _, indices = torch.topk(distances, k=n_neighbors + 1, dim=1, largest=False, sorted=True)
     indices = indices[:, 1:]  # remove self
     # neighbors_labels = np.vectorize(lambda i: labels[i])(indices)
     neighbors_labels = labels[indices]  # (n_samples, n_neighbors)
 
     # pre cell purity scores
-    scores = (
-        ((neighbors_labels - labels.reshape(-1, 1)) == 0).float().mean(axis=1)
-    )  # (n_samples,)
+    scores = ((neighbors_labels - labels.reshape(-1, 1)) == 0).float().mean(axis=1)  # (n_samples,)
     res = scatter_mean(scores, labels).mean()  # per category purity
 
     return res
@@ -143,7 +139,9 @@ class CPAModule(nn.Module):
                 use_norm=(
                     "batch"
                     if use_batch_norm in ["both", "encoder"]
-                    else "layer" if use_layer_norm in ["both", "encoder"] else "none"
+                    else "layer"
+                    if use_layer_norm in ["both", "encoder"]
+                    else "none"
                 ),
                 dropout_rate=dropout_rate_encoder,
                 activation_fn=nn.ReLU,
@@ -164,7 +162,9 @@ class CPAModule(nn.Module):
                 use_norm=(
                     "batch"
                     if use_batch_norm in ["both", "decoder"]
-                    else "layer" if use_layer_norm in ["both", "decoder"] else "none"
+                    else "layer"
+                    if use_layer_norm in ["both", "decoder"]
+                    else "none"
                 ),
             )
 
@@ -178,7 +178,9 @@ class CPAModule(nn.Module):
                 use_norm=(
                     "batch"
                     if use_batch_norm in ["both", "decoder"]
-                    else "layer" if use_layer_norm in ["both", "decoder"] else "none"
+                    else "layer"
+                    if use_layer_norm in ["both", "decoder"]
+                    else "none"
                 ),
                 var_activation=nn.Softplus(),
             )
@@ -188,9 +190,7 @@ class CPAModule(nn.Module):
 
         # Embeddings
         if pert_embeddings is not None:
-            self.pert_embeddings = nn.Embedding.from_pretrained(
-                torch.FloatTensor(pert_embeddings), freeze=True
-            )
+            self.pert_embeddings = nn.Embedding.from_pretrained(torch.FloatTensor(pert_embeddings), freeze=True)
         else:
             self.pert_embeddings = nn.Embedding(n_perts, n_latent)
 
@@ -286,18 +286,16 @@ class CPAModule(nn.Module):
             sampled_z = qz.sample((n_samples,))
             z_basal = self.encoder.z_transformation(sampled_z)
             if self.recon_loss in ["nb", "zinb"]:
-                library = library.unsqueeze(0).expand(
-                    (n_samples, library.size(0), library.size(1))
-                )
+                library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
 
         z_covs = self.cell_type_embeddings(cell_types.long())
         z_batch = self.batch_embeddings(batch_ids.long())
         z_pert = self.pert_embeddings(perts.long())
-        
+
         if self.encode_dosage and pert_dosages is not None:
             pert_dosages = torch.tensor(pert_dosages, device=x.device, dtype=torch.float32)
-            scaled_dosages = self.dosage_encoder(pert_dosages, perts.long()).squeeze(-1) # (batch_size,)
-            
+            scaled_dosages = self.dosage_encoder(pert_dosages, perts.long()).squeeze(-1)  # (batch_size,)
+
             z_pert = torch.einsum("b, b d -> b d", scaled_dosages, z_pert)
 
         z = z_basal + z_pert + z_covs + z_batch
@@ -375,16 +373,12 @@ class CPAModule(nn.Module):
 
             x_pred_mean = torch.nan_to_num(x_pred_mean, nan=0, posinf=1e3, neginf=-1e3)
 
-            r2_mean = torch.nan_to_num(
-                self.metrics["r2_score"](x_pred_mean.mean(0), x_pert.mean(0)), nan=0.0
-            ).item()
+            r2_mean = torch.nan_to_num(self.metrics["r2_score"](x_pred_mean.mean(0), x_pert.mean(0)), nan=0.0).item()
 
             lfc_true = (x_pert - x_basal).mean(0)
             lfc_pred = (x_pred_mean - x_basal).mean(0)
 
-            pearson_lfc = torch.nan_to_num(
-                self.metrics["r2_score"](lfc_pred, lfc_true), nan=0.0
-            ).item()
+            pearson_lfc = torch.nan_to_num(self.metrics["r2_score"](lfc_pred, lfc_true), nan=0.0).item()
 
         elif self.recon_loss in ["nb", "zinb"]:
             x_pert = torch.log(1 + x_pert)
@@ -394,16 +388,12 @@ class CPAModule(nn.Module):
 
             x_pred = torch.nan_to_num(x_pred, nan=0, posinf=1e3, neginf=-1e3)
 
-            r2_mean = torch.nan_to_num(
-                self.metrics["r2_score"](x_pred.mean(0), x_pert.mean(0)), nan=0.0
-            ).item()
+            r2_mean = torch.nan_to_num(self.metrics["r2_score"](x_pred.mean(0), x_pert.mean(0)), nan=0.0).item()
 
             lfc_true = (x_pert - x_basal).mean(0)
             lfc_pred = (x_pred - x_basal).mean(0)
 
-            pearson_lfc = torch.nan_to_num(
-                self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0
-            ).item()
+            pearson_lfc = torch.nan_to_num(self.metrics["pearson_r"](lfc_pred, lfc_true), nan=0.0).item()
 
         return r2_mean, pearson_lfc
 
@@ -456,7 +446,9 @@ class CPAModule(nn.Module):
 
         return knn_basal.item(), knn_after.item()
 
-    def get_expression(self, ):
+    def get_expression(
+        self,
+    ):
         """Computes knockout gene expression
 
         Parameters

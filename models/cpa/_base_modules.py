@@ -300,13 +300,14 @@ class CountDecoder(nn.Module):
         px_r = self.px_r_decoder(px) if dispersion == "gene-cell" else None
         return px_scale, px_r, px_rate, px_dropout
 
+
 class GeneralizedSigmoid(nn.Module):
     """
     Sigmoid, log-sigmoid or linear functions for encoding dose-response for
     drug perurbations.
     """
 
-    def __init__(self, n_drugs, non_linearity='sigmoid'):
+    def __init__(self, n_drugs, non_linearity="sigmoid"):
         """Sigmoid modeling of continuous variable.
         Params
         ------
@@ -317,31 +318,25 @@ class GeneralizedSigmoid(nn.Module):
         self.non_linearity = non_linearity
         self.n_drugs = n_drugs
 
-        self.beta = torch.nn.Parameter(
-            torch.ones(1, n_drugs),
-            requires_grad=True
-        )
-        self.bias = torch.nn.Parameter(
-            torch.zeros(1, n_drugs),
-            requires_grad=True
-        )
+        self.beta = torch.nn.Parameter(torch.ones(1, n_drugs), requires_grad=True)
+        self.bias = torch.nn.Parameter(torch.zeros(1, n_drugs), requires_grad=True)
 
         self.vmap = None
 
     def forward(self, x, y):
         """
-            Parameters
-            ----------
-            x: (batch_size, max_comb_len)
-            y: (batch_size, max_comb_len)
+        Parameters
+        ----------
+        x: (batch_size, max_comb_len)
+        y: (batch_size, max_comb_len)
         """
         y = y.long()
-        if self.non_linearity == 'logsigm':
+        if self.non_linearity == "logsigm":
             bias = self.bias[0][y]
             beta = self.beta[0][y]
             c0 = bias.sigmoid()
             return (torch.log1p(x) * beta + bias).sigmoid() - c0
-        elif self.non_linearity == 'sigm':
+        elif self.non_linearity == "sigm":
             bias = self.bias[0][y]
             beta = self.beta[0][y]
             c0 = bias.sigmoid()

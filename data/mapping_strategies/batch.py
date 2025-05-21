@@ -6,11 +6,12 @@ from .mapping_strategies import BaseMappingStrategy
 
 logger = logging.getLogger(__name__)
 
+
 class BatchMappingStrategy(BaseMappingStrategy):
     """
     Maps a perturbed cell to random control(s) drawn from the same batch and cell type.
     If no controls are available in the same batch, falls back to controls from the same cell type.
-    
+
     This strategy matches the RandomMappingStrategy structure except it groups the control cells
     by the tuple (batch, cell_type) instead of just by cell type.
     """
@@ -51,7 +52,7 @@ class BatchMappingStrategy(BaseMappingStrategy):
         """
         Return n_basal_samples control indices for the perturbed cell that are
         from the same batch and the same cell type.
-        
+
         If the batch group for the perturbed cell is empty, the method falls back to
         using all control cells from the same cell type (regardless of batch).
         """
@@ -59,19 +60,19 @@ class BatchMappingStrategy(BaseMappingStrategy):
         cell_type = dataset.get_cell_type(perturbed_idx)
         key = (batch, cell_type)
         pool = self.split_control_maps[split].get(key, [])
-        
+
         if not pool:
             # Fallback: If no controls exist in this batch, select from all controls with the same cell type.
             pool = []
             for (b, ct), indices in self.split_control_maps[split].items():
                 if ct == cell_type:
                     pool.extend(indices)
-                    
+
         if not pool:
             raise ValueError("No control cells found in BatchMappingStrategy for cell type '{}'".format(cell_type))
-        
+
         return self.rng.choice(pool, size=self.n_basal_samples, replace=True)
-    
+
     def get_control_index(self, dataset: "PerturbationDataset", split: str, perturbed_idx: int):
         """
         Returns a single control index for the perturbed cell.

@@ -63,10 +63,7 @@ class TransformerModel(nn.Module):
         self.explicit_zero_prob = explicit_zero_prob
         self.norm_scheme = "pre" if pre_norm else "post"
         if self.input_emb_style not in ["category", "continuous", "scaling"]:
-            raise ValueError(
-                f"input_emb_style should be one of category, continuous, scaling, "
-                f"got {input_emb_style}"
-            )
+            raise ValueError(f"input_emb_style should be one of category, continuous, scaling, got {input_emb_style}")
         if cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {cell_emb_style}")
 
@@ -78,9 +75,7 @@ class TransformerModel(nn.Module):
             self.value_encoder = ContinuousValueEncoder(d_model, dropout)
         elif input_emb_style == "category":
             assert n_input_bins > 0
-            self.value_encoder = CategoryValueEncoder(
-                n_input_bins, d_model, padding_idx=pad_value
-            )
+            self.value_encoder = CategoryValueEncoder(n_input_bins, d_model, padding_idx=pad_value)
         else:
             self.value_encoder = nn.Identity()  # nn.Softmax(dim=1)
             # TODO: consider row-wise normalization or softmax
@@ -93,18 +88,14 @@ class TransformerModel(nn.Module):
         if domain_spec_batchnorm:
             use_affine = True if domain_spec_batchnorm == "do_affine" else False
             print(f"Use domain specific batchnorm with affine={use_affine}")
-            self.dsbn = DomainSpecificBatchNorm1d(
-                d_model, num_batch_labels, eps=6.1e-5, affine=use_affine
-            )
+            self.dsbn = DomainSpecificBatchNorm1d(d_model, num_batch_labels, eps=6.1e-5, affine=use_affine)
         else:
             print("Using simple batchnorm instead of domain specific batchnorm")
             self.bn = nn.BatchNorm1d(d_model, eps=6.1e-5)
 
         if use_fast_transformer:
             if fast_transformer_backend == "linear":
-                self.transformer_encoder = FastTransformerEncoderWrapper(
-                    d_model, nhead, d_hid, nlayers, dropout
-                )
+                self.transformer_encoder = FastTransformerEncoderWrapper(d_model, nhead, d_hid, nlayers, dropout)
             elif fast_transformer_backend == "flash":
                 encoder_layers = FlashTransformerEncoderLayer(
                     d_model,
@@ -116,9 +107,7 @@ class TransformerModel(nn.Module):
                 )
                 self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         else:
-            encoder_layers = TransformerEncoderLayer(
-                d_model, nhead, d_hid, dropout, batch_first=True
-            )
+            encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=True)
             self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 
         self.decoder = ExprDecoder(
@@ -179,14 +168,10 @@ class TransformerModel(nn.Module):
         else:
             total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
 
-        output = self.transformer_encoder(
-            total_embs, src_key_padding_mask=src_key_padding_mask
-        )
+        output = self.transformer_encoder(total_embs, src_key_padding_mask=src_key_padding_mask)
         return output  # (batch, seq_len, embsize)
 
-    def _get_cell_emb_from_layer(
-        self, layer_output: Tensor, weights: Tensor = None
-    ) -> Tensor:
+    def _get_cell_emb_from_layer(self, layer_output: Tensor, weights: Tensor = None) -> Tensor:
         """
         Args:
             layer_output(:obj:`Tensor`): shape (batch, seq_len, embsize)
@@ -244,12 +229,8 @@ class TransformerModel(nn.Module):
         except:
             import warnings
 
-            warnings.warn(
-                "batch_labels is required but not provided, using zeros instead"
-            )
-            batch_labels = torch.zeros(
-                cell_emb.shape[0], dtype=torch.long, device=cell_emb.device
-            )
+            warnings.warn("batch_labels is required but not provided, using zeros instead")
+            batch_labels = torch.zeros(cell_emb.shape[0], dtype=torch.long, device=cell_emb.device)
 
         src = self.encoder(src)  # (batch, seq_len, embsize)
 
@@ -274,12 +255,8 @@ class TransformerModel(nn.Module):
         total_embs[:, 0, :] = cell_emb
 
         if src_key_padding_mask is None:
-            src_key_padding_mask = torch.zeros(
-                total_embs.shape[:2], dtype=torch.bool, device=total_embs.device
-            )
-        transformer_output = self.transformer_encoder(
-            total_embs, src_key_padding_mask=src_key_padding_mask
-        )
+            src_key_padding_mask = torch.zeros(total_embs.shape[:2], dtype=torch.bool, device=total_embs.device)
+        transformer_output = self.transformer_encoder(total_embs, src_key_padding_mask=src_key_padding_mask)
 
         if self.use_batch_labels:
             batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
@@ -290,9 +267,7 @@ class TransformerModel(nn.Module):
                 else torch.cat(
                     [
                         transformer_output,
-                        batch_emb.unsqueeze(1).repeat(
-                            1, transformer_output.shape[1], 1
-                        ),
+                        batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
                     ],
                     dim=2,
                 )
@@ -334,9 +309,7 @@ class TransformerModel(nn.Module):
         Returns:
             dict of output Tensors.
         """
-        transformer_output = self._encode(
-            src, values, src_key_padding_mask, batch_labels
-        )
+        transformer_output = self._encode(src, values, src_key_padding_mask, batch_labels)
         if self.use_batch_labels:
             batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
 
@@ -348,9 +321,7 @@ class TransformerModel(nn.Module):
                 else torch.cat(
                     [
                         transformer_output,
-                        batch_emb.unsqueeze(1).repeat(
-                            1, transformer_output.shape[1], 1
-                        ),
+                        batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
                     ],
                     dim=2,
                 )
@@ -372,19 +343,13 @@ class TransformerModel(nn.Module):
             output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
         if CCE:
             cell1 = cell_emb
-            transformer_output2 = self._encode(
-                src, values, src_key_padding_mask, batch_labels
-            )
+            transformer_output2 = self._encode(src, values, src_key_padding_mask, batch_labels)
             cell2 = self._get_cell_emb_from_layer(transformer_output2)
 
             # Gather embeddings from all devices if distributed training
             if dist.is_initialized() and self.training:
-                cls1_list = [
-                    torch.zeros_like(cell1) for _ in range(dist.get_world_size())
-                ]
-                cls2_list = [
-                    torch.zeros_like(cell2) for _ in range(dist.get_world_size())
-                ]
+                cls1_list = [torch.zeros_like(cell1) for _ in range(dist.get_world_size())]
+                cls2_list = [torch.zeros_like(cell2) for _ in range(dist.get_world_size())]
                 dist.all_gather(tensor_list=cls1_list, tensor=cell1.contiguous())
                 dist.all_gather(tensor_list=cls2_list, tensor=cell2.contiguous())
 
@@ -402,11 +367,7 @@ class TransformerModel(nn.Module):
             output["loss_cce"] = self.creterion_cce(cos_sim, labels)
         if MVC:
             mvc_output = self.mvc_decoder(
-                (
-                    cell_emb
-                    if not self.use_batch_labels
-                    else torch.cat([cell_emb, batch_emb], dim=1)
-                ),
+                (cell_emb if not self.use_batch_labels else torch.cat([cell_emb, batch_emb], dim=1)),
                 # else cell_emb + batch_emb,
                 self.cur_gene_token_embs,
             )
@@ -469,11 +430,7 @@ class TransformerModel(nn.Module):
         # initialize the output tensor
         array_func = np.zeros if return_np else torch.zeros
         float32_ = np.float32 if return_np else torch.float32
-        shape = (
-            (N, self.d_model)
-            if time_step is not None
-            else (N, src.size(1), self.d_model)
-        )
+        shape = (N, self.d_model) if time_step is not None else (N, src.size(1), self.d_model)
         outputs = array_func(shape, dtype=float32_)
 
         for i in trange(0, N, batch_size):
@@ -481,11 +438,7 @@ class TransformerModel(nn.Module):
                 src[i : i + batch_size].to(device),
                 values[i : i + batch_size].to(device),
                 src_key_padding_mask[i : i + batch_size].to(device),
-                (
-                    batch_labels[i : i + batch_size].to(device)
-                    if batch_labels is not None
-                    else None
-                ),
+                (batch_labels[i : i + batch_size].to(device) if batch_labels is not None else None),
             )
             output = raw_output.detach()
             if output_to_cpu:
@@ -514,21 +467,14 @@ class FastTransformerEncoderWrapper(nn.Module):
         dropout: float = 0.5,
     ):
         super().__init__()
-        self.fast_transformer_encoder = self.build_fast_transformer_encoder(
-            d_model, nhead, d_hid, nlayers, dropout
-        )
+        self.fast_transformer_encoder = self.build_fast_transformer_encoder(d_model, nhead, d_hid, nlayers, dropout)
 
     @staticmethod
-    def build_fast_transformer_encoder(
-        d_model: int, nhead: int, d_hid: int, nlayers: int, dropout: float
-    ) -> nn.Module:
+    def build_fast_transformer_encoder(d_model: int, nhead: int, d_hid: int, nlayers: int, dropout: float) -> nn.Module:
         from fast_transformers.builders import TransformerEncoderBuilder
 
         if d_model % nhead != 0:
-            raise ValueError(
-                f"d_model must be divisible by nhead, "
-                f"got d_model={d_model} and nhead={nhead}"
-            )
+            raise ValueError(f"d_model must be divisible by nhead, got d_model={d_model} and nhead={nhead}")
         builder = TransformerEncoderBuilder.from_kwargs(
             n_layers=nlayers,
             n_heads=nhead,
@@ -582,10 +528,7 @@ class FastTransformerEncoderWrapper(nn.Module):
             )
 
         if src_key_padding_mask.dtype != torch.bool:
-            raise ValueError(
-                f"src_key_padding_mask needs to be of type torch.bool, "
-                f"got {src_key_padding_mask.dtype}"
-            )
+            raise ValueError(f"src_key_padding_mask needs to be of type torch.bool, got {src_key_padding_mask.dtype}")
 
         length_mask = self.build_length_mask(src, src_key_padding_mask)
         output = self.fast_transformer_encoder(src, length_mask=length_mask)
@@ -727,9 +670,7 @@ class GeneEncoder(nn.Module):
         padding_idx: Optional[int] = None,
     ):
         super().__init__()
-        self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
-        )
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         self.enc_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -744,9 +685,7 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
-        )
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
         pe[:, 0, 0::2] = torch.sin(position * div_term)
         pe[:, 0, 1::2] = torch.cos(position * div_term)
@@ -799,9 +738,7 @@ class CategoryValueEncoder(nn.Module):
         padding_idx: Optional[int] = None,
     ):
         super().__init__()
-        self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
-        )
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         self.enc_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -819,9 +756,7 @@ class BatchLabelEncoder(nn.Module):
         padding_idx: Optional[int] = None,
     ):
         super().__init__()
-        self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
-        )
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         self.enc_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -968,9 +903,7 @@ class MVCDecoder(nn.Module):
         self.do_detach = arch_style.endswith("detach")
         self.explicit_zero_prob = explicit_zero_prob
 
-    def forward(
-        self, cell_emb: Tensor, gene_embs: Tensor
-    ) -> Union[Tensor, Dict[str, Tensor]]:
+    def forward(self, cell_emb: Tensor, gene_embs: Tensor) -> Union[Tensor, Dict[str, Tensor]]:
         """
         Args:
             cell_emb: Tensor, shape (batch, embsize=d_model)
@@ -993,9 +926,7 @@ class MVCDecoder(nn.Module):
             # expand cell_emb to (batch, seq_len, embsize)
             cell_emb = cell_emb.unsqueeze(1).expand(-1, gene_embs.shape[1], -1)
 
-            h = self.hidden_activation(
-                self.fc1(torch.cat([cell_emb, query_vecs], dim=2))
-            )
+            h = self.hidden_activation(self.fc1(torch.cat([cell_emb, query_vecs], dim=2)))
             if self.explicit_zero_prob:
                 raise NotImplementedError
             return self.fc2(h).squeeze(2)  # (batch, seq_len)

@@ -34,9 +34,7 @@ class GeneEncoder(nn.Module):
         padding_idx: Optional[int] = None,
     ):
         super().__init__()
-        self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
-        )
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         self.enc_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -51,9 +49,7 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
-        )
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
         pe[:, 0, 0::2] = torch.sin(position * div_term)
         pe[:, 0, 1::2] = torch.cos(position * div_term)
@@ -172,9 +168,7 @@ class TransformerGenerator(nn.Module):
 
         if use_fast_transformer:
             if fast_transformer_backend == "linear":
-                self.transformer_encoder = FastTransformerEncoderWrapper(
-                    d_model, nhead, d_hid, nlayers, dropout
-                )
+                self.transformer_encoder = FastTransformerEncoderWrapper(d_model, nhead, d_hid, nlayers, dropout)
             elif fast_transformer_backend == "flash":
                 encoder_layers = FlashTransformerEncoderLayer(
                     d_model,
@@ -186,9 +180,7 @@ class TransformerGenerator(nn.Module):
                 )
                 self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         else:
-            encoder_layers = TransformerEncoderLayer(
-                d_model, nhead, d_hid, dropout, batch_first=True
-            )
+            encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=True)
             self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 
         # self.decoder = nn.Linear(d_model, 1)
@@ -227,14 +219,10 @@ class TransformerGenerator(nn.Module):
         total_embs = src + values + perts
 
         total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
-        output = self.transformer_encoder(
-            total_embs, src_key_padding_mask=src_key_padding_mask
-        )
+        output = self.transformer_encoder(total_embs, src_key_padding_mask=src_key_padding_mask)
         return output  # (batch, seq_len, embsize)
 
-    def _get_cell_emb_from_layer(
-        self, layer_output: Tensor, weights: Tensor = None
-    ) -> Tensor:
+    def _get_cell_emb_from_layer(self, layer_output: Tensor, weights: Tensor = None) -> Tensor:
         """
         Args:
             layer_output(:obj:`Tensor`): shape (batch, seq_len, embsize)
@@ -261,7 +249,7 @@ class TransformerGenerator(nn.Module):
     def forward(
         self,
         src: Tensor,
-        pert_ids: Tensor, # unused for genetic perturbations but added for compatibility with chemical generator
+        pert_ids: Tensor,  # unused for genetic perturbations but added for compatibility with chemical generator
         values: Tensor,
         input_pert_flags: Tensor,
         src_key_padding_mask: Tensor,
@@ -293,9 +281,7 @@ class TransformerGenerator(nn.Module):
             do_sample = True
             # logger.warning("Auto set do_sample to True when model is in eval mode.")
 
-        transformer_output = self._encode(
-            src, values, input_pert_flags, src_key_padding_mask
-        )
+        transformer_output = self._encode(src, values, input_pert_flags, src_key_padding_mask)
         output = {}
         mlm_output = self.decoder(transformer_output)
         if self.explicit_zero_prob and do_sample:
@@ -396,9 +382,7 @@ class TransformerGenerator(nn.Module):
             if include_zero_gene == "all":
                 input_gene_ids = torch.arange(ori_gene_values.size(1), device=device)
             else:  # batch-wise
-                input_gene_ids = (
-                    ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
-                )
+                input_gene_ids = ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
             input_values = ori_gene_values[:, input_gene_ids]
             input_pert_flags = pert_flags[:, input_gene_ids]
 
@@ -407,9 +391,7 @@ class TransformerGenerator(nn.Module):
             mapped_input_gene_ids = map_raw_id_to_vocab_id(input_gene_ids, gene_ids)
             mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)
 
-            src_key_padding_mask = torch.zeros_like(
-                input_values, dtype=torch.bool, device=device
-            )
+            src_key_padding_mask = torch.zeros_like(input_values, dtype=torch.bool, device=device)
             with torch.cuda.amp.autocast(enabled=amp):
                 output_dict = self(
                     mapped_input_gene_ids,
@@ -426,7 +408,6 @@ class TransformerGenerator(nn.Module):
             pred_gene_values = torch.zeros_like(ori_gene_values)
             pred_gene_values[:, input_gene_ids] = output_values
         return pred_gene_values
-    
 
 
 class ChemicalTransformerGenerator(nn.Module):
@@ -479,9 +460,7 @@ class ChemicalTransformerGenerator(nn.Module):
 
         if use_fast_transformer:
             if fast_transformer_backend == "linear":
-                self.transformer_encoder = FastTransformerEncoderWrapper(
-                    d_model, nhead, d_hid, nlayers, dropout
-                )
+                self.transformer_encoder = FastTransformerEncoderWrapper(d_model, nhead, d_hid, nlayers, dropout)
             elif fast_transformer_backend == "flash":
                 encoder_layers = FlashTransformerEncoderLayer(
                     d_model,
@@ -493,9 +472,7 @@ class ChemicalTransformerGenerator(nn.Module):
                 )
                 self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         else:
-            encoder_layers = TransformerEncoderLayer(
-                d_model, nhead, d_hid, dropout, batch_first=True
-            )
+            encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=True)
             self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 
         # self.decoder = nn.Linear(d_model, 1)
@@ -529,21 +506,17 @@ class ChemicalTransformerGenerator(nn.Module):
         src_key_padding_mask: Tensor,
     ) -> Tensor:
         src = self.encoder(src)  # (batch, seq_len, embsize)
-        drug_embs = self.drug_encoder(drug_ids).unsqueeze(1) # (batch, 1, embsize)
+        drug_embs = self.drug_encoder(drug_ids).unsqueeze(1)  # (batch, 1, embsize)
         self.cur_gene_token_embs = src
         values = self.value_encoder(values)  # (batch, seq_len, embsize)
         perts = self.pert_encoder(input_pert_flags)  # (batch, seq_len, embsize)
         total_embs = src + drug_embs + values + perts
 
         total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
-        output = self.transformer_encoder(
-            total_embs, src_key_padding_mask=src_key_padding_mask
-        )
+        output = self.transformer_encoder(total_embs, src_key_padding_mask=src_key_padding_mask)
         return output  # (batch, seq_len, embsize)
 
-    def _get_cell_emb_from_layer(
-        self, layer_output: Tensor, weights: Tensor = None
-    ) -> Tensor:
+    def _get_cell_emb_from_layer(self, layer_output: Tensor, weights: Tensor = None) -> Tensor:
         """
         Args:
             layer_output(:obj:`Tensor`): shape (batch, seq_len, embsize)
@@ -602,9 +575,7 @@ class ChemicalTransformerGenerator(nn.Module):
             do_sample = True
             # logger.warning("Auto set do_sample to True when model is in eval mode.")
 
-        transformer_output = self._encode(
-            src, drug_ids, values, input_pert_flags, src_key_padding_mask
-        )
+        transformer_output = self._encode(src, drug_ids, values, input_pert_flags, src_key_padding_mask)
         output = {}
         mlm_output = self.decoder(transformer_output)
         if self.explicit_zero_prob and do_sample:
@@ -705,9 +676,7 @@ class ChemicalTransformerGenerator(nn.Module):
             if include_zero_gene == "all":
                 input_gene_ids = torch.arange(ori_gene_values.size(1), device=device)
             else:  # batch-wise
-                input_gene_ids = (
-                    ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
-                )
+                input_gene_ids = ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
             input_values = ori_gene_values[:, input_gene_ids]
             input_pert_flags = pert_flags[:, input_gene_ids]
 
@@ -716,9 +685,7 @@ class ChemicalTransformerGenerator(nn.Module):
             mapped_input_gene_ids = map_raw_id_to_vocab_id(input_gene_ids, gene_ids)
             mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)
 
-            src_key_padding_mask = torch.zeros_like(
-                input_values, dtype=torch.bool, device=device
-            )
+            src_key_padding_mask = torch.zeros_like(input_values, dtype=torch.bool, device=device)
             with torch.cuda.amp.autocast(enabled=amp):
                 output_dict = self(
                     mapped_input_gene_ids,

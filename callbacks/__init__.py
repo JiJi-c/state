@@ -6,6 +6,7 @@ import lightning.pytorch as pl
 from models import PerturbationModel
 from .batch_speed_monitor import BatchSpeedMonitorCallback
 
+
 class GradNormCallback(Callback):
     """
     Logs the gradient norm.
