@@ -6,7 +6,7 @@ from data.utils.data_utils import generate_onehot_map, safe_decode_array, Global
 from lightning.pytorch import LightningDataModule
 from data.dataset.perturbation_dataset import PerturbationDataset
 from data.dataset.scgpt_perturbation_dataset import scGPTPerturbationDataset
-from data.data_modules.samplers import PerturbationBatchSampler
+from data.data_modules.samplers import EpochPerturbationBatchSampler, PerturbationBatchSampler
 from data.data_modules.tasks import TaskSpec, TaskType
 from data.mapping_strategies import (
     BatchMappingStrategy,
@@ -131,6 +131,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         self.should_yield_control_cells = should_yield_control_cells
         self.cell_sentence_len = cell_sentence_len
         self.int_counts = kwargs.get("int_counts", False)
+        self.randomize_sentence_per_epoch = kwargs.get("randomize_sentence_per_epoch", False)
         logger.info(f"Using cell_sentence_len={cell_sentence_len}")
 
         if self.int_counts:
@@ -689,7 +690,12 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.train_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
-        sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
+
+        randomize_per_epoch = 'randomize_sentence_per_epoch' in self.__dict__ and self.randomize_sentence_per_epoch
+        if randomize_per_epoch:
+            sampler = EpochPerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
+        else:
+            sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True, prefetch_factor=4)
 
     def val_dataloader(self):
@@ -699,6 +705,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.val_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
+
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=False, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
@@ -709,6 +716,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
+
         # batch size 1 for test - since we don't want to oversample. This logic should probably be cleaned up
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=1, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
@@ -720,6 +728,7 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         collate_fn = lambda batch: self.dataset_cls.collate_fn(batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts)
         ds = MetadataConcatDataset(self.test_datasets)
         use_batch = self.basal_mapping_strategy == "batch"
+        
         sampler = PerturbationBatchSampler(dataset=ds, batch_size=self.batch_size, drop_last=False, cell_sentence_len=self.cell_sentence_len, test=True, use_batch=use_batch)
         return DataLoader(ds, batch_sampler=sampler, num_workers=self.num_workers, collate_fn=collate_fn, pin_memory=True)
 
