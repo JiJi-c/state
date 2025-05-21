@@ -38,7 +38,9 @@ def main(cfg):
     # ? not sure why this needs to be included but seems empirical?? no clue why this is 6
     warmup_steps = EPOCH_LENGTH * 6
 
-    dataset_sentence_collator = VCIDatasetSentenceCollator(cfg)
+    train_dataset_sentence_collator = VCIDatasetSentenceCollator(cfg, is_train=True)
+    # validation should not do augmentations
+    val_dataset_sentence_collator = VCIDatasetSentenceCollator(cfg, is_train=False)
 
     generator = torch.Generator()
     generator.manual_seed(cfg.dataset.seed)
@@ -60,7 +62,7 @@ def main(cfg):
                                 #   batch_sampler=train_batch_sampler,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=False,
-                                  collate_fn=dataset_sentence_collator,
+                                  collate_fn=train_dataset_sentence_collator,
                                   num_workers=cfg.dataset.num_train_workers,
                                   persistent_workers=True,
                                   pin_memory=True,
@@ -71,7 +73,7 @@ def main(cfg):
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=False,
-                                collate_fn=dataset_sentence_collator,
+                                collate_fn=val_dataset_sentence_collator,
                                 num_workers=cfg.dataset.num_val_workers,
                                 persistent_workers=True,
                                 generator=generator)

@@ -52,7 +52,7 @@ def create_dataloader(cfg,
                                       adata=adata,
                                       adata_name=adata_name)
         if sentence_collator is None:
-            sentence_collator = VCIDatasetSentenceCollator(cfg, valid_gene_mask=dataset.valid_gene_index)
+            sentence_collator = VCIDatasetSentenceCollator(cfg, valid_gene_mask=dataset.valid_gene_index, is_train=False)
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=shuffle,
@@ -310,12 +310,13 @@ class GeneFilterDataset(H5adSentenceDataset):
         return counts, idx, dataset, dataset_num
 
 class VCIDatasetSentenceCollator(object):
-    def __init__(self, cfg, valid_gene_mask=None):
+    def __init__(self, cfg, valid_gene_mask=None, is_train=True):
         self.pad_length = cfg.dataset.pad_length
         self.P = cfg.dataset.P
         self.N = cfg.dataset.N
         self.S = cfg.dataset.S
         self.cfg = cfg
+        self.training = is_train
 
         # Load the dataset mappings
         self.use_dataset_info = getattr(cfg.model, "dataset_correction", False)
@@ -359,7 +360,7 @@ class VCIDatasetSentenceCollator(object):
 
     def __call__(self, batch):
         num_aug = getattr(self.cfg.model, "num_downsample", 1)
-        if num_aug > 1:
+        if num_aug > 1 and self.training:
            # for each original sample, duplicate it num_aug times
            batch = [item for item in batch for _ in range(num_aug)]
 
@@ -449,7 +450,7 @@ class VCIDatasetSentenceCollator(object):
             
             # compute downsample fraction. this is the first sample of the augmentation then
             # use no downsampling
-            downsample_fraction = 1.0 if (num_aug > 1 and i % num_aug == 0) else None
+            downsample_fraction = 1.0 if (num_aug > 1 and i % num_aug == 0 and self.training) else None
             (bs, xx, yy, batch_weight, mask, cell_total_counts, cell_sentence_counts) = self.sample_cell_sentences(counts, dataset, shared_genes, valid_mask, downsample_fraction)
 
             batch_sentences[i, :] = bs
