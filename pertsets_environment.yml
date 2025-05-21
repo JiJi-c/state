@@ -436,4 +436,5 @@ dependencies:
       - zict==3.0.0
       - igraph==0.11.8
       - leidenalg==0.10.2
+      - peft==0.15.2
 prefix: /home/aadduri/miniconda/envs/pertsets

@@ -514,11 +514,83 @@ def main():
                 adata_real_gene.write_h5ad(adata_real_gene_out)
                 logger.info(f"Saved adata_real_gene to {adata_real_gene_out}")
             
-            if adata_pred_gene is not None:
-                adata_pred_gene_out = os.path.join(args.output_dir, 'adata_pred_gene.h5ad')
-                adata_pred_gene.write_h5ad(adata_pred_gene_out)
-                logger.info(f"Saved adata_pred_gene to {adata_pred_gene_out}")
-    
+            # Handle celltype_name
+            if isinstance(batch_preds["celltype_name"], list):
+                all_celltypes.extend(batch_preds["celltype_name"])
+            else:
+                all_celltypes.append(batch_preds["celltype_name"])
+            
+            # Handle gem_group
+            if isinstance(batch_preds["gem_group"], list):
+                all_gem_groups.extend(batch_preds["gem_group"])
+            elif isinstance(batch_preds["gem_group"], torch.Tensor):
+                all_gem_groups.extend(batch_preds["gem_group"].cpu().numpy())
+            else:
+                all_gem_groups.append(batch_preds["gem_group"])
+            
+            batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
+            batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
+            batch_size = batch_pred_np.shape[0]
+            final_preds[current_idx:current_idx+batch_size, :] = batch_pred_np
+            final_reals[current_idx:current_idx+batch_size, :] = batch_real_np
+            current_idx += batch_size
+            
+            # Handle X_hvg for HVG space ground truth
+            if final_X_hvg is not None:
+                batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
+                final_X_hvg[current_idx-batch_size:current_idx, :] = batch_real_gene_np
+            
+            # Handle decoded gene predictions if available
+            if final_gene_preds is not None:
+                batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
+                final_gene_preds[current_idx-batch_size:current_idx, :] = batch_gene_pred_np
+
+
+    logger.info("Creating anndatas from predictions from manual loop...")
+
+
+    # Build pandas DataFrame for obs
+    obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
+
+    # Create adata for predictions
+    adata_pred = anndata.AnnData(X=final_preds, obs=obs)
+    # Create adata for real
+    adata_real = anndata.AnnData(X=final_reals, obs=obs)
+
+    if args.use_uce_decoder:
+        assert data_module.embed_key == "X_uce", "UCELogProbDecoder can only be used with UCE embeddings."
+        logger.info("Using UCELogProbDecoder for decoding.")
+        decoder = UCELogProbDecoder()
+    elif args.use_vci_decoder:
+        assert data_module.embed_key == "X_vci", "VCICountsDecoder can only be used with VCI embeddings."
+        logger.info("Using VCICountsDecoder for decoding.")
+        decoder = VCICountsDecoder(read_depth=args.read_depth)
+    else:
+        decoder = None
+
+    # Create adata for real data in gene space (if available)
+    adata_real_gene = None
+    if final_X_hvg is not None: # either this is available, or we are already working in gene space
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
+            final_X_hvg = np.log1p(final_X_hvg)
+        adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs)
+
+    # Create adata for gene predictions (if available)
+    adata_pred_gene = None
+    if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
+            final_gene_preds = np.log1p(final_gene_preds)
+        adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
+
+    # save out adata_real to the output directory
+    adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
+    adata_real.write_h5ad(adata_real_out)
+    logger.info(f"Saved adata_real to {adata_real_out}")
+
+    adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
+    adata_pred.write_h5ad(adata_pred_out)
+    logger.info(f"Saved adata_pred to {adata_pred_out}")
+
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
     metrics = compute_metrics(
