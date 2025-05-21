@@ -30,5 +30,6 @@ kwargs:
   perturbation_features_file: null
   store_raw_basal: ${model.kwargs.residual_decoder}
   int_counts: ${model.kwargs.nb_decoder}
+  randomize_sentence_per_epoch: false
 output_dir: null
 debug: true
