@@ -288,7 +288,7 @@ def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_eve
     best_ckpt = ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="step={step}-val_loss={val_loss:.4f}",
-        save_last=link,  # Will create last.ckpt symlink to best checkpoint
+        save_last="link",  # Will create last.ckpt symlink to best checkpoint
         monitor="val_loss",
         mode="min",
         save_top_k=1,  # Only keep the best checkpoint

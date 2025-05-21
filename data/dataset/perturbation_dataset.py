@@ -443,10 +443,12 @@ class PerturbationDataset(Dataset):
             "pert_name": pert_name_list,
             "pert_dosage": pert_dosage_list,
             "cell_type": cell_type_list,
-            "cell_type_onehot": torch.stack(cell_type_onehot_list),
             "gem_group": torch.stack(gem_group_list),
             "gem_group_name": gem_group_name_list,
         }
+
+        if cell_type_onehot_list[0] is not None:
+            batch_dict["cell_type_onehot"] = torch.stack(cell_type_onehot_list)
         
         is_tahoe = pert_col == "drug" or pert_col == "drugname_drugconc"
         
