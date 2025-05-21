@@ -328,14 +328,6 @@ def train(cfg: DictConfig) -> None:
     if cfg["use_wandb"]:
         os.makedirs(cfg["wandb"]["local_wandb_dir"], exist_ok=True)
 
-    # commented out since it didn't load the config correctly for some reason (will need to fix this)
-    # if this already exists for a run, then just read it in
-    # if exists(join(run_output_dir, "config.yaml")):
-    #     with open(join(run_output_dir, "config.yaml"), "r") as f:
-    #         cfg_yaml = f.read()
-    #     cfg = OmegaConf.load(cfg_yaml)
-    #     logger.info(f"Config loaded from file.")
-    # else:
     with open(join(run_output_dir, "config.yaml"), "w") as f:
         f.write(cfg_yaml)
 
@@ -414,20 +406,15 @@ def train(cfg: DictConfig) -> None:
     # Special handling for multi-dataset case - TODO-now: revisit this.
     if cfg["data"]["name"] == "MultiDatasetPerturbationDataModule":
         # if the data module already exists, just read it in
-        if exists(join(run_output_dir, "data_module.pkl")):
-            with open(join(run_output_dir, "data_module.pkl"), "rb") as f:
-                data_module = pickle.load(f)
-            logger.info(f"Data module loaded from file.")
-        else:
-            data_module.setup(stage="fit")
-            data_module.setup(stage="test")
+        data_module.setup(stage="fit")
+        data_module.setup(stage="test")
 
-            # Save data module for reproducibility
-            logger.info("Saving data module...")
-            with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
-                # TODO-Abhi: only save necessary data
-                pickle.dump(data_module, f)
-            logger.info(f"Data module saved.")
+        # Save data module for reproducibility
+        logger.info("Saving data module...")
+        with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
+            # TODO-Abhi: only save necessary data
+            pickle.dump(data_module, f)
+        logger.info(f"Data module saved.")
 
     if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
         cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)
