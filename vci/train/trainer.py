@@ -61,7 +61,7 @@ def main(cfg):
     train_dataloader = DataLoader(train_dataset,
                                 #   batch_sampler=train_batch_sampler,
                                   batch_size=cfg.model.batch_size,
-                                  shuffle=False,
+                                  shuffle=True,
                                   collate_fn=train_dataset_sentence_collator,
                                   num_workers=cfg.dataset.num_train_workers,
                                   persistent_workers=True,
@@ -72,7 +72,7 @@ def main(cfg):
     val_dataset = DatasetClass(cfg, test=True)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=cfg.model.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 collate_fn=val_dataset_sentence_collator,
                                 num_workers=cfg.dataset.num_val_workers,
                                 persistent_workers=True,
@@ -89,7 +89,7 @@ def main(cfg):
                         compiled=False,
                         max_lr=cfg.optimizer.max_lr,
                         emb_size=get_embedding_cfg(cfg).size,
-                        collater=dataset_sentence_collator,
+                        collater=val_dataset_sentence_collator,
                         cfg=cfg)
     model = model.cuda()
     all_pe = get_embeddings(cfg)

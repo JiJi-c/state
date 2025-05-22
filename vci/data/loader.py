@@ -1,4 +1,3 @@
-import os
 import h5py
 import logging
 import torch
@@ -13,12 +12,54 @@ from torch.utils.data import DataLoader
 import vci.utils as utils
 import pandas as pd
 
+import fcntl
+import tempfile
+import os
+
 log = logging.getLogger(__file__)
 
 # Threshold for flagging implausibly high UMIs when we undo a log1p
 EXPONENTIATED_UMIS_LIMIT = 5_000_000  
 # If any count exceeds this, we confidently treat the tensor as raw integers
 RAW_COUNT_HEURISTIC_THRESHOLD = 35
+
+def safe_update_ds_emb_map(emb_cfg, adata_name, new_mapping):
+    """Safely update the dataset embedding mapping file with file locking."""
+    mapping_file = emb_cfg.ds_emb_mapping
+    
+    # Create the file if it doesn't exist
+    if not os.path.exists(mapping_file):
+        torch.save({}, mapping_file)
+    
+    # Use a lock file to synchronize access
+    lock_file = mapping_file + '.lock'
+    
+    with open(lock_file, 'w') as lock:
+        try:
+            # Acquire exclusive lock
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            
+            # Read current state
+            try:
+                ds_emb_map = torch.load(mapping_file)
+            except (FileNotFoundError, EOFError):
+                ds_emb_map = {}
+            
+            # Update if needed
+            if adata_name not in ds_emb_map:
+                ds_emb_map[adata_name] = new_mapping
+                
+                # Write to temporary file first, then atomic rename
+                with tempfile.NamedTemporaryFile(delete=False, dir=os.path.dirname(mapping_file)) as tmp:
+                    torch.save(ds_emb_map, tmp.name)
+                    os.rename(tmp.name, mapping_file)
+                    
+                return True  # Updated
+            return False  # Already exists
+            
+        finally:
+            # Lock is automatically released when file is closed
+            pass
 
 # THIS SHOULD ONLY BE USED FOR INFERENCE
 def create_dataloader(cfg,
@@ -53,6 +94,8 @@ def create_dataloader(cfg,
                                       adata_name=adata_name)
         if sentence_collator is None:
             sentence_collator = VCIDatasetSentenceCollator(cfg, valid_gene_mask=dataset.valid_gene_index, is_train=False)
+        # validation should not use cell augmentations
+        sentence_collator.training = False
         dataloader = DataLoader(dataset,
                                 batch_size=cfg.model.batch_size,
                                 shuffle=shuffle,
@@ -260,10 +303,19 @@ class FilteredGenesCounts(H5adSentenceDataset):
             # for each gene in this dataset, find its global idx or -1 if missing
             new_mapping = [ global_pos.get(g, -1) for g in gene_names ]
 
-            # inject & re‐save so the collator sees it
-            if adata_name not in ds_emb_map:
-                ds_emb_map[adata_name] = new_mapping
-                torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
+            try:
+                updated = safe_update_ds_emb_map(emb_cfg, adata_name, new_mapping)
+                if updated:
+                    print(f"Added mapping for {adata_name}")
+                else:
+                    print(f"Mapping for {adata_name} already exists")
+            except Exception as e:
+                log.error(f"Failed to update embedding mapping for {adata_name}: {e}")
+
+            # # inject & re‐save so the collator sees it
+            # if adata_name not in ds_emb_map:
+            #     ds_emb_map[adata_name] = new_mapping
+            #     torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
 
         if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
             esm_data = torch.load(utils.get_embedding_cfg(self.cfg)['all_embeddings'])
