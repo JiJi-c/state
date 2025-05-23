@@ -145,7 +145,7 @@ def merge_adata(adata_list):
         adata.var.index = adata.var.index.astype(str)
         adata.var_names_make_unique()
         # Make obs index unique such that scanpy concat works correctly
-        adata.obs.index = f"dataset{i}_" + adata.obs.index.astype(str)
+        adata.obs.index = f"adata{i}_" + adata.obs.index.astype(str)
         
     # Find shared genes across all datasets
     shared_genes = get_shared_genes(adata_list)
