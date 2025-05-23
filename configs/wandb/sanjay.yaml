@@ -1,0 +1,4 @@
+entity: arcinstitute
+project: vci1
+local_wandb_dir:  /large_storage/ctc/userspace/sanjay/wandb_dir/pert-sets
+tags: []

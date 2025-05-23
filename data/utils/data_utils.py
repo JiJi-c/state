@@ -141,22 +141,28 @@ def merge_adata(adata_list):
     Merge a list of AnnData objects.
     """
     # Ensure variable names are strings and unique for each dataset
-    for adata in adata_list:
+    for i, adata in enumerate(adata_list):
         adata.var.index = adata.var.index.astype(str)
         adata.var_names_make_unique()
-
+        # Make obs index unique such that scanpy concat works correctly
+        adata.obs.index = f"dataset{i}_" + adata.obs.index.astype(str)
+        
     # Find shared genes across all datasets
     shared_genes = get_shared_genes(adata_list)
-
+    
     # Filter datasets to keep only shared genes and drop duplicate columns
     filtered_adata_list = []
     for adata in adata_list:
         adata = adata[:, shared_genes]
         adata.obs = adata.obs.loc[:, ~adata.obs.columns.duplicated()]
         filtered_adata_list.append(adata)
-
+    
     # Concatenate all datasets
     merged_adata = sc.concat(filtered_adata_list, join="inner")
+
+    # Reset obs indices to be indexed normally
+    merged_adata.obs.index = range(len(merged_adata.obs))
+    merged_adata.obs.index = merged_adata.obs.index.astype(str) 
 
     return merged_adata
 
