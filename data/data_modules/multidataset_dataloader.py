@@ -731,6 +731,8 @@ class MultiDatasetPerturbationDataModule(LightningDataModule):
         if len(self.test_datasets) == 0:
             return None
         use_int_counts = "int_counts" in self.__dict__ and self.int_counts
+        if 'dataset_cls' not in self.__dict__:
+            self.dataset_cls = PerturbationDataset
         collate_fn = lambda batch: self.dataset_cls.collate_fn(
             batch, transform=self.transform, pert_col=self.pert_col, int_counts=use_int_counts
         )

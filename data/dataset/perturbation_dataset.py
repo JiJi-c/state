@@ -200,12 +200,12 @@ class PerturbationDataset(Dataset):
         pert_code = self.metadata_cache.pert_codes[underlying_idx]
         pert_name = self.metadata_cache.pert_categories[pert_code]
 
-        if self.pert_dosage_col is not None:
+        if 'pert_dosage_col' in self.__dict__ and self.pert_dosage_col is not None:
             pert_dosage = self.metadata_cache.pert_dosages[underlying_idx]
         else:
             pert_dosage = None
 
-        if self.need_to_process_pert:
+        if 'need_to_process_pert' in self.__dict__ and self.need_to_process_pert:
             if self.process_pert_col == "tahoe_style":
                 processed_pert_name, processed_pert_dosage = parse_tahoe_style_pert_col(pert_name)
             else:
@@ -225,7 +225,7 @@ class PerturbationDataset(Dataset):
         cell_type_code = self.metadata_cache.cell_type_codes[underlying_idx]
         cell_type = self.metadata_cache.cell_type_categories[cell_type_code]
 
-        if self.cell_type_onehot_map is not None:
+        if 'cell_type_onehot_map' in self.__dict__ and self.cell_type_onehot_map is not None:
             cell_type_onehot = self.cell_type_onehot_map[cell_type]
         else:
             cell_type_onehot = None

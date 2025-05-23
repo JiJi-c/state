@@ -24,7 +24,6 @@ from tqdm import tqdm
 
 # Import the relevant modules from your repository
 from models.decoders import UCELogProbDecoder
-
 try:
     from models.decoders import VCICountsDecoder
 except ImportError:
@@ -38,8 +37,7 @@ from data.mapping_strategies import (
 from data.data_modules import MultiDatasetPerturbationDataModule
 from validation.metrics import compute_metrics
 
-torch.multiprocessing.set_sharing_strategy("file_system")
-
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 def parse_args():
     """
@@ -91,26 +89,13 @@ def parse_args():
         help="If >0, run test-time fine-tuning for the specified number of epochs on only control cells.",
     )
 
-    parser.add_argument(
-        "--save_preds",
-        action="store_true",
-        help="If set, save the predictions anndata to the output directory.",
-    )
-
-    parser.add_argument(
-        "--load_preds",
-        action="store_true",
-        help="If set, load the predictions anndata from the output directory.",
-    )
-
     return parser.parse_args()
-
 
 def run_test_time_finetune(model, dataloader, ft_epochs, control_pert, device):
     """
     Perform test-time fine-tuning on only control cells.
 
-    For each batch, we check the first sample's perturbation label (since all
+    For each batch, we check the first sample’s perturbation label (since all
     samples in the batch share the same group). If it equals the control perturbation,
     we process the batch; otherwise, we skip it.
 
@@ -128,15 +113,22 @@ def run_test_time_finetune(model, dataloader, ft_epochs, control_pert, device):
     logger.info(f"Starting test-time fine-tuning for {ft_epochs} epoch(s) on control cells only.")
     for epoch in range(ft_epochs):
         epoch_losses = []
-        pbar = tqdm(dataloader, desc=f"Finetune epoch {epoch + 1}/{ft_epochs}", leave=True)
+        pbar = tqdm(dataloader, desc=f"Finetune epoch {epoch+1}/{ft_epochs}", leave=True)
         for batch in pbar:
             # Peek at the first perturbation name in this batch.
-            first_pert = batch["pert_name"][0] if isinstance(batch["pert_name"], list) else batch["pert_name"][0].item()
+            first_pert = (
+                batch["pert_name"][0]
+                if isinstance(batch["pert_name"], list)
+                else batch["pert_name"][0].item()
+            )
             if first_pert != control_pert:
                 continue
 
             # Move batch data to the model's device.
-            batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
+            batch = {
+                k: (v.to(device) if torch.is_tensor(v) else v)
+                for k, v in batch.items()
+            }
 
             optimizer.zero_grad()
             loss = model.training_step(batch, batch_idx=0, padded=False)
@@ -147,9 +139,8 @@ def run_test_time_finetune(model, dataloader, ft_epochs, control_pert, device):
             epoch_losses.append(loss.item())
             pbar.set_postfix(loss=f"{loss.item():.4f}")
         mean_loss = np.mean(epoch_losses) if epoch_losses else float("nan")
-        logger.info(f"Finetune epoch {epoch + 1}/{ft_epochs}, mean loss: {mean_loss}")
+        logger.info(f"Finetune epoch {epoch+1}/{ft_epochs}, mean loss: {mean_loss}")
     model.eval()
-
 
 def load_config(cfg_path: str) -> dict:
     """
@@ -161,31 +152,29 @@ def load_config(cfg_path: str) -> dict:
         cfg = yaml.safe_load(f)
     return cfg
 
-
 def get_latest_step_checkpoint(directory):
     # Get all checkpoint files
     files = os.listdir(directory)
-
+    
     # Extract step numbers using regex, excluding files with 'val_loss'
     step_numbers = []
     for f in files:
-        if f.startswith("step=") and "val_loss" not in f:
+        if f.startswith('step=') and 'val_loss' not in f:
             # Extract the number between 'step=' and '.ckpt'
-            match = re.search(r"step=(\d+)(?:-v\d+)?\.ckpt", f)
+            match = re.search(r'step=(\d+)(?:-v\d+)?\.ckpt', f)
             if match:
                 step_numbers.append(int(match.group(1)))
-
+    
     if not step_numbers:
         raise ValueError("No checkpoint files found")
-
+        
     # Get the maximum step number
     max_step = max(step_numbers)
-
+    
     # Construct the checkpoint path
     checkpoint_path = os.path.join(directory, f"step={max_step}.ckpt")
-
+    
     return checkpoint_path
-
 
 def main():
     args = parse_args()
@@ -207,10 +196,6 @@ def main():
     # 3. Load the data module
     with open(data_module_path, "rb") as f:
         data_module: MultiDatasetPerturbationDataModule = pickle.load(f)
-
-        data_module.process_pert_col = "tahoe_style"
-        for dataset in data_module.test_datasets:
-            dataset.process_pert_col = "tahoe_style"
     logger.info("Loaded data module from %s", data_module_path)
 
     # seed everything
@@ -253,44 +238,25 @@ def main():
     # Build the correct class
     if model_class_name.lower() == "embedsum":
         from models.embed_sum import EmbedSumPerturbationModel
-
         ModelClass = EmbedSumPerturbationModel
     elif model_class_name.lower() == "old_neuralot":
         from models.old_neural_ot import OldNeuralOTPerturbationModel
-
         ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() == "neuralot" or model_class_name.lower() == "pertsets":
         from models.pert_sets import PertSetsPerturbationModel
-
         ModelClass = PertSetsPerturbationModel
     elif model_class_name.lower() == "simplesum":
         from models.simple_sum import SimpleSumPerturbationModel
-
         ModelClass = SimpleSumPerturbationModel  # it would be great if this was automatically kept in sync with the model.__init__
     elif model_class_name.lower() == "globalsimplesum":
         from models.global_simple_sum import GlobalSimpleSumPerturbationModel
-
         ModelClass = GlobalSimpleSumPerturbationModel
     elif model_class_name.lower() == "celltypemean":
         from models.cell_type_mean import CellTypeMeanModel
-
         ModelClass = CellTypeMeanModel
     elif model_class_name.lower() == "decoder_only":
         from models.decoder_only import DecoderOnlyPerturbationModel
-
         ModelClass = DecoderOnlyPerturbationModel
-    elif model_class_name.lower() == "cpa":
-        from models.cpa import CPAPerturbationModel
-
-        ModelClass = CPAPerturbationModel
-    elif model_class_name.lower() in ["scgpt-genetic", "scgpt-chemical", "scgpt"]:
-        from models.scgpt import scGPTForPerturbation
-
-        ModelClass = scGPTForPerturbation
-    elif model_class_name.lower() == "scvi":
-        from models.scvi import SCVIPerturbationModel
-
-        ModelClass = SCVIPerturbationModel
     else:
         raise ValueError(f"Unknown model class: {model_class_name}")
 
@@ -309,10 +275,6 @@ def main():
     # load checkpoint
     model = ModelClass.load_from_checkpoint(checkpoint_path, **model_init_kwargs)
     model.eval()
-
-    if model_class_name.lower() in ["scgpt-genetic", "scgpt-chemical"]:
-        model.to(torch.bfloat16)
-
     logger.info("Model loaded successfully.")
 
     data_module.batch_size = 1
@@ -321,23 +283,13 @@ def main():
         control_pert = data_module.get_control_pert()
         # Run finetuning – use the test dataloader so that you only get cells from the test split.
         test_loader = data_module.test_dataloader()
-        run_test_time_finetune(
-            model, test_loader, args.test_time_finetune, control_pert, device=next(model.parameters()).device
-        )
+        run_test_time_finetune(model, test_loader, args.test_time_finetune, control_pert, device=next(model.parameters()).device)
         logger.info("Test-time fine-tuning complete.")
 
     # 5. Run inference on test set
     data_module.setup(stage="test")
-    if model_class_name.lower() in ["scvi", "cpa"] or model_class_name.lower().startswith("scgpt"):
-        if "cell_sentence_len" in cfg["model"]["kwargs"] and cfg["model"]["kwargs"]["cell_sentence_len"] > 1:
-            data_module.cell_sentence_len = cfg["model"]["kwargs"]["cell_sentence_len"]
-        else:
-            data_module.cell_sentence_len = 1
-    else:
-        data_module.cell_sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
-
     test_loader = data_module.test_dataloader()
-
+    
     if test_loader is None:
         logger.warning("No test dataloader found. Exiting.")
         sys.exit(0)
@@ -354,10 +306,13 @@ def main():
     final_reals = np.empty((num_cells, output_dim), dtype=np.float16)
 
     store_raw_expression = (
-        data_module.embed_key is not None
-        and data_module.embed_key != "X_hvg"
-        and cfg["data"]["kwargs"]["output_space"] == "gene"
-    ) or (data_module.embed_key is not None and cfg["data"]["kwargs"]["output_space"] == "all")
+        data_module.embed_key is not None and 
+        data_module.embed_key != "X_hvg" and 
+        cfg["data"]["kwargs"]["output_space"] == "gene"
+    ) or (
+        data_module.embed_key is not None and 
+        cfg["data"]["kwargs"]["output_space"] == "all"
+    )
 
     if store_raw_expression:
         # Preallocate matrices of shape (num_cells, gene_dim) for decoded predictions.
@@ -374,161 +329,33 @@ def main():
 
     current_idx = 0
 
-    load_preds_success = False
-    if args.load_preds:
-        # check if the preds file exists
-        preds_file_exists = os.path.exists(os.path.join(args.output_dir, "adata_pred.h5ad"))
-        real_file_exists = os.path.exists(os.path.join(args.output_dir, "adata_real.h5ad"))
-        real_gene_file_exists = os.path.exists(os.path.join(args.output_dir, "adata_real_gene.h5ad"))
-        pred_gene_file_exists = os.path.exists(os.path.join(args.output_dir, "adata_pred_gene.h5ad"))
-        if not preds_file_exists or not real_file_exists:
-            raise FileNotFoundError(f"Could not find adata_pred.h5ad or adata_real.h5ad at {args.output_dir}")
+    # Initialize aggregation variables directly
+    all_pert_names = []
+    all_celltypes = []
+    all_gem_groups = []
 
-        if preds_file_exists:
-            adata_pred = anndata.read_h5ad(os.path.join(args.output_dir, "adata_pred.h5ad"))
-        else:
-            adata_pred = None
-        if real_file_exists:
-            adata_real = anndata.read_h5ad(os.path.join(args.output_dir, "adata_real.h5ad"))
-        else:
-            adata_real = None
-        if real_gene_file_exists:
-            adata_real_gene = anndata.read_h5ad(os.path.join(args.output_dir, "adata_real_gene.h5ad"))
-        else:
-            adata_real_gene = None
-        if pred_gene_file_exists:
-            adata_pred_gene = anndata.read_h5ad(os.path.join(args.output_dir, "adata_pred_gene.h5ad"))
-        else:
-            adata_pred_gene = None
-
-        load_preds_success = True
-        logger.info("Predictions loaded successfully.")
-        decoder = None  # TODO: need to fix this
-
-    if not load_preds_success:
-        logger.info("Generating predictions on test set ...")
-
-        # Initialize aggregation variables directly
-        all_pert_names = []
-        all_celltypes = []
-        all_gem_groups = []
-
-        with torch.no_grad():
-            for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
-                # Move each tensor in the batch to the model's device
-                batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
-
-                # Get predictions
-                with torch.autocast(device_type="cuda", enabled=True):
-                    batch_preds = model.predict_step(batch, batch_idx, padded=False)
-
-                # Extract metadata and data directly from batch_preds
-                # Handle pert_name
-                if isinstance(batch_preds["pert_name"], list):
-                    all_pert_names.extend(batch_preds["pert_name"])
-                else:
-                    all_pert_names.append(batch_preds["pert_name"])
-
-                # Handle celltype_name
-                if isinstance(batch_preds["cell_type"], list):
-                    all_celltypes.extend(batch_preds["cell_type"])
-                elif isinstance(batch_preds["cell_type"], torch.Tensor):
-                    if batch_preds["cell_type"].ndim == 2:
-                        all_celltypes.extend(
-                            batch_preds["cell_type"].argmax(dim=1).cpu().numpy().tolist()
-                        )  # backward compatibility
-                    else:
-                        all_celltypes.extend(batch_preds["cell_type"].cpu().numpy())
-                else:
-                    all_celltypes.append(batch_preds["cell_type"])
-
-                # Handle gem_group
-                if isinstance(batch_preds["gem_group"], list):
-                    all_gem_groups.extend(batch_preds["gem_group"])
-                elif isinstance(batch_preds["gem_group"], torch.Tensor):
-                    if batch_preds["gem_group"].ndim == 2:
-                        all_gem_groups.extend(
-                            batch_preds["gem_group"].argmax(dim=1).cpu().numpy().tolist()
-                        )  # backward compatibility
-                    else:
-                        all_gem_groups.extend(batch_preds["gem_group"].cpu().numpy())
-                else:
-                    all_gem_groups.append(batch_preds["gem_group"])
-
-                batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
-                batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
-                batch_size = batch_pred_np.shape[0]
-                batch_hvg_dim = batch_preds["X"].shape[1]
-                final_preds[current_idx : current_idx + batch_size, :batch_hvg_dim] = batch_pred_np
-                final_reals[current_idx : current_idx + batch_size, :batch_hvg_dim] = batch_real_np
-                current_idx += batch_size
-
-                # Handle X_hvg for HVG space ground truth
-                if final_X_hvg is not None:
-                    batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
-                    final_X_hvg[current_idx - batch_size : current_idx, :] = batch_real_gene_np
-
-                # Handle decoded gene predictions if available
-                if final_gene_preds is not None:
-                    batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
-                    final_gene_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
-
-        logger.info("Creating anndatas from predictions from manual loop...")
-
-        # Build pandas DataFrame for obs
-        obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
-
-        # Create adata for predictions
-        adata_pred = anndata.AnnData(X=final_preds, obs=obs)
-        # Create adata for real
-        adata_real = anndata.AnnData(X=final_reals, obs=obs)
-
-        if args.use_uce_decoder:
-            assert data_module.embed_key == "X_uce", "UCELogProbDecoder can only be used with UCE embeddings."
-            logger.info("Using UCELogProbDecoder for decoding.")
-            decoder = UCELogProbDecoder()
-        elif args.use_vci_decoder:
-            assert data_module.embed_key == "X_vci", "VCICountsDecoder can only be used with VCI embeddings."
-            logger.info("Using VCICountsDecoder for decoding.")
-            decoder = VCICountsDecoder(read_depth=args.read_depth)
-        else:
-            decoder = None
-
-        # Create adata for real data in gene space (if available)
-        adata_real_gene = None
-        if final_X_hvg is not None:  # either this is available, or we are already working in gene space
-            if "int_counts" in data_module.__dict__ and data_module.int_counts:
-                final_X_hvg = np.log1p(final_X_hvg)
-            adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs)
-
-        # Create adata for gene predictions (if available)
-        adata_pred_gene = None
-        if final_gene_preds is not None and decoder is None:  # otherwise we use UCE log prob decoder
-            if "int_counts" in data_module.__dict__ and data_module.int_counts:
-                final_gene_preds = np.log1p(final_gene_preds)
-            adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
-
-        if args.save_preds:
-            # save out adata_real to the output directory
-            adata_real_out = os.path.join(args.output_dir, "adata_real.h5ad")
-            adata_real.write_h5ad(adata_real_out)
-            logger.info(f"Saved adata_real to {adata_real_out}")
-
-            adata_pred_out = os.path.join(args.output_dir, "adata_pred.h5ad")
-            adata_pred.write_h5ad(adata_pred_out)
-            logger.info(f"Saved adata_pred to {adata_pred_out}")
-
-            if adata_real_gene is not None:
-                adata_real_gene_out = os.path.join(args.output_dir, "adata_real_gene.h5ad")
-                adata_real_gene.write_h5ad(adata_real_gene_out)
-                logger.info(f"Saved adata_real_gene to {adata_real_gene_out}")
-
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
+            # Move each tensor in the batch to the model's device
+            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+                    for k, v in batch.items()}
+            
+            # Get predictions
+            batch_preds = model.predict_step(batch, batch_idx, padded=False)
+            
+            # Extract metadata and data directly from batch_preds
+            # Handle pert_name
+            if isinstance(batch_preds["pert_name"], list):
+                all_pert_names.extend(batch_preds["pert_name"])
+            else:
+                all_pert_names.append(batch_preds["pert_name"])
+            
             # Handle celltype_name
             if isinstance(batch_preds["celltype_name"], list):
                 all_celltypes.extend(batch_preds["celltype_name"])
             else:
                 all_celltypes.append(batch_preds["celltype_name"])
-
+            
             # Handle gem_group
             if isinstance(batch_preds["gem_group"], list):
                 all_gem_groups.extend(batch_preds["gem_group"])
@@ -536,25 +363,27 @@ def main():
                 all_gem_groups.extend(batch_preds["gem_group"].cpu().numpy())
             else:
                 all_gem_groups.append(batch_preds["gem_group"])
-
+            
             batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
             batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
             batch_size = batch_pred_np.shape[0]
-            final_preds[current_idx : current_idx + batch_size, :] = batch_pred_np
-            final_reals[current_idx : current_idx + batch_size, :] = batch_real_np
+            final_preds[current_idx:current_idx+batch_size, :] = batch_pred_np
+            final_reals[current_idx:current_idx+batch_size, :] = batch_real_np
             current_idx += batch_size
-
+            
             # Handle X_hvg for HVG space ground truth
             if final_X_hvg is not None:
                 batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
-                final_X_hvg[current_idx - batch_size : current_idx, :] = batch_real_gene_np
-
+                final_X_hvg[current_idx-batch_size:current_idx, :] = batch_real_gene_np
+            
             # Handle decoded gene predictions if available
             if final_gene_preds is not None:
                 batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
-                final_gene_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
+                final_gene_preds[current_idx-batch_size:current_idx, :] = batch_gene_pred_np
+
 
     logger.info("Creating anndatas from predictions from manual loop...")
+
 
     # Build pandas DataFrame for obs
     obs = pd.DataFrame({"pert_name": all_pert_names, "celltype_name": all_celltypes, "gem_group": all_gem_groups})
@@ -577,26 +406,26 @@ def main():
 
     # Create adata for real data in gene space (if available)
     adata_real_gene = None
-    if final_X_hvg is not None:  # either this is available, or we are already working in gene space
-        if "int_counts" in data_module.__dict__ and data_module.int_counts:
+    if final_X_hvg is not None: # either this is available, or we are already working in gene space
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
             final_X_hvg = np.log1p(final_X_hvg)
         adata_real_gene = anndata.AnnData(X=final_X_hvg, obs=obs)
 
     # Create adata for gene predictions (if available)
     adata_pred_gene = None
-    if final_gene_preds is not None and decoder is None:  # otherwise we use UCE log prob decoder
-        if "int_counts" in data_module.__dict__ and data_module.int_counts:
+    if final_gene_preds is not None and decoder is None: # otherwise we use UCE log prob decoder
+        if 'int_counts' in data_module.__dict__ and data_module.int_counts:
             final_gene_preds = np.log1p(final_gene_preds)
         adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
 
-    # save out adata_real to the output directory
-    adata_real_out = os.path.join(args.output_dir, "adata_real.h5ad")
-    adata_real.write_h5ad(adata_real_out)
-    logger.info(f"Saved adata_real to {adata_real_out}")
-
-    adata_pred_out = os.path.join(args.output_dir, "adata_pred.h5ad")
-    adata_pred.write_h5ad(adata_pred_out)
-    logger.info(f"Saved adata_pred to {adata_pred_out}")
+    # # save out adata_real to the output directory
+    # adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
+    # adata_real.write_h5ad(adata_real_out)
+    # logger.info(f"Saved adata_real to {adata_real_out}")
+    #
+    # adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
+    # adata_pred.write_h5ad(adata_pred_out)
+    # logger.info(f"Saved adata_pred to {adata_pred_out}")
 
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")
