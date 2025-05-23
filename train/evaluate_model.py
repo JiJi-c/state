@@ -358,11 +358,11 @@ def main():
             
             # Handle gem_group
             if isinstance(batch_preds["gem_group"], list):
-                all_gem_groups.extend(batch_preds["gem_group"])
+                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"]])
             elif isinstance(batch_preds["gem_group"], torch.Tensor):
-                all_gem_groups.extend(batch_preds["gem_group"].cpu().numpy())
+                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"].cpu().numpy()])
             else:
-                all_gem_groups.append(batch_preds["gem_group"])
+                all_gem_groups.append(str(batch_preds["gem_group"]))
             
             batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
             batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
@@ -418,14 +418,14 @@ def main():
             final_gene_preds = np.log1p(final_gene_preds)
         adata_pred_gene = anndata.AnnData(X=final_gene_preds, obs=obs)
 
-    # # save out adata_real to the output directory
-    # adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
-    # adata_real.write_h5ad(adata_real_out)
-    # logger.info(f"Saved adata_real to {adata_real_out}")
-    #
-    # adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
-    # adata_pred.write_h5ad(adata_pred_out)
-    # logger.info(f"Saved adata_pred to {adata_pred_out}")
+    # save out adata_real to the output directory
+    adata_real_out = os.path.join(args.output_dir, 'adata_real.h5ad')
+    adata_real.write_h5ad(adata_real_out)
+    logger.info(f"Saved adata_real to {adata_real_out}")
+
+    adata_pred_out = os.path.join(args.output_dir, 'adata_pred.h5ad')
+    adata_pred.write_h5ad(adata_pred_out)
+    logger.info(f"Saved adata_pred to {adata_pred_out}")
 
     # 6. Compute metrics
     logger.info("Computing metrics for test set...")

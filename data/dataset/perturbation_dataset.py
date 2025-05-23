@@ -467,7 +467,7 @@ class PerturbationDataset(Dataset):
                     safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
                     X_hvg_norm = X_hvg * 10000 / safe_sizes
                     batch_dict["X_hvg"] = torch.log1p(X_hvg_norm)
-                elif transform == "log1p" or transform is True:
+                else:
                     batch_dict["X_hvg"] = torch.log1p(X_hvg)
             elif int_counts:
                 # this is for log transformed data. let's make it count data
