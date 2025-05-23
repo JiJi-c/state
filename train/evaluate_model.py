@@ -34,7 +34,7 @@ from data.mapping_strategies import (
     RandomMappingStrategy,
     PseudoBulkMappingStrategy,
 )
-from data.data_modules import MultiDatasetPerturbationDataModule
+from state_load.data_modules import PerturbationDataModule
 from validation.metrics import compute_metrics
 
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -195,7 +195,7 @@ def main():
 
     # 3. Load the data module
     with open(data_module_path, "rb") as f:
-        data_module: MultiDatasetPerturbationDataModule = pickle.load(f)
+        data_module: PerturbationDataModule = pickle.load(f)
     logger.info("Loaded data module from %s", data_module_path)
 
     # seed everything
