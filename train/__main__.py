@@ -19,8 +19,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 from lightning.pytorch.plugins.precision import MixedPrecision
 
-from data.utils.modules import get_datamodule
-from data.data_modules.tasks import parse_dataset_specs  # TODO-Abhi: Should this move?
+from state_load.utils.modules import get_datamodule
+from state_load.data_modules.tasks import parse_dataset_specs
 
 # from models.decoders import UCELogProbDecoder # commented out since it's not used yet
 from models import (
@@ -345,9 +345,9 @@ def train(cfg: DictConfig) -> None:
     if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
         cfg["data"]["kwargs"]["control_pert"] = "[('DMSO_TF', 0.0, 'uM')]"
 
-    # Use the multi dataset perturbation data module for training perturbation models
+    # Use the perturbation data module for training perturbation models
     # that involve mapping strageties (e.g., connecting perturbed cells to control cells.)
-    if cfg["data"]["name"] == "MultiDatasetPerturbationDataModule":
+    if cfg["data"]["name"] == "PerturbationDataModule":
         # Parse train specs
         if isinstance(cfg["data"]["kwargs"]["train_task"], list):
             cfg["data"]["kwargs"]["train_specs"] = parse_dataset_specs(cfg["data"]["kwargs"]["train_task"])
@@ -404,17 +404,16 @@ def train(cfg: DictConfig) -> None:
         cfg["data"]["kwargs"]["transform"] = None
 
     data_module = get_datamodule(
-        cfg["data"]["name"],
-        cfg["data"]["kwargs"],
+        name=cfg["data"]["name"],
+        kwargs=cfg["data"]["kwargs"],
         batch_size=cfg["training"]["batch_size"],
         cell_sentence_len=sentence_len,
     )
 
     # Special handling for multi-dataset case - TODO-now: revisit this.
-    if cfg["data"]["name"] == "MultiDatasetPerturbationDataModule":
+    if cfg["data"]["name"] == "PerturbationDataModule":
         # if the data module already exists, just read it in
-        data_module.setup(stage="fit")
-        data_module.setup(stage="test")
+        data_module.setup()
 
         # Save data module for reproducibility
         logger.info("Saving data module...")
