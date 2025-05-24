@@ -1,10 +1,11 @@
+import os
+import wandb
+
 import scanpy as sc
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 from sklearn.decomposition import PCA
-import wandb
-
 
 def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_name=''):
     embedding = PCA(n_components=2).fit_transform(adata.obsm[emb_key])
@@ -33,4 +34,14 @@ def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_na
     ]
     plt.legend(handles=handles, title="Cell Type", bbox_to_anchor=(1.05, 1), loc='upper left')
     fig = plt.gcf()
-    wandb.log({f"Clusters using embedding Iteration: {current_step}": fig})
+    if wandb.run is not None:
+        wandb.log({f"Clusters using embedding Iteration: {current_step}": fig})
+
+    # Also save the figure to a results directory instead of logging to wandb
+    results_dir = "results/cluster_embeddings"
+    os.makedirs(results_dir, exist_ok=True)
+    filename = f"{job_name}_iter{current_step}.png" if job_name else f"iter{current_step}.png"
+    fig_path = os.path.join(results_dir, filename)
+    fig.savefig(fig_path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Cluster embedding plot saved to {fig_path}")
