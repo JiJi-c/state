@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 from sklearn.decomposition import PCA
-
+import wandb
 
 def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_name=''):
     embedding = PCA(n_components=2).fit_transform(adata.obsm[emb_key])
@@ -32,7 +32,8 @@ def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_na
     ]
     plt.legend(handles=handles, title="Cell Type", bbox_to_anchor=(1.05, 1), loc='upper left')
     fig = plt.gcf()
-    # Save the figure to a results directory instead of logging to wandb
+
+    # Also save the figure to a results directory instead of logging to wandb
     import os
     results_dir = "results/cluster_embeddings"
     os.makedirs(results_dir, exist_ok=True)

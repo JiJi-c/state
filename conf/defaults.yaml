@@ -91,8 +91,8 @@ validations:
     eval_interval_multiple: 10
     pert_col: gene
     ctrl_label: non-targeting
-    dataset: /large_storage/ctc/datasets/vci/validation/replogle_perturbation.h5ad
-    dataset_name: replogle_perturbation
+    dataset: /large_storage/ctc/datasets/cellxgene/processed/rpe1_top5000_variable.h5ad
+    dataset_name: rpe1_top5000_variable
 
 dataset:
   name: "vci"

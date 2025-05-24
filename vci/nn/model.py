@@ -327,7 +327,9 @@ class LitUCEModel(L.LightningModule):
             gene_embeds = self.get_gene_embedding(adata.var.index)
         except:
             gene_embeds = self.get_gene_embedding(adata.var['gene_symbols'])
-        logprobs_batchs = []
+        emb_batches = []
+        ds_emb_batches = []
+        logprob_batches = []
         for batch in tqdm(dataloader,
                           position=0,
                           leave=True,
@@ -336,6 +338,8 @@ class LitUCEModel(L.LightningModule):
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             _, _, _, emb, ds_emb = self._compute_embedding_for_batch(batch)
+
+            # now decode from the embedding
             if self.z_dim_rd > 1:
                 Y = batch[2].to(self.device)
                 nan_y = Y.masked_fill(Y == 0, float('nan'))[:, :self.cfg.dataset.P + self.cfg.dataset.N]
@@ -357,16 +361,21 @@ class LitUCEModel(L.LightningModule):
             else:
                 ds_emb = None
 
+            emb_batches.append(emb.detach().cpu().numpy())
+            ds_emb_batches.append(ds_emb.detach().cpu().numpy())
 
             merged_embs = LitUCEModel.resize_batch(emb, gene_embeds, task_counts, sampled_rda, ds_emb)
             logprobs_batch = self.binary_decoder(merged_embs)
             logprobs_batch = logprobs_batch.detach().cpu().numpy()
-            
-        logprobs_batchs.append(logprobs_batch.squeeze())
-        logprobs_batchs = np.vstack(logprobs_batchs)
-        # Free up memory from logprobs_batchs if possible
-        probs_df = pd.DataFrame(logprobs_batchs)
-        del logprobs_batchs
+            logprob_batches.append(logprobs_batch.squeeze())
+
+        logprob_batches = np.vstack(logprob_batches)
+        adata.obsm['X_emb'] = np.vstack(emb_batches)
+        adata.obsm['X_ds_emb'] = np.vstack(ds_emb_batches)
+
+        # Free up memory from logprob_batches if possible
+        probs_df = pd.DataFrame(logprob_batches)
+        del logprob_batches
         torch.cuda.empty_cache()
         probs_df[pert_col] = adata.obs[pert_col].values
 
