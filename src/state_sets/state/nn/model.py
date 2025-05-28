@@ -1,19 +1,15 @@
 import logging
 import math
-import sys
 import warnings
 
+import lightning as L
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import BCEWithLogitsLoss, TransformerEncoder, TransformerEncoderLayer
-
-sys.path.append("../")
-
-import lightning as L
-import torch
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR, ReduceLROnPlateau
 from tqdm.auto import tqdm
 

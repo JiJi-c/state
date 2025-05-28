@@ -4,16 +4,12 @@ Model class
 """
 
 import math
-import sys
 import warnings
-
-from torch import Tensor, nn
-from torch.nn import BCEWithLogitsLoss, TransformerEncoder, TransformerEncoderLayer
-
-sys.path.append("../")
 
 import lightning as L
 import torch
+from torch import Tensor, nn
+from torch.nn import BCEWithLogitsLoss, TransformerEncoder, TransformerEncoderLayer
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR
 
 warnings.filterwarnings("ignore")
