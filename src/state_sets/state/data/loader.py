@@ -280,10 +280,12 @@ class FilteredGenesCounts(H5adSentenceDataset):
         )
 
         emb_cfg = get_embedding_cfg(self.cfg)
+
+        # TODO: determine why this is unused
         try:
-            ds_emb_map = torch.load(emb_cfg.ds_emb_mapping)
+            _ds_emb_map = torch.load(emb_cfg.ds_emb_mapping)
         except (FileNotFoundError, IOError):
-            ds_emb_map = {}
+            _ds_emb_map = {}
 
         # for inference, let's make sure this dataset's valid mask is available
         if adata_name is not None:
