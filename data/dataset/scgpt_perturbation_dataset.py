@@ -10,15 +10,15 @@ import functools
 from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Subset
-from data.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
+from vc_load.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
 import h5py
 import numpy as np
 from pathlib import Path
 import logging
 
 # We import our mapping strategy base class for type hints
-from data.mapping_strategies import BaseMappingStrategy
-from .perturbation_dataset import PerturbationDataset
+from vc_load.data.mapping_strategies import BaseMappingStrategy
+from vc_load.data.dataset.perturbation_dataset import PerturbationDataset
 
 logger = logging.getLogger(__name__)
 
