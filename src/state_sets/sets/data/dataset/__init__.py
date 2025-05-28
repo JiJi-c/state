@@ -1,2 +1,3 @@
-from data.dataset.perturbation_dataset import PerturbationDataset
-from data.dataset.scgpt_perturbation_dataset import scGPTPerturbationDataset
+from .scgpt_perturbation_dataset import scGPTPerturbationDataset
+
+__all__ = [scGPTPerturbationDataset]
