@@ -218,11 +218,15 @@ class scGPTPerturbationDataset(PerturbationDataset):
 
         try:
             genes = self.h5_file["var/gene_name"][:].astype(str).tolist()
+
+        # TODO: handle raw exception
         except:
             try:
                 categories = self.h5_file["var/gene_name/categories"][:].astype(str)
                 codes = self.h5_file["var/gene_name/codes"][:]
                 genes = categories[codes].tolist()
+
+            # TODO: handle raw exception
             except:
                 genes = self.h5_file["var/_index"][:].astype(str).tolist()
 
