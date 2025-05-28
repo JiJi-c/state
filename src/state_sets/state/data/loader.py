@@ -10,8 +10,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.data as data
-import vci.utils as utils
 from torch.utils.data import DataLoader
+
+from ..utils import get_dataset_cfg, get_embedding_cfg, get_shapes_dict, is_valid_uuid
 
 log = logging.getLogger(__file__)
 
@@ -83,7 +84,7 @@ def create_dataloader(
         shuffle = False
 
     if data_dir:
-        utils.get_dataset_cfg(cfg).data_dir = data_dir
+        get_dataset_cfg(cfg).data_dir = data_dir
 
     # THIS WAS PREVIOUSLY H5AD DATASET, but changed to
     # FilteredGenesCounts from previous commit to embed tahoe
@@ -111,13 +112,11 @@ class NpzMultiDataset(data.Dataset):
         super(NpzMultiDataset, self).__init__()
 
         self.cfg = cfg
-        ds_path = utils.get_dataset_cfg(cfg).train
+        ds_path = get_dataset_cfg(cfg).train
         if test:
-            ds_path = utils.get_dataset_cfg(cfg).val
+            ds_path = get_dataset_cfg(cfg).val
 
-        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(
-            ds_path
-        )
+        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = get_shapes_dict(ds_path)
 
         self.num_cells = {}
         self.num_genes = {}
@@ -177,11 +176,11 @@ class H5adSentenceDataset(data.Dataset):
             self.datasets = [adata_name]
             self.shapes_dict = {self.datasets[0]: adata.shape}
         elif datasets is None:
-            ds_path = utils.get_dataset_cfg(cfg).train
+            ds_path = get_dataset_cfg(cfg).train
             if test:
-                ds_path = utils.get_dataset_cfg(cfg).val
-            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(
-                ds_path, utils.get_dataset_cfg(cfg).get("filter_by_species")
+                ds_path = get_dataset_cfg(cfg).val
+            _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = get_shapes_dict(
+                ds_path, get_dataset_cfg(cfg).get("filter_by_species")
             )
         else:
             assert shape_dict is not None
@@ -276,11 +275,11 @@ class FilteredGenesCounts(H5adSentenceDataset):
         self.valid_gene_index = {}
 
         # make sure we get training datasets
-        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = utils.get_shapes_dict(
+        _, self.datasets, self.shapes_dict, self.dataset_path_map, self.dataset_group_map = get_shapes_dict(
             "/home/aadduri/state/h5ad_all.csv"
         )
 
-        emb_cfg = utils.get_embedding_cfg(self.cfg)
+        emb_cfg = get_embedding_cfg(self.cfg)
         try:
             ds_emb_map = torch.load(emb_cfg.ds_emb_mapping)
         except (FileNotFoundError, IOError):
@@ -317,11 +316,11 @@ class FilteredGenesCounts(H5adSentenceDataset):
             #     ds_emb_map[adata_name] = new_mapping
             #     torch.save(ds_emb_map, emb_cfg.ds_emb_mapping)
 
-        if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
-            esm_data = torch.load(utils.get_embedding_cfg(self.cfg)["all_embeddings"])
+        if get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
+            esm_data = torch.load(get_embedding_cfg(self.cfg)["all_embeddings"])
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
-                if not utils.is_valid_uuid(
+                if not is_valid_uuid(
                     name
                 ):  # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
                     if adata is None:
@@ -350,13 +349,13 @@ class GeneFilterDataset(H5adSentenceDataset):
     def __init__(self, cfg, test=False, datasets=None, shape_dict=None, adata=None, adata_name=None) -> None:
         super(GeneFilterDataset, self).__init__(cfg, test, datasets, shape_dict, adata, adata_name)
         self.valid_gene_index = {}
-        if utils.get_embedding_cfg(cfg).valid_genes_masks is not None:
-            self.valid_gene_index = torch.load(utils.get_embedding_cfg(cfg).valid_genes_masks)
-        elif utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
-            esm_data = torch.load(utils.get_embedding_cfg(self.cfg).all_embeddings)
+        if get_embedding_cfg(cfg).valid_genes_masks is not None:
+            self.valid_gene_index = torch.load(get_embedding_cfg(cfg).valid_genes_masks)
+        elif get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
+            esm_data = torch.load(get_embedding_cfg(self.cfg).all_embeddings)
             valid_genes_list = list(esm_data.keys())
             for name in self.datasets:
-                if not utils.is_valid_uuid(
+                if not is_valid_uuid(
                     name
                 ):  # had to add this in for now as cellxgene h5ad fles don't have gene_name object but tahoe does
                     a = self.dataset_file(name)
@@ -387,7 +386,7 @@ class VCIDatasetSentenceCollator(object):
             self.valid_gene_mask = valid_gene_mask
         else:
             # otherwise for training, load from config
-            gene_mask_file = utils.get_embedding_cfg(self.cfg).valid_genes_masks
+            gene_mask_file = get_embedding_cfg(self.cfg).valid_genes_masks
             if gene_mask_file is not None:
                 # we have a config for training
                 self.valid_gene_mask = torch.load(gene_mask_file)
@@ -396,10 +395,10 @@ class VCIDatasetSentenceCollator(object):
                 self.valid_gene_mask = None
 
         self.dataset_to_protein_embeddings = torch.load(
-            utils.get_embedding_cfg(self.cfg).ds_emb_mapping.format(utils.get_embedding_cfg(self.cfg).size)
+            get_embedding_cfg(self.cfg).ds_emb_mapping.format(get_embedding_cfg(self.cfg).size)
         )
 
-        self.global_size = utils.get_embedding_cfg(self.cfg).num
+        self.global_size = get_embedding_cfg(self.cfg).num
         self.global_to_local = {}
         for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
             # make sure tensor with long data type
