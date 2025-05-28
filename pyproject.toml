@@ -1,9 +1,22 @@
+[project]
+name = "state-sets"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = []
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.ruff]
 # Enable rules
 select = [
-    "E",  # pycodestyle
-    "F",  # pyflakes
-    "I",  # isort
+    "E", # pycodestyle
+    "F", # pyflakes
+    "I", # isort
 ]
 
 # Ignore specific rules
@@ -13,16 +26,17 @@ ignore = []
 fix = true
 
 # Exclude files
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "build",
-    "dist",
-]
+exclude = [".git", "__pycache__", ".venv", "build", "dist"]
 
 # Line length
 line-length = 120
 
 [tool.ruff.lint.isort]
-known-first-party = ["callbacks", "models", "data", "validation", "train", "utils"]
+known-first-party = [
+    "callbacks",
+    "models",
+    "data",
+    "validation",
+    "train",
+    "utils",
+]
