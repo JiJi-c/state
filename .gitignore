@@ -6,3 +6,4 @@ wandb
 lightning_logs/
 outputs/
 log/
+uv.lock
