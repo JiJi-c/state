@@ -8,7 +8,7 @@ from torch import nn
 from torch.optim.lr_scheduler import StepLR
 from torchmetrics.functional import accuracy
 
-from .._base_modules import FocalLoss
+from ._base_modules import FocalLoss
 from ._module import CPAModule
 
 
