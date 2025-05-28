@@ -1,10 +1,7 @@
-# File: models/neural_ot.py
-import torch
-import numpy as np
+from typing import Dict, Optional
 
-from collections import defaultdict
+import torch
 from geomloss import SamplesLoss
-from typing import Optional, Dict, List
 
 from models.base import PerturbationModel
 from models.decoders import DecoderInterface

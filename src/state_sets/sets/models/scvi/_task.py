@@ -1,18 +1,15 @@
 import math
 from collections import defaultdict
-from typing import Optional, Dict
 
+import lightning as L
+import numpy as np
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import StepLR
-
-import numpy as np
 from torchmetrics.functional import accuracy
 
-from ._module import CPAModule
 from .._base_modules import FocalLoss
-
-import lightning as L
+from ._module import CPAModule
 
 
 class CPATrainer(L.LightningModule):

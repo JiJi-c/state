@@ -1,45 +1,43 @@
 import json
 import os
-from pathlib import Path
-import shutil
 import pickle
 import re
-from os.path import join, exists
-from typing import List
+import shutil
 import sys
+from os.path import exists, join
+from pathlib import Path
+from typing import List
 
 sys.path.append("./vci_pretrain")
 
+import logging
+
 import hydra
-import torch
-
 import lightning.pytorch as pl
-from lightning.pytorch.loggers import CSVLogger, WandbLogger
+import torch
 from lightning.pytorch.callbacks import ModelCheckpoint
-from omegaconf import DictConfig, OmegaConf
+from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.plugins.precision import MixedPrecision
-
-from vc_load.utils.modules import get_datamodule
+from omegaconf import DictConfig, OmegaConf
 from vc_load.data_modules.tasks import parse_dataset_specs
+from vc_load.utils.modules import get_datamodule
+
+from callbacks import BatchSpeedMonitorCallback
 
 # from models.decoders import UCELogProbDecoder # commented out since it's not used yet
 from models import (
-    SimpleSumPerturbationModel,
-    GlobalSimpleSumPerturbationModel,
     CellTypeMeanModel,
-    EmbedSumPerturbationModel,
-    PertSetsPerturbationModel,
-    OldNeuralOTPerturbationModel,
-    DecoderOnlyPerturbationModel,
-    PseudobulkPerturbationModel,
-    scGPTForPerturbation,
     CPAPerturbationModel,
+    DecoderOnlyPerturbationModel,
+    EmbedSumPerturbationModel,
+    GlobalSimpleSumPerturbationModel,
+    OldNeuralOTPerturbationModel,
+    PertSetsPerturbationModel,
+    PseudobulkPerturbationModel,
     SCVIPerturbationModel,
+    SimpleSumPerturbationModel,
+    scGPTForPerturbation,
 )
-from callbacks import GradNormCallback, BatchSpeedMonitorCallback
-
-import logging
-
 
 logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
@@ -396,7 +394,7 @@ def train(cfg: DictConfig) -> None:
         cfg["model"]["kwargs"]["ntoken"] = len(vocab)
         cfg["model"]["kwargs"]["d_model"] = cfg["model"]["kwargs"]["embsize"]
 
-        logger.info(f"Added vocab and hvg_names_uns_key to data kwargs for scGPT")
+        logger.info("Added vocab and hvg_names_uns_key to data kwargs for scGPT")
 
     elif cfg["model"]["name"].lower() == "cpa" and cfg["model"]["kwargs"]["recon_loss"] == "gauss":
         cfg["data"]["kwargs"]["transform"] = "log-normalize"
@@ -420,7 +418,7 @@ def train(cfg: DictConfig) -> None:
         with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
             # TODO-Abhi: only save necessary data
             pickle.dump(data_module, f)
-        logger.info(f"Data module saved.")
+        logger.info("Data module saved.")
 
     if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
         cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)

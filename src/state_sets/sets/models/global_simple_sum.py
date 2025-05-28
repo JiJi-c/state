@@ -1,10 +1,11 @@
-import torch
-import torch.nn as nn
 import logging
 from collections import defaultdict
 from typing import Dict, Tuple
 
-from models.base import PerturbationModel  # or wherever your base class is
+import torch
+import torch.nn as nn
+
+from models.base import PerturbationModel
 
 logger = logging.getLogger(__name__)
 

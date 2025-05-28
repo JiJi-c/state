@@ -1,18 +1,19 @@
 import random
+
 from torch.utils.data import BatchSampler
+
 
 class DatasetBatchSampler(BatchSampler):
     """
     A BatchSampler that yields batches containing only cells
     from a single dataset at a time.
     """
+
     def __init__(self, dataset, batch_size, shuffle=True, drop_last=False):
         # We don't actually use `sampler`, but BatchSampler API requires it.
-        super().__init__(sampler=list(range(len(dataset))), 
-                         batch_size=batch_size,
-                         drop_last=drop_last)
+        super().__init__(sampler=list(range(len(dataset))), batch_size=batch_size, drop_last=drop_last)
 
-        if 'datasets' not in dir(dataset):
+        if "datasets" not in dir(dataset):
             # distributed sampler for some reason reinitializes this with a wrapper
             dataset = dataset.dataset
         self.dataset = dataset
@@ -43,7 +44,7 @@ class DatasetBatchSampler(BatchSampler):
         for ds_i in ds_order:
             idxs = per_ds[ds_i]
             for i in range(0, len(idxs), self.batch_size):
-                batch = idxs[i:i+self.batch_size]
+                batch = idxs[i : i + self.batch_size]
                 if len(batch) == self.batch_size or not self.drop_last:
                     yield batch
 

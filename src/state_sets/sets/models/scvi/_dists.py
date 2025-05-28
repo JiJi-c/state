@@ -4,13 +4,13 @@ import torch
 import torch.nn.functional as F
 from torch.distributions import Distribution, Gamma, constraints
 from torch.distributions import Poisson as PoissonTorch
+from torch.distributions.constraints import Constraint
 from torch.distributions.utils import (
     broadcast_all,
     lazy_property,
     logits_to_probs,
     probs_to_logits,
 )
-from torch.distributions.constraints import Constraint
 
 
 class _Optional(Constraint):

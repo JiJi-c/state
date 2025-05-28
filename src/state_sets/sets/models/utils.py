@@ -1,8 +1,8 @@
+from typing import Union
+
 import torch
 import torch.nn as nn
-
-from transformers import GPT2Model, GPT2Config, LlamaModel, LlamaConfig, PreTrainedModel
-from typing import Union
+from transformers import GPT2Config, GPT2Model, LlamaConfig, LlamaModel, PreTrainedModel
 
 
 def build_mlp(

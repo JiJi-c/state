@@ -3,19 +3,20 @@ Model class
 
 """
 
+import math
+import sys
 import warnings
 
-warnings.filterwarnings("ignore")
-import math
-from torch import nn, Tensor
-from torch.nn import TransformerEncoder, TransformerEncoderLayer, BCEWithLogitsLoss
-
-import sys
+from torch import Tensor, nn
+from torch.nn import BCEWithLogitsLoss, TransformerEncoder, TransformerEncoderLayer
 
 sys.path.append("../")
-import torch
+
 import lightning as L
-from torch.optim.lr_scheduler import ChainedScheduler, LinearLR, CosineAnnealingLR
+import torch
+from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR
+
+warnings.filterwarnings("ignore")
 
 
 def full_block(in_features, out_features, p_drop=0.1):

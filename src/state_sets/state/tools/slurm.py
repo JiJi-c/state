@@ -1,19 +1,21 @@
-import os
-import yaml
 import argparse
 import logging
+import os
 import subprocess
-
 from pathlib import Path
-from omegaconf import OmegaConf
+
+import yaml
 from hydra import compose, initialize
 from jinja2 import Template
+from omegaconf import OmegaConf
 
 log = logging.getLogger(__name__)
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(levelname)s: %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 sbatch_script_template = """#!/bin/bash
 
@@ -57,82 +59,88 @@ def parse_vars(extra_vars):
     vars_list = []
     if extra_vars:
         for i in extra_vars:
-            items = i.split('=')
+            items = i.split("=")
             key = items[0].strip()
             if len(items) > 1:
-                value = '='.join(items[1:])
+                value = "=".join(items[1:])
                 vars_list.append((key, value))
     return dict(vars_list)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description="Create dataset list CSV file"
-    )
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create dataset list CSV file")
     parser.add_argument(
-        '-c', "--config",
+        "-c",
+        "--config",
         type=str,
         help="Training configuration file.",
     )
     parser.add_argument(
-        '-e', "--exp_name",
+        "-e",
+        "--exp_name",
         type=str,
         help="Experiment name. This will be used to name generated artifacts.",
     )
     parser.add_argument(
-        '-n', "--num_nodes",
+        "-n",
+        "--num_nodes",
         type=int,
         default=1,
         help="Number of nodes to use for this training job.",
     )
     parser.add_argument(
-        '-g', "--gpus_per_nodes",
+        "-g",
+        "--gpus_per_nodes",
         type=int,
         default=4,
         help="Number of GPUs per node",
     )
     parser.add_argument(
-        "-r", "--reservation",
-        dest='reservation',
+        "-r",
+        "--reservation",
+        dest="reservation",
         type=str,
         default=None,
         help="Slurm reservation to use for this job.",
     )
     parser.add_argument(
-        "-p", "--partition",
-        dest='partition',
+        "-p",
+        "--partition",
+        dest="partition",
         type=str,
-        default='gpu_batch,gpu_high_mem,gpu_batch_high_mem,vci_gpu_priority,preemptible',
+        default="gpu_batch,gpu_high_mem,gpu_batch_high_mem,vci_gpu_priority,preemptible",
         help="Slurm partition to use.",
     )
     parser.add_argument(
         "--duration",
-        dest='duration',
+        dest="duration",
         type=str,
-        default='7-00:00:00',
+        default="7-00:00:00",
         help="SLURM job durarion. Pleae refer Slurm documenation for time format",
     )
     parser.add_argument(
-        "-f", "--force",
-        dest='force',
-        action='store_true',
+        "-f",
+        "--force",
+        dest="force",
+        action="store_true",
         default=False,
         help="Overwrite config and submit the job.",
     )
     parser.add_argument(
-        "-d", "--dryrun",
-        dest='dryrun',
-        action='store_true',
+        "-d",
+        "--dryrun",
+        dest="dryrun",
+        action="store_true",
         default=False,
         help="Only generate slurm sbatch script",
     )
     parser.add_argument(
         "--set",
         metavar="KEY=VALUE",
-        nargs='+',
+        nargs="+",
         default=None,
-        help="Values to be overriden for the training."
-             "Please refer ./conf/defaults.yaml")
+        help="Values to be overriden for the training.Please refer ./conf/defaults.yaml",
+    )
 
     args = parser.parse_args()
 
@@ -145,11 +153,11 @@ if __name__ == '__main__':
     }
 
     if args.config:
-        bind_param['traing_config_file'] = args.config
+        bind_param["traing_config_file"] = args.config
     else:
         assert args.exp_name, "Experiment name is required when config is not provided."
-        log.info(f'Creating config for {args.exp_name}...')
-        trn_conf_dir = Path(f'outputs/{args.exp_name}/conf')
+        log.info(f"Creating config for {args.exp_name}...")
+        trn_conf_dir = Path(f"outputs/{args.exp_name}/conf")
         if not args.force:
             assert not os.path.exists(trn_conf_dir.parent), f"Conf dir {trn_conf_dir.parent.absolute()} already exists."
 
@@ -157,15 +165,15 @@ if __name__ == '__main__':
             f"experiment.name={args.exp_name}",
             f"experiment.num_nodes={args.num_nodes}",
             f"experiment.num_gpus_per_node={args.gpus_per_nodes}",
-            ]
+        ]
 
         if args.set:
-            log.info(f'Applying overrides: {parse_vars(args.set)}')
+            log.info(f"Applying overrides: {parse_vars(args.set)}")
             for key, value in parse_vars(args.set).items():
-                overrides.append(f'{key}={value}')
-            log.info(f'Applying overrides: {overrides}')
+                overrides.append(f"{key}={value}")
+            log.info(f"Applying overrides: {overrides}")
 
-        config_dir = Path(os.path.join(os.path.dirname(__file__), '../..', 'conf'))
+        config_dir = Path(os.path.join(os.path.dirname(__file__), "../..", "conf"))
         config_dir = os.path.relpath(config_dir, Path(__file__).parent)
         log.info(config_dir)
 
@@ -177,18 +185,18 @@ if __name__ == '__main__':
             cfg = OmegaConf.to_container(cfg, resolve=True)
 
             os.makedirs(trn_conf_dir, exist_ok=True)
-            trn_conf_file = Path(f'{trn_conf_dir}/training.yaml')
-            with open(trn_conf_file, 'w') as file:
+            trn_conf_file = Path(f"{trn_conf_dir}/training.yaml")
+            with open(trn_conf_file, "w") as file:
                 yaml.dump(cfg, file)
-            bind_param['traing_config_file'] = trn_conf_file.absolute()
+            bind_param["traing_config_file"] = trn_conf_file.absolute()
 
     # SLURM changes
     sbatch_overrides = None
     if args.reservation:
-        sbatch_overrides = f'#SBATCH --reservation={args.reservation}\n'
+        sbatch_overrides = f"#SBATCH --reservation={args.reservation}\n"
 
     if sbatch_overrides:
-        bind_param['sbatch_overrides'] = sbatch_overrides
+        bind_param["sbatch_overrides"] = sbatch_overrides
 
     template = Template(sbatch_script_template)
     rendered_script = template.render(bind_param)
@@ -198,4 +206,4 @@ if __name__ == '__main__':
         f.write(rendered_script)
 
     if not args.dryrun:
-        subprocess.call(['sbatch', slurm_script])
+        subprocess.call(["sbatch", slurm_script])

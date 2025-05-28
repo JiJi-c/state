@@ -1,16 +1,12 @@
-import math
 from typing import Dict, Optional, Tuple
-import numpy as np
+
 import torch
 from torch.optim.lr_scheduler import StepLR
 
 from models import PerturbationModel
 from models.decoders import DecoderInterface
-from models.utils import build_mlp
-from models.utils import get_activation_class
-from ._module import scVIModule
 
-from torchmetrics.functional import accuracy
+from ._module import scVIModule
 
 
 class SCVIPerturbationModel(PerturbationModel):

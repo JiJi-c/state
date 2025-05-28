@@ -1,9 +1,9 @@
+from typing import Literal, Optional
+
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
 from torch.nn import functional as F
-
-from typing import Literal, Optional
 
 
 class FocalLoss(nn.Module):

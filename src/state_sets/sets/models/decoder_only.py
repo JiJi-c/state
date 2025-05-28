@@ -1,11 +1,10 @@
 # File: models/decoder_only.py
 
 import torch
-import torch.nn as nn
 from geomloss import SamplesLoss
 
 from models.base import PerturbationModel
-from models.utils import build_mlp, get_activation_class
+from models.utils import get_activation_class
 
 
 class DecoderOnlyPerturbationModel(PerturbationModel):

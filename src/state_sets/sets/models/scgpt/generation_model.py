@@ -1,22 +1,19 @@
-import os
 import math
-from typing import Mapping, Optional, Tuple, Any, Union
+from typing import Mapping, Optional, Union
 
 import torch
-from torch import nn, Tensor
-import torch.distributed as dist
 import torch.nn.functional as F
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch import Tensor, nn
 from torch.distributions import Bernoulli
-from torch.utils.data import dataset
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from tqdm import trange
 
 from .model import (
-    ExprDecoder,
-    MVCDecoder,
     ContinuousValueEncoder,
+    ExprDecoder,
     FastTransformerEncoderWrapper,
     FlashTransformerEncoderLayer,
+    MVCDecoder,
 )
 from .utils import map_raw_id_to_vocab_id
 

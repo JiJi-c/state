@@ -1,4 +1,3 @@
-# File: vci/flash_transformer.py
 """
 This module implements a Transformer encoder layer that uses Flash Attention.
 It provides a FlashTransformerEncoderLayer and a FlashTransformerEncoder.
@@ -7,6 +6,7 @@ It provides a FlashTransformerEncoderLayer and a FlashTransformerEncoder.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class FlashTransformerEncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward, dropout=0.1):
@@ -28,11 +28,11 @@ class FlashTransformerEncoderLayer(nn.Module):
         # Linear projections for Q, K, V in one matrix
         self.qkv_proj = nn.Linear(d_model, d_model * 3)
         self.out_proj = nn.Linear(d_model, d_model)
-        
+
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout_layer = nn.Dropout(dropout)
-        
+
         # Feed-forward network
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -64,9 +64,7 @@ class FlashTransformerEncoderLayer(nn.Module):
         v = v.view(src.size(0), src.size(1), self.nhead, head_dim).transpose(1, 2)
 
         # Use PyTorch’s built-in scaled_dot_product_attention.
-        attn_output = F.scaled_dot_product_attention(q, k, v,
-                                                     dropout_p=self.dropout,
-                                                     is_causal=False)
+        attn_output = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=False)
         # Merge heads.
         attn_output = attn_output.transpose(1, 2).contiguous().view(src.size(0), src.size(1), self.d_model)
         attn_output = self.out_proj(attn_output)

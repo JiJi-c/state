@@ -1,20 +1,17 @@
-# File: models/neural_ot.py
+import logging
+from typing import Dict, Optional
+
+import anndata as ad
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import anndata as ad
-import logging
-
-from collections import defaultdict
 from geomloss import SamplesLoss
-from typing import Optional, Dict, List
 
-from models.base import PerturbationModel, GeneWiseDecoder
+from models.base import PerturbationModel
 from models.decoders import DecoderInterface, FinetuneVCICountsDecoder
-from models.utils import build_mlp, get_activation_class, get_transformer_backbone
-
 from models.decoders_nb import NBDecoder, nb_nll
+from models.utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 

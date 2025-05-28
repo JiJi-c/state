@@ -1,11 +1,9 @@
-# File: benchmark/models/simple_sum.py
+import logging
+from collections import defaultdict
+from typing import Dict
 
 import torch
 import torch.nn as nn
-import logging
-import numpy as np
-from typing import Dict
-from collections import defaultdict
 
 from models.base import PerturbationModel
 from models.utils import build_mlp

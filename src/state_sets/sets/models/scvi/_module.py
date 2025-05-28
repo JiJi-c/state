@@ -5,19 +5,12 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal
 from torch.distributions.kl import kl_divergence as kl
-from torchmetrics.functional import r2_score, pearson_corrcoef
+from torch_scatter import scatter_mean
+from torchmetrics.functional import pairwise_euclidean_distance, pearson_corrcoef, r2_score
 from torchmetrics.functional.clustering import normalized_mutual_info_score
 
-from ._base_modules import VariationalEncoder, CountDecoder
+from ._base_modules import CountDecoder, VariationalEncoder
 from ._dists import NegativeBinomial, ZeroInflatedNegativeBinomial
-
-from typing import Optional, List
-
-import torch
-import torch.nn as nn
-
-from torchmetrics.functional import pairwise_euclidean_distance
-from torch_scatter import scatter_mean
 
 
 def knn_purity(data, labels, n_neighbors=15):

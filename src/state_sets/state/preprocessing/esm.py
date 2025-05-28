@@ -1,36 +1,34 @@
-import os
 import logging
-import torch
+import os
 import time
+
 import tenacity
+import torch
 
 from .base import BaseEmbedding
 
 
 class ESM3Embedding(BaseEmbedding):
-
-    def __init__(self,
-                 species,
-                 name_suffix='',
-                 mapping_output_loc=None,
-                 seq_generator_fn=None):
-        super().__init__(species,
-                         mapping_output_loc=mapping_output_loc,
-                         seq_generator_fn=seq_generator_fn,
-                         seq_type='protein',
-                         name='ESM3',
-                         name_suffix=name_suffix,
-                         max_seq_len=2046)
+    def __init__(self, species, name_suffix="", mapping_output_loc=None, seq_generator_fn=None):
+        super().__init__(
+            species,
+            mapping_output_loc=mapping_output_loc,
+            seq_generator_fn=seq_generator_fn,
+            seq_type="protein",
+            name="ESM3",
+            name_suffix=name_suffix,
+            max_seq_len=2046,
+        )
 
     def generate_gene_emb_mapping(self, output_dir):
-        from esm.sdk.forge import ESM3ForgeInferenceClient
         from esm.sdk.api import ESMProtein, LogitsConfig
+        from esm.sdk.forge import ESM3ForgeInferenceClient
 
-        client =  ESM3ForgeInferenceClient(model="esmc-6b-2024-12",
-                                           url="https://forge.evolutionaryscale.ai",
-                                           token=os.environ.get("ESM_API_TOKEN"))
+        client = ESM3ForgeInferenceClient(
+            model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token=os.environ.get("ESM_API_TOKEN")
+        )
         os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, f'{self.name}_emb_{self.species}.torch')
+        output_file = os.path.join(output_dir, f"{self.name}_emb_{self.species}.torch")
         if os.path.exists(output_file):
             logging.info(f"Loading existing embeddings for {output_file}...")
             self.gene_emb_mapping = torch.load(output_file)
@@ -52,8 +50,7 @@ class ESM3Embedding(BaseEmbedding):
                 try:
                     protein = ESMProtein(sequence=sequences)
                     protein_tensor = client.encode(protein)
-                    logits_output = client.logits(protein_tensor,
-                                                LogitsConfig(sequence=True, return_embeddings=True))
+                    logits_output = client.logits(protein_tensor, LogitsConfig(sequence=True, return_embeddings=True))
                     self.gene_emb_mapping[gene] = logits_output.embeddings.mean(1).cpu()[0]
 
                     self.save_gene_emb_mapping(ctr, output_file, output_dir)
@@ -71,23 +68,26 @@ class ESM3Embedding(BaseEmbedding):
 
 
 class ESM2Embedding(BaseEmbedding):
-
-    def __init__(self,
-                 species,
-                 name_suffix='',
-                 esm2_model = "facebook/esm2_t36_3B_UR50D",
-                 mapping_output_loc=None,
-                 seq_generator_fn=None):
-        super().__init__(species,
-                         mapping_output_loc=mapping_output_loc,
-                         seq_generator_fn=seq_generator_fn,
-                         seq_type='protein',
-                         name='ESM2',
-                         name_suffix=name_suffix)
+    def __init__(
+        self,
+        species,
+        name_suffix="",
+        esm2_model="facebook/esm2_t36_3B_UR50D",
+        mapping_output_loc=None,
+        seq_generator_fn=None,
+    ):
+        super().__init__(
+            species,
+            mapping_output_loc=mapping_output_loc,
+            seq_generator_fn=seq_generator_fn,
+            seq_type="protein",
+            name="ESM2",
+            name_suffix=name_suffix,
+        )
         self.esm_model_name = esm2_model
 
     def generate_gene_emb_mapping(self, output_dir):
-        from transformers import AutoTokenizer, AutoModel
+        from transformers import AutoModel, AutoTokenizer
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         tokenizer = AutoTokenizer.from_pretrained(self.esm_model_name)
@@ -120,8 +120,8 @@ class ESM2Embedding(BaseEmbedding):
         torch.save(self.gene_emb_mapping, self.output_file)
         logging.info("Done Processing")
 
-    def fetch_emb(self, sequence, esm2_model = "facebook/esm2_t36_3B_UR50D"):
-        from transformers import AutoTokenizer, AutoModel
+    def fetch_emb(self, sequence, esm2_model="facebook/esm2_t36_3B_UR50D"):
+        from transformers import AutoModel, AutoTokenizer
 
         if not esm2_model:
             esm_model_name = self.esm_model_name

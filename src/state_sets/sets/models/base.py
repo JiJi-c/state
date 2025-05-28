@@ -1,24 +1,13 @@
-import torch
 import logging
-import wandb
-
-import anndata as ad
-import scanpy as sc
-import numpy as np
-import pandas as pd
-import numpy as np
-import torch.nn as nn
-
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
+
+import torch
+import torch.nn as nn
 from lightning.pytorch import LightningModule
-from tqdm import tqdm
 
 from models.decoders import DecoderInterface
-from models.utils import get_loss_fn
-from validation.metrics import compute_metrics
-from models.utils import build_mlp, get_activation_class, get_transformer_backbone
+from models.utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
 

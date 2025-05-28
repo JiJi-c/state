@@ -1,14 +1,12 @@
+from typing import List, Literal, Optional, Union
+
 import torch
-import torch.nn as nn
+from torchmetrics.functional import pearson_corrcoef, r2_score
 
-import lightning as L
-from torchmetrics.functional import r2_score, pearson_corrcoef
-from .generation_model import ChemicalTransformerGenerator, TransformerGenerator
-from .utils import map_raw_id_to_vocab_id
-from .loss import masked_mse_loss
-
-from typing import Any, Union, Optional, Literal, List
 from ..base import PerturbationModel
+from .generation_model import ChemicalTransformerGenerator, TransformerGenerator
+from .loss import masked_mse_loss
+from .utils import map_raw_id_to_vocab_id
 
 
 class scGPTForPerturbation(PerturbationModel):

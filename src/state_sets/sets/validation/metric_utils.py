@@ -1,49 +1,35 @@
 """Utility functions for computing metrics."""
 
-import os
 import logging
-import scipy
-import time
-import torch
-import warnings
-
-import anndata as ad
-import numpy as np
-import scanpy as sc
-import pandas as pd
 import multiprocessing as mp
-
+import os
+import time
 from collections.abc import Iterator
 from functools import partial
 from multiprocessing.shared_memory import SharedMemory
-from typing import Optional
+from typing import Iterable, Literal, Sequence
+
+import anndata as ad
+import numpy as np
+import pandas as pd
+import scanpy as sc
+import scipy
+from adjustpy import adjust
 from ott.geometry import pointcloud
 from ott.problems.linear import linear_problem
 from ott.solvers.linear import sinkhorn
-from sklearn.metrics.pairwise import rbf_kernel
-from scipy.stats import pearsonr
-from sklearn.metrics import mean_squared_error, auc
-from sklearn.metrics.pairwise import cosine_similarity
-from adjustpy import adjust
-from scipy.stats import ranksums
-from tqdm import tqdm
-
-import numpy as np
-import scanpy as sc
+from scipy.stats import pearsonr, ranksums, spearmanr
 from sklearn.metrics import (
     adjusted_mutual_info_score,
-    normalized_mutual_info_score,
     adjusted_rand_score,
+    auc,
+    mean_squared_error,
+    normalized_mutual_info_score,
+    precision_recall_curve,
+    roc_curve,
 )
-from typing import Iterable, Union, Literal, Sequence
-
-import pandas as pd
-import numpy as np
-from scipy.stats import spearmanr
-from sklearn.metrics import precision_recall_curve, roc_curve
+from sklearn.metrics.pairwise import cosine_similarity, rbf_kernel
 from tqdm import tqdm
-import multiprocessing as mp
-from functools import partial
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -274,7 +260,7 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
             else:
                 overlap = len(set(true_genes).intersection(pred_genes)) / len(true_genes)
             all_overlaps[c] = overlap
-        except Exception as e:
+        except Exception:
             # In case of an unexpected error for a given perturbation, we skip it.
             continue
 
@@ -285,11 +271,6 @@ def compute_gene_overlap_cross_pert(DE_true, DE_pred, control_pert="non-targetin
         print("No overlaps computed.")
 
     return all_overlaps
-
-
-import numpy as np
-import pandas as pd
-from scipy.stats import spearmanr
 
 
 def compute_sig_gene_counts(DE_true_sig, DE_pred_sig, pert_list):
@@ -798,7 +779,6 @@ def parallel_compute_de(adata_gene, control_pert, pert_col, outdir=None, split="
         one sorted by fold change and one by p-value
     """
     import time
-    import pandas as pd
 
     # Start timer
     start_time = time.time()

@@ -1,22 +1,20 @@
+# set up logger
+import logging
+from abc import ABC, abstractmethod
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-
-from abc import ABC, abstractmethod
 from omegaconf import OmegaConf
-from utils import UCEGenePredictor
 
-# set up logger
-import logging
+from utils import UCEGenePredictor
 
 logger = logging.getLogger(__name__)
 
-import sys
-import os
 
-from vci_pretrain.vci.inference import Inference
 from vci_pretrain.vci.finetune_decoder import Finetune
+from vci_pretrain.vci.inference import Inference
 
 
 class DecoderInterface(ABC):
@@ -270,7 +268,7 @@ class UCELogProbDecoder(DecoderInterface):
         Compute DE in gene space using UCE predictions, by decoding probability in each gene and
         manipulating the log probs as a statistical test.
         """
-        logger.info(f"Computing DE genes using UCE log probs decoder.")
+        logger.info("Computing DE genes using UCE log probs decoder.")
         gene_predictor = UCEGenePredictor(device="cuda:0", model_loc=self.model_loc)
         gene_logprobs = gene_predictor.compute_gene_prob_group_batched(adata_latent.X, genes, batch_size=96)
         probs_df = pd.DataFrame(gene_logprobs)

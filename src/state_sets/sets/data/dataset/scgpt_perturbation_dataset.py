@@ -5,20 +5,18 @@ Now, we remove that assumption so that each file (a plate) may contain
 multiple cell types.
 """
 
-from typing import Dict, List, Optional, Union, Literal
-import functools
-from collections import defaultdict
-import torch
-from torch.utils.data import Dataset, Subset
-from vc_load.utils.data_utils import safe_decode_array, H5MetadataCache, GlobalH5MetadataCache
+import logging
+from pathlib import Path
+from typing import Dict, List, Literal, Optional, Union
+
 import h5py
 import numpy as np
-from pathlib import Path
-import logging
+import torch
+from vc_load.data.dataset.perturbation_dataset import PerturbationDataset
 
 # We import our mapping strategy base class for type hints
 from vc_load.data.mapping_strategies import BaseMappingStrategy
-from vc_load.data.dataset.perturbation_dataset import PerturbationDataset
+from vc_load.utils.data_utils import GlobalH5MetadataCache
 
 logger = logging.getLogger(__name__)
 

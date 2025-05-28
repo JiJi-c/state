@@ -3,15 +3,14 @@ UCE Model class
 
 """
 
+import math
 import warnings
 
-warnings.filterwarnings("ignore")
-import math
-from torch import nn, Tensor
+import torch
+from torch import Tensor, nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-from typing import Any
-import torch
+warnings.filterwarnings("ignore")
 
 
 def full_block(in_features, out_features, p_drop=0.1):

@@ -1,5 +1,5 @@
 import time
-import lightning.pytorch as pl
+
 from lightning.pytorch.callbacks import Callback
 
 

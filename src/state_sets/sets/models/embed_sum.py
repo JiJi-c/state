@@ -1,10 +1,10 @@
 from typing import Dict, Optional
+
 import torch
 
 from models import PerturbationModel
 from models.decoders import DecoderInterface
-from models.utils import build_mlp
-from models.utils import get_activation_class
+from models.utils import build_mlp, get_activation_class
 
 
 class EmbedSumPerturbationModel(PerturbationModel):

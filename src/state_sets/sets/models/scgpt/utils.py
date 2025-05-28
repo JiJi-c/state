@@ -1,7 +1,7 @@
-from math import e
-import torch
-import numpy as np
 from typing import Union
+
+import numpy as np
+import torch
 
 
 def map_raw_id_to_vocab_id(
@@ -26,7 +26,7 @@ def map_raw_id_to_vocab_id(
         dtype = raw_ids.dtype
 
     else:
-        raise ValueError(f"raw_ids must be either torch.Tensor or np.ndarray.")
+        raise ValueError("raw_ids must be either torch.Tensor or np.ndarray.")
 
     if raw_ids.ndim != 1:
         raise ValueError(f"raw_ids must be 1d, got {raw_ids.ndim}d.")

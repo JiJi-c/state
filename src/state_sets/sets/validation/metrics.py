@@ -1,45 +1,38 @@
-import scipy
-import pandas as pd
 import json
-import matplotlib.pyplot as plt
-from sklearn.metrics import auc
-from scipy.interpolate import interp1d
-from collections import defaultdict
-from validation.metric_utils import (
-    to_dense,
-    compute_mae,
-    compute_mse,
-    compute_wasserstein,
-    compute_mmd,
-    compute_pearson_delta,
-    compute_pearson_delta_separate_controls,
-    compute_cosine_similarity,
-    compute_gene_overlap_cross_pert,
-    compute_DE_for_truth_and_pred,
-    compute_perturbation_ranking_score,
-    compute_pearson_delta_batched,
-    compute_clustering_agreement,
-    compute_downstream_DE_metrics,
-    compute_sig_gene_counts,
-    compute_sig_gene_spearman,
-    compute_directionality_agreement,
-)
-from tqdm.auto import tqdm
-import numpy as np
-from scipy.stats import pearsonr
-import scanpy as sc
-import anndata as ad
-from tqdm import tqdm
-import torch
-import torch.nn.functional as F
-
-from utils import time_it
 
 # setup logger
 import logging
-import os
 import multiprocessing as mp
+import os
+from collections import defaultdict
 from functools import partial
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
+from scipy.interpolate import interp1d
+from sklearn.metrics import auc
+from tqdm import tqdm
+
+from utils import time_it
+from validation.metric_utils import (
+    compute_clustering_agreement,
+    compute_cosine_similarity,
+    compute_DE_for_truth_and_pred,
+    compute_directionality_agreement,
+    compute_downstream_DE_metrics,
+    compute_gene_overlap_cross_pert,
+    compute_mae,
+    compute_mmd,
+    compute_mse,
+    compute_pearson_delta,
+    compute_pearson_delta_separate_controls,
+    compute_perturbation_ranking_score,
+    compute_sig_gene_counts,
+    compute_sig_gene_spearman,
+    to_dense,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +259,7 @@ def compute_metrics(
                 ## Compute differential expression at the full adata level for speed
 
                 # 2) Actually compute DE for both truth & pred
-                logger.info(f"Computing DE for 50 genes")
+                logger.info("Computing DE for 50 genes")
                 (
                     DE_true_fc,
                     DE_pred_fc,

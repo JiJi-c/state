@@ -1,17 +1,17 @@
 import os
-import wandb
 
-import scanpy as sc
-import seaborn as sns
-import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
+import matplotlib.pyplot as plt
+import seaborn as sns
+import wandb
 from sklearn.decomposition import PCA
 
-def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_name=''):
+
+def cluster_embedding(adata, current_step, emb_key="X_emb", use_pca=True, job_name=""):
     embedding = PCA(n_components=2).fit_transform(adata.obsm[emb_key])
 
     # Get the cell type information as a categorical series
-    cell_types = adata.obs['cell_type'].astype('category')
+    cell_types = adata.obs["cell_type"].astype("category")
 
     # Create a color palette based on the number of unique cell types
     palette = sns.color_palette("hsv", len(cell_types.cat.categories))
@@ -29,10 +29,10 @@ def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_na
 
     # Create legend handles for each cell type
     handles = [
-        mlines.Line2D([], [], color=color_dict[ct], marker='o', linestyle='None', markersize=6, label=ct)
+        mlines.Line2D([], [], color=color_dict[ct], marker="o", linestyle="None", markersize=6, label=ct)
         for ct in cell_types.cat.categories
     ]
-    plt.legend(handles=handles, title="Cell Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.legend(handles=handles, title="Cell Type", bbox_to_anchor=(1.05, 1), loc="upper left")
     fig = plt.gcf()
     if wandb.run is not None:
         wandb.log({f"Clusters using embedding Iteration: {current_step}": fig})
@@ -42,6 +42,6 @@ def cluster_embedding(adata, current_step, emb_key='X_emb', use_pca=True, job_na
     os.makedirs(results_dir, exist_ok=True)
     filename = f"{job_name}_iter{current_step}.png" if job_name else f"iter{current_step}.png"
     fig_path = os.path.join(results_dir, filename)
-    fig.savefig(fig_path, bbox_inches='tight')
+    fig.savefig(fig_path, bbox_inches="tight")
     plt.close(fig)
     print(f"Cluster embedding plot saved to {fig_path}")

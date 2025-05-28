@@ -1,16 +1,15 @@
+import logging
 import warnings
 
-warnings.filterwarnings("ignore")
-
-import logging
+import numpy as np
 import torch
 from torch import nn
 from tqdm import tqdm
-import numpy as np
+
 from .uce_model import LitUCEModel
 from .uce_model_old import TransformerModel
 
-
+warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
 
 
