@@ -1,16 +1,12 @@
 import json
+import logging
 import os
 import pickle
 import re
 import shutil
-import sys
 from os.path import exists, join
 from pathlib import Path
 from typing import List
-
-sys.path.append("./vci_pretrain")
-
-import logging
 
 import hydra
 import lightning.pytorch as pl
@@ -23,8 +19,6 @@ from vc_load.data_modules.tasks import parse_dataset_specs
 from vc_load.utils.modules import get_datamodule
 
 from callbacks import BatchSpeedMonitorCallback
-
-# from models.decoders import UCELogProbDecoder # commented out since it's not used yet
 from models import (
     CellTypeMeanModel,
     CPAPerturbationModel,
@@ -207,6 +201,8 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             try:
                 model.model.load_state_dict(torch.load(model_file))
                 print(f"Loading all model params from {model_file}")
+
+            # TODO: handle raw exception
             except:
                 # only load params that are in the model and match the size
                 model_dict = model.model.state_dict()
@@ -528,7 +524,8 @@ def train(cfg: DictConfig) -> None:
             checkpoint_pert_dim = checkpoint_state[pert_encoder_weight_key].shape[1]
             if checkpoint_pert_dim != model.pert_dim:
                 print(
-                    f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
+                    f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects "
+                    f"{checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
                 )
                 # Rebuild the pert_encoder with the new pert input dimension
                 from models.utils import build_mlp
@@ -550,7 +547,8 @@ def train(cfg: DictConfig) -> None:
                     filtered_state[name] = param
                 else:
                     print(
-                        f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, model={model_state[name].shape}"
+                        f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, "
+                        f"model={model_state[name].shape}"
                     )
             else:
                 print(f"Skipping parameter {name} as it doesn't exist in the current model")
