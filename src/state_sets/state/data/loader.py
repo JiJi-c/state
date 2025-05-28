@@ -737,7 +737,6 @@ class VCIDatasetSentenceCollator(object):
                 # Overwrite the final positions of task_sentence
 
                 task_sentence[c, unshared_num:] = shared_genes  # in the old impl these are global gene indices
-                # task_sentence[c, unshared_num:] = ds_emb_idxs[shared_genes.to(torch.int32)] # in the new impl these are local gene indices
 
                 # convert the shared_genes, which are global indices, to the dataset specific indices
                 local_indices = self.global_to_local[dataset][shared_genes].to(
