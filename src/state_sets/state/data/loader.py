@@ -674,7 +674,8 @@ class VCIDatasetSentenceCollator(object):
             # this is either the number of positive genes, or the first pad_length / 2 most expressed genes
             # the first is only used if you have more expressed genes than pad_length / 2
             assert self.cfg.model.counts
-            # shuffle before argsort - randomly break ties so we select random unexpressed genes each time, if pad_length > num_non_zero genes
+            # shuffle before argsort - randomly break ties so we select random unexpressed genes each time,
+            # if pad_length > num_non_zero genes
             indices = torch.randperm(cell.shape[-1])
             shuffled_cell = cell[indices]
             shuffled_genes_ranked_exp = torch.argsort(shuffled_cell, descending=True)
