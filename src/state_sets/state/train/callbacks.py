@@ -1,11 +1,8 @@
-import copy
-import time
 import logging
+import time
 
-import torch
 import lightning as L
-
-from typing import Any
+import torch
 
 
 class LogLR(L.Callback):

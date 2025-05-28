@@ -8,11 +8,12 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 from torch import nn
 from torch.utils.data import DataLoader
-from vci.data import GeneFilterDataset, H5adSentenceDataset, NpzMultiDataset, VCIDatasetSentenceCollator
-from vci.nn.model import LitUCEModel
-from vci.train.callbacks import EMACallback, LogLR, PerfProfilerCallback, ProfilerCallback, ResumeCallback
-from vci.utils import get_dataset_cfg, get_embedding_cfg, get_latest_checkpoint
 from zclip import ZClipLightningCallback
+
+from ..data import GeneFilterDataset, H5adSentenceDataset, NpzMultiDataset, VCIDatasetSentenceCollator
+from ..nn.model import LitUCEModel
+from ..train.callbacks import EMACallback, LogLR, PerfProfilerCallback, ProfilerCallback, ResumeCallback
+from ..utils import get_dataset_cfg, get_embedding_cfg, get_latest_checkpoint
 
 
 def get_embeddings(cfg):

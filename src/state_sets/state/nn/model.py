@@ -9,11 +9,6 @@ import scanpy as sc
 import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import BCEWithLogitsLoss, TransformerEncoder, TransformerEncoderLayer
-from vci.utils import (
-    compute_gene_overlap_cross_pert,
-    compute_pearson_delta,
-    compute_perturbation_ranking_score,
-)
 
 sys.path.append("../")
 
@@ -21,13 +16,17 @@ import lightning as L
 import torch
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR, ReduceLROnPlateau
 from tqdm.auto import tqdm
-from vci.data import create_dataloader
-from vci.eval.emb import cluster_embedding
 
-# if flash-attn package is installed and available
-from vci.nn.flash_transformer import FlashTransformerEncoder, FlashTransformerEncoderLayer
-from vci.utils import get_dataset_cfg, get_embedding_cfg
-
+from ..data import create_dataloader
+from ..eval.emb import cluster_embedding
+from ..nn.flash_transformer import FlashTransformerEncoder, FlashTransformerEncoderLayer
+from ..utils import (
+    compute_gene_overlap_cross_pert,
+    compute_pearson_delta,
+    compute_perturbation_ranking_score,
+    get_dataset_cfg,
+    get_embedding_cfg,
+)
 from .loss import KLDivergenceLoss, MMDLoss, TabularLoss, WassersteinLoss
 
 warnings.filterwarnings("ignore")
@@ -339,6 +338,8 @@ class LitUCEModel(L.LightningModule):
         )
         try:
             gene_embeds = self.get_gene_embedding(adata.var.index)
+
+        # TODO: handle raw exception
         except:
             gene_embeds = self.get_gene_embedding(adata.var["gene_symbols"])
         emb_batches = []

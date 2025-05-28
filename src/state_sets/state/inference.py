@@ -8,10 +8,11 @@ import numpy as np
 import torch
 from torch import nn
 from tqdm import tqdm
-from vci.data import create_dataloader
-from vci.nn.model import LitUCEModel
-from vci.train.trainer import get_embeddings
-from vci.utils import get_embedding_cfg
+
+from .data import create_dataloader
+from .nn.model import LitUCEModel
+from .train.trainer import get_embeddings
+from .utils import get_embedding_cfg
 
 log = logging.getLogger(__name__)
 

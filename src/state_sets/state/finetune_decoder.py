@@ -2,9 +2,10 @@ import logging
 
 import torch
 from torch import nn
-from vci.nn.model import LitUCEModel
-from vci.train.trainer import get_embeddings
-from vci.utils import get_embedding_cfg
+
+from .nn.model import LitUCEModel
+from .train.trainer import get_embeddings
+from .utils import get_embedding_cfg
 
 log = logging.getLogger(__name__)
 

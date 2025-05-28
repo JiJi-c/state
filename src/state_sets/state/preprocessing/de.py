@@ -6,7 +6,8 @@ import fire
 import pandas as pd
 import scanpy as sc
 from hydra import compose, initialize
-from vci.utils import get_dataset_cfg
+
+from ..utils import get_dataset_cfg
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler()]

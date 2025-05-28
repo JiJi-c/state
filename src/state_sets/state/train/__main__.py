@@ -2,14 +2,12 @@ import argparse
 import logging
 import os
 import sys
-from pathlib import Path
 from typing import Optional
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-sys.path.append("../../")
-import vci.train.trainer as train
+from .trainer import main as trainer_main
 
 log = logging.getLogger(__name__)
 
@@ -24,10 +22,11 @@ def main(config_path: Optional[str] = None):
     if not args.conf:
         parser.error("--conf argument is required")
 
-    # Initialize hydra with the directory of the config file
-    config_file = Path(args.conf)
-    config_dir = str(config_file.parent)
-    config_name = config_file.name
+    # TODO: remove unused
+    # # Initialize hydra with the directory of the config file
+    # config_file = Path(args.conf)
+    # config_dir = str(config_file.parent)
+    # config_name = config_file.name
 
     # Initialize configuration
     with hydra.initialize_config_module(config_module=None, version_base=None):
@@ -60,7 +59,7 @@ def run_with_config(cfg: DictConfig):
     log.info(f"*************** Training {cfg.experiment.name} ***************")
     log.info(OmegaConf.to_yaml(cfg))
 
-    train.main(cfg)
+    trainer_main(cfg)
 
 
 if __name__ == "__main__":
