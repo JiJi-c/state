@@ -2,7 +2,6 @@ import os
 import pickle
 import numpy as np
 import torch
-import scanpy as sc
 import anndata as ad
 import logging
 import yaml
