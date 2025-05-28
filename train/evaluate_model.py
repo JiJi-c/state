@@ -29,10 +29,9 @@ try:
 except ImportError:
     logger.warning("Could not import VCICountsDecoder from models.decoders, submodule may be missing.")
 
-from data.mapping_strategies import (
+from vc_load.mapping_strategies import (
     BatchMappingStrategy,
     RandomMappingStrategy,
-    PseudoBulkMappingStrategy,
 )
 from vc_load.data_modules import PerturbationDataModule
 from validation.metrics import compute_metrics
@@ -207,7 +206,6 @@ def main():
         mapping_cls = {
             "batch": BatchMappingStrategy,
             "random": RandomMappingStrategy,
-            "pseudobulk": PseudoBulkMappingStrategy,
         }[args.map_type]
 
         # Example of typical kwargs you might want to pass (adapt to your needs):
