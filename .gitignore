@@ -1,11 +1,9 @@
-# Create .gitignore file
-echo "# Python
+.vscode/
+hostfile
 __pycache__/
-*.py[cod]
-*$py.class" > .gitignore
-slurm-*.out
-*.err
-*.out
-
-# Add .gitignore to git
-git add .gitignore
+vci_job_*
+wandb
+lightning_logs/
+outputs/
+log/
+uv.lock

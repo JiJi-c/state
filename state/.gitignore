@@ -1,9 +1,0 @@
-__pycache__/
-.vscode/
-outputs/
-log/
-
-hostfile
-vci_job_*
-wandb
-lightning_logs/

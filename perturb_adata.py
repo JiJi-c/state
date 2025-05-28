@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import scanpy as sc
-import anndata as ad
 from inference_module import InferenceModule
-import os
 
 
 def parse_args():
