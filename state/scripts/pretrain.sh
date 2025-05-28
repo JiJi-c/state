@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# python3 -m vci.tools.slurm \
+#     --exp_name vci_repro_flash_attn_issue \
+#     --set dataset.name=vci \
+#     --set model.backbone=vgg16 \
+#     --set experiment.num_gpus_per_node=2 \
+#     --set wandb.enable=false \
+#     --set val_check_interval=50 \
+#     --set validations.diff_exp.eval_interval_multiple=1
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_mse_20250225 \
+    --set dataset.name=vci \
+    --set experiment.checkpoint.path /scratch/ctc/ML/vci/checkpoint/pretrain/20250225 \
+    --set experiment.val_check_interval=1000 \
+    --set loss.name=mse
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_scbase_esm2_human_all \
+    -n 1 -g 1 \
+    --set embeddings.current=esm2-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens
+
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_scbasecamp_esm2-3b_human \
+    -n 1 -g 1 \
+    --set embeddings.current=esm2_3B-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens \
+          loss.name=cross_entropy
+
+
+
+
+python3 -m vci.tools.slurm \
+    --exp_name vci_scbasecamp_human_mmd \
+    -n 1 -g 1 \
+    --set embeddings.current=evo2-scbasecamp \
+          dataset.current=scbasecamp \
+          dataset.scbasecamp.filter_by_species=Homo_sapiens \
+          loss.name=mmd

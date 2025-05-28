@@ -1,0 +1,38 @@
+name: vci
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11
+  - pytorch==2.5.1
+  - torchvision==0.20.1
+  - torchaudio==2.5.1
+  - pip
+  - pip:
+    - lightning==2.4.0
+    - numpy
+    - pandas
+    - h5py
+    - pyyaml
+    - jinja2
+    - scanpy
+    - hydra-core
+    - pytest
+    - jupyterlab
+    - matplotlib
+    - tqdm
+    - wandb>=0.12.10
+    - rich
+    - scipy
+    - accelerate
+    - requests
+    - fire
+    - geomloss
+    - flash-attn
+    - triton
+    - biopython
+    - plotly
+    - git+https://github.com/bluorion-com/ZClip.git
