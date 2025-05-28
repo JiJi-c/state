@@ -331,6 +331,8 @@ class FilteredGenesCounts(H5adSentenceDataset):
                             gene_names = np.array(
                                 [g.decode("utf-8") for g in a["/var/gene_name"][:]]
                             )  # Decode byte strings
+
+                        # TODO: handle raw exception
                         except:
                             gene_categories = a["/var/gene_name/categories"][:]
                             gene_codes = np.array(a["/var/gene_name/codes"][:])
@@ -405,7 +407,6 @@ class VCIDatasetSentenceCollator(object):
         for dataset_name, ds_emb_idxs in self.dataset_to_protein_embeddings.items():
             # make sure tensor with long data type
             ds_emb_idxs = torch.tensor(ds_emb_idxs, dtype=torch.long)
-            # assert ds_emb_idxs.unique().numel() == ds_emb_idxs.numel(), f"duplicate global IDs in dataset {dataset_name}!"
 
             # Create a tensor filled with -1 (indicating not present in this dataset)
             reverse_mapping = torch.full((self.global_size,), -1, dtype=torch.int64)
