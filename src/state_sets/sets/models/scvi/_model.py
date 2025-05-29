@@ -5,7 +5,6 @@ from torch.optim.lr_scheduler import StepLR
 
 from ..base import PerturbationModel
 from ..decoders import DecoderInterface
-
 from ._module import scVIModule
 
 
@@ -120,40 +119,6 @@ class SCVIPerturbationModel(PerturbationModel):
             dropout_rate_decoder=self.dropout_rate_decoder,
             seed=self.seed,
         )
-
-    def configure_optimizers(self):
-        ae_params = (
-            list(filter(lambda p: p.requires_grad, self.module.encoder.parameters()))
-            + list(filter(lambda p: p.requires_grad, self.module.decoder.parameters()))
-            + list(
-                filter(
-                    lambda p: p.requires_grad,
-                    self.module.pert_embeddings.parameters(),
-                )
-            )
-            + list(
-                filter(
-                    lambda p: p.requires_grad,
-                    self.module.cell_type_embeddings.parameters(),
-                )
-            )
-            + list(filter(lambda p: p.requires_grad, self.module.batch_embeddings.parameters()))
-        )
-
-        if self.module.recon_loss in ["zinb", "nb"]:
-            ae_params += [self.module.px_r]
-
-        optimizer_autoencoder = torch.optim.Adam(ae_params, lr=self.lr, weight_decay=self.wd)
-
-        scheduler_autoencoder = StepLR(optimizer_autoencoder, step_size=self.step_size_lr, gamma=0.9)
-
-        optimizers = [optimizer_autoencoder]
-        schedulers = [scheduler_autoencoder]
-
-        if self.step_size_lr is not None:
-            return optimizers, schedulers
-        else:
-            return optimizers
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """Map perturbation to an effect vector in embedding space."""

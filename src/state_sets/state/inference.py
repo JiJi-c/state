@@ -160,6 +160,8 @@ class Inference:
     def decode_from_adata(self, adata, genes, emb_key: str, read_depth=None, batch_size=64):
         try:
             cell_embs = adata.obsm[emb_key]
+
+        # TODO: handle raw exception
         except:
             cell_embs = adata.X
         cell_embs = torch.Tensor(cell_embs).to(self.model.device)

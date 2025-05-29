@@ -260,7 +260,8 @@ class CPAModule(nn.Module):
         pert_dosages: Optional[torch.Tensor] = None,
         n_samples: int = 1,
     ):
-        batch_size = x.shape[0]
+        # TODO: remove unused
+        # batch_size = x.shape[0]
 
         if self.recon_loss in ["nb", "zinb"]:
             # log the input to the variational distribution for numerical stability
@@ -450,18 +451,20 @@ class CPAModule(nn.Module):
             dictionary of input tensors
 
         """
-        _, decoder_outputs = self.forward(
-            batch,
-            n_samples=n_samples,
-        )
+        ## TODO: remove broken code
+        # _, decoder_outputs = self.forward(
+        #     batch,
+        #     n_samples=n_samples,
+        # )
 
-        px = decoder_outputs["px"]
+        # px = decoder_outputs["px"]
 
-        if self.recon_loss == "gauss":
-            output_key = "loc"
-        else:
-            output_key = "mu"
+        # if self.recon_loss == "gauss":
+        #     output_key = "loc"
+        # else:
+        #     output_key = "mu"
 
-        output = getattr(px, output_key)
+        # output = getattr(px, output_key)
 
-        return output
+        # return output
+        raise NotImplementedError("Expression is not implemented")

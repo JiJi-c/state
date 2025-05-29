@@ -281,7 +281,8 @@ class PerturbationModel(ABC, LightningModule):
         pred = self(batch)
         loss = self.loss_fn(pred, batch["X"])
 
-        is_control = self.control_pert in batch["pert_name"]
+        # TODO: remove unused
+        # is_control = self.control_pert in batch["pert_name"]
         self.log("val_loss", loss)
 
         return {"loss": loss, "predictions": pred}

@@ -222,7 +222,7 @@ class scGPTForPerturbation(PerturbationModel):
         output_values = output_dict["mlm_output"]  # batch_size, max_seq_len
 
         masked_positions = torch.ones_like(x_basal, dtype=torch.bool)  # Use all genes
-        loss = loss_mse = masked_mse_loss(output_values, x_pert, masked_positions)
+        loss = masked_mse_loss(output_values, x_pert, masked_positions)
 
         output_dict["x_pred"] = output_dict["mlm_output"].float()
         output_dict["x_true"] = x_pert

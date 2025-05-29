@@ -1,4 +1,3 @@
-# set up logger
 import logging
 from abc import ABC, abstractmethod
 
@@ -6,10 +5,9 @@ import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
 
-logger = logging.getLogger(__name__)
-
-
 from ...state.finetune_decoder import Finetune
+
+logger = logging.getLogger(__name__)
 
 
 class DecoderInterface(ABC):

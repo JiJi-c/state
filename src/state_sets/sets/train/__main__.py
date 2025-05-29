@@ -11,12 +11,12 @@ from typing import List
 import hydra
 import lightning.pytorch as pl
 import torch
+from cell_load.data_modules.tasks import parse_dataset_specs
+from cell_load.utils.modules import get_datamodule
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.plugins.precision import MixedPrecision
 from omegaconf import DictConfig, OmegaConf
-from cell_load.data_modules.tasks import parse_dataset_specs
-from cell_load.utils.modules import get_datamodule
 
 from ..callbacks import BatchSpeedMonitorCallback
 from ..models import (
@@ -144,8 +144,9 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
 
         model_dir = Path(pretrained_path)
-        model_config_file = model_dir / "args.json"
         model_file = model_dir / "best_model.pt"
+        ## TODO: remove unused code
+        # model_config_file = model_dir / "args.json"
 
         model = scGPTForPerturbation(
             ntoken=module_config["ntoken"],
