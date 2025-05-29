@@ -85,7 +85,7 @@ def run_test_time_finetune(model, dataloader, ft_epochs, control_pert, device):
             optimizer.step()
             epoch_losses.append(loss.item())
             pbar.set_postfix(loss=f"{loss.item():.4f}")
-        
+
         mean_loss = np.mean(epoch_losses) if epoch_losses else float("nan")
         logger.info(f"Finetune epoch {epoch + 1}/{ft_epochs}, mean loss: {mean_loss}")
     model.eval()
@@ -134,7 +134,7 @@ def main():
             f"Could not find serialized data module at {data_module_path}.\n"
             "Did you remember to pickle it in the training script?"
         )
-    
+
     data_module: PerturbationDataModule = pickle.load(open(data_module_path, "rb"))
     logger.info("Loaded data module from %s", data_module_path)
 
@@ -157,24 +157,31 @@ def main():
     # Import the correct model class
     if model_class_name.lower() == "embedsum":
         from ..models.embed_sum import EmbedSumPerturbationModel
+
         ModelClass = EmbedSumPerturbationModel
     elif model_class_name.lower() == "old_neuralot":
         from ..models.old_neural_ot import OldNeuralOTPerturbationModel
+
         ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() in ["neuralot", "pertsets"]:
         from ..models.pert_sets import PertSetsPerturbationModel
+
         ModelClass = PertSetsPerturbationModel
     elif model_class_name.lower() == "simplesum":
         from ..models.simple_sum import SimpleSumPerturbationModel
+
         ModelClass = SimpleSumPerturbationModel
     elif model_class_name.lower() == "globalsimplesum":
         from ..models.global_simple_sum import GlobalSimpleSumPerturbationModel
+
         ModelClass = GlobalSimpleSumPerturbationModel
     elif model_class_name.lower() == "celltypemean":
         from ..models.cell_type_mean import CellTypeMeanModel
+
         ModelClass = CellTypeMeanModel
     elif model_class_name.lower() == "decoder_only":
         from ..models.decoder_only import DecoderOnlyPerturbationModel
+
         ModelClass = DecoderOnlyPerturbationModel
     else:
         raise ValueError(f"Unknown model class: {model_class_name}")
@@ -224,13 +231,10 @@ def main():
     final_reals = np.empty((num_cells, output_dim), dtype=np.float16)
 
     store_raw_expression = (
-        data_module.embed_key is not None and 
-        data_module.embed_key != "X_hvg" and 
-        cfg["data"]["kwargs"]["output_space"] == "gene"
-    ) or (
-        data_module.embed_key is not None and 
-        cfg["data"]["kwargs"]["output_space"] == "all"
-    )
+        data_module.embed_key is not None
+        and data_module.embed_key != "X_hvg"
+        and cfg["data"]["kwargs"]["output_space"] == "gene"
+    ) or (data_module.embed_key is not None and cfg["data"]["kwargs"]["output_space"] == "all")
 
     final_X_hvg = None
     final_gene_preds = None
@@ -253,25 +257,24 @@ def main():
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
             # Move each tensor in the batch to the model's device
-            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v)
-                    for k, v in batch.items()}
-            
+            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+
             # Get predictions
             batch_preds = model.predict_step(batch, batch_idx, padded=False)
-            
+
             # Extract metadata and data directly from batch_preds
             # Handle pert_name
             if isinstance(batch_preds["pert_name"], list):
                 all_pert_names.extend(batch_preds["pert_name"])
             else:
                 all_pert_names.append(batch_preds["pert_name"])
-            
+
             # Handle celltype_name
             if isinstance(batch_preds["celltype_name"], list):
                 all_celltypes.extend(batch_preds["celltype_name"])
             else:
                 all_celltypes.append(batch_preds["celltype_name"])
-            
+
             # Handle gem_group
             if isinstance(batch_preds["gem_group"], list):
                 all_gem_groups.extend([str(x) for x in batch_preds["gem_group"]])
@@ -279,30 +282,34 @@ def main():
                 all_gem_groups.extend([str(x) for x in batch_preds["gem_group"].cpu().numpy()])
             else:
                 all_gem_groups.append(str(batch_preds["gem_group"]))
-            
+
             batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
             batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
             batch_size = batch_pred_np.shape[0]
-            final_preds[current_idx:current_idx+batch_size, :] = batch_pred_np
-            final_reals[current_idx:current_idx+batch_size, :] = batch_real_np
+            final_preds[current_idx : current_idx + batch_size, :] = batch_pred_np
+            final_reals[current_idx : current_idx + batch_size, :] = batch_real_np
             current_idx += batch_size
-            
+
             # Handle X_hvg for HVG space ground truth
             if final_X_hvg is not None:
                 batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
-                final_X_hvg[current_idx-batch_size:current_idx, :] = batch_real_gene_np
-            
+                final_X_hvg[current_idx - batch_size : current_idx, :] = batch_real_gene_np
+
             # Handle decoded gene predictions if available
             if final_gene_preds is not None:
                 batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
-                final_gene_preds[current_idx-batch_size:current_idx, :] = batch_gene_pred_np
-
+                final_gene_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
 
     logger.info("Creating anndatas from predictions from manual loop...")
 
-
     # Build pandas DataFrame for obs and var
-    obs = pd.DataFrame({data_module.pert_col: all_pert_names, data_module.cell_type_key: all_celltypes, data_module.batch_col: all_gem_groups})
+    obs = pd.DataFrame(
+        {
+            data_module.pert_col: all_pert_names,
+            data_module.cell_type_key: all_celltypes,
+            data_module.batch_col: all_gem_groups,
+        }
+    )
     var = pd.DataFrame({"gene_symbols": data_module.get_var_names()})
 
     if final_X_hvg is not None:
@@ -324,29 +331,29 @@ def main():
     # Save the AnnData objects
     adata_pred_path = os.path.join(args.output_dir, "adata_pred.h5ad")
     adata_real_path = os.path.join(args.output_dir, "adata_real.h5ad")
-    
+
     adata_pred.write_h5ad(adata_pred_path)
     adata_real.write_h5ad(adata_real_path)
-    
+
     logger.info(f"Saved adata_pred to {adata_pred_path}")
     logger.info(f"Saved adata_real to {adata_real_path}")
 
     # 6. Compute metrics using cell-eval
     logger.info("Computing metrics using cell-eval...")
-    
+
     control_pert = data_module.get_control_pert()
-    
+
     evaluator = MetricsEvaluator(
         adata_pred=adata_pred,
         adata_real=adata_real,
         control_pert=control_pert,
         pert_col=data_module.pert_col,
-        celltype_col= data_module.cell_type_key,
+        celltype_col=data_module.cell_type_key,
     )
-    
+
     # Compute all metrics
     results = evaluator.compute()
-    
+
     # 7. Save and display results
     eval_basedir = os.path.join(
         run_output_dir,
@@ -354,7 +361,7 @@ def main():
         args.checkpoint.replace(".ckpt", ""),
     )
     os.makedirs(eval_basedir, exist_ok=True)
-    
+
     # Save results
     results_path = os.path.join(eval_basedir, "cell_eval_results.csv")
     if isinstance(results, dict):
@@ -362,10 +369,10 @@ def main():
         results_df = pd.DataFrame([results])
     else:
         results_df = results
-    
+
     results_df.to_csv(results_path, index=False)
     logger.info(f"Cell-eval results saved to {results_path}")
-    
+
     # Display summary
     logger.info("Cell-eval Results Summary:")
     if isinstance(results, dict):

@@ -29,6 +29,7 @@ class DecoderInterface(ABC):
         """
         pass
 
+
 class FinetuneVCICountsDecoder(nn.Module):
     def __init__(
         self,
