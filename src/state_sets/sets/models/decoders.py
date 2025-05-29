@@ -2,8 +2,6 @@
 import logging
 from abc import ABC, abstractmethod
 
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
@@ -12,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 from ...state.finetune_decoder import Finetune
-from ...state.inference import Inference
 
 
 class DecoderInterface(ABC):
