@@ -94,10 +94,8 @@ class Preprocessor:
                 cat_data = pd.Categorical.from_codes(
                     h5f[f"var/{feature_field}/codes"][:], categories=h5f[f"var/{feature_field}/categories"][:]
                 )
-                lower = True
             except KeyError:
                 cat_data = h5f[f"var/{feature_field}"][:]
-                lower = False
             try:
                 idxs = []
                 for k in cat_data:

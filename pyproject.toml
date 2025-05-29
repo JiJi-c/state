@@ -38,10 +38,3 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 state-sets = "state_sets.__main__:main"
-
-[tool.ruff]
-# Allow fixes for all enabled rules
-fix = true
-
-# Line length
-line-length = 120

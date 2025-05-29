@@ -142,8 +142,9 @@ class GeneVocab(Vocab):
                 ordered_dict.update({symbol: min_freq})
                 ordered_dict.move_to_end(symbol, last=not special_first)
 
-        word_vocab = torch_vocab.vocab(ordered_dict, min_freq=min_freq)
-        return word_vocab
+        ## TODO: fix broken usage
+        # word_vocab = torch_vocab.vocab(ordered_dict, min_freq=min_freq)
+        # return word_vocab
 
     @property
     def pad_token(self) -> Optional[str]:
