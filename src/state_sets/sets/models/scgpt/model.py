@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+from fast_transformers.masking import LengthMask
 from torch import Tensor, nn
 from torch.distributions import Bernoulli
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
@@ -225,6 +226,7 @@ class TransformerModel(nn.Module):
         # TODO: if gen_iters > 1, should have a tag indicate the current iteration
         try:
             self._check_batch_labels(batch_labels)
+        # TODO: handle raw exception
         except:
             import warnings
 
@@ -492,7 +494,7 @@ class FastTransformerEncoderWrapper(nn.Module):
     def build_length_mask(
         src: Tensor,
         src_key_padding_mask: torch.BoolTensor,
-    ) -> "LengthMask":
+    ) -> LengthMask:
         from fast_transformers.masking import LengthMask
 
         seq_len = src.shape[1]
