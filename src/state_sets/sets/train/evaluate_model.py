@@ -348,7 +348,8 @@ def main():
     )
 
     # Compute all metrics
-    results = evaluator.compute()
+    evaluator.compute()
+    results = evaluator.metrics
 
     # 7. Save and display results
     eval_basedir = os.path.join(
@@ -360,12 +361,7 @@ def main():
 
     # Save results
     results_path = os.path.join(eval_basedir, "cell_eval_results.csv")
-    if isinstance(results, dict):
-        # Convert dict of results to DataFrame
-        results_df = pd.DataFrame([results])
-    else:
-        results_df = results
-
+    results_df = pd.DataFrame([results])
     results_df.to_csv(results_path, index=False)
     logger.info(f"Cell-eval results saved to {results_path}")
 
