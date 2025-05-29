@@ -33,7 +33,7 @@ def _compute_de(adata, dataset_path, top_genes=5000, group_by="leiden", referenc
         adata,
         group_by,
         method="wilcoxon",
-        reference=reference if reference != None else "rest",
+        reference=reference if reference is not None else "rest",
         n_genes=adata.shape[1],
         use_raw=False,
     )
@@ -48,7 +48,7 @@ def _compute_de(adata, dataset_path, top_genes=5000, group_by="leiden", referenc
     ranked_genes = {"gene_names": df_gene, "gene_scores": df_score, "gene_indices": df_gene_idx}
     adata.uns["ranked_genes"] = ranked_genes
 
-    if reference != None:
+    if reference is not None:
         logging.info("Filtering reference gene...")
         adata = adata[adata.obs[group_by] != reference]
 
