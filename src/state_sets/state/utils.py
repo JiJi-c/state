@@ -50,6 +50,7 @@ def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):
 
 def convert_symbols_to_ensembl(adata):
     import mygene
+
     gene_symbols = adata.var_names.tolist()
 
     mg = mygene.MyGeneInfo()

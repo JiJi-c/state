@@ -65,7 +65,9 @@ def run_sets_predict(args: ap.ArgumentParser):
             pbar = tqdm(dataloader, desc=f"Finetune epoch {epoch + 1}/{ft_epochs}", leave=True)
             for batch in pbar:
                 # Check if this batch contains control cells
-                first_pert = batch["pert_name"][0] if isinstance(batch["pert_name"], list) else batch["pert_name"][0].item()
+                first_pert = (
+                    batch["pert_name"][0] if isinstance(batch["pert_name"], list) else batch["pert_name"][0].item()
+                )
                 if first_pert != control_pert:
                     continue
 
@@ -84,7 +86,6 @@ def run_sets_predict(args: ap.ArgumentParser):
             mean_loss = np.mean(epoch_losses) if epoch_losses else float("nan")
             logger.info(f"Finetune epoch {epoch + 1}/{ft_epochs}, mean loss: {mean_loss}")
         model.eval()
-
 
     def load_config(cfg_path: str) -> dict:
         """Load config from the YAML file that was dumped during training."""

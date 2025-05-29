@@ -10,15 +10,17 @@ from ._cli import (
     run_state_train,
 )
 
+
 def get_args() -> tuple[ap.Namespace, list[str]]:
     """Parse known args and return remaining args for Hydra overrides"""
     parser = ap.ArgumentParser()
     subparsers = parser.add_subparsers(required=True, dest="command")
     add_arguments_state(subparsers.add_parser("state"))
     add_arguments_sets(subparsers.add_parser("sets"))
-    
+
     # Use parse_known_args to get both known args and remaining args
     return parser.parse_args()
+
 
 def load_hydra_config(method: str, overrides: list[str] = None) -> DictConfig:
     """Load Hydra config with optional overrides"""
@@ -36,6 +38,7 @@ def load_hydra_config(method: str, overrides: list[str] = None) -> DictConfig:
             case _:
                 raise ValueError(f"Unknown method: {method}")
     return cfg
+
 
 def main():
     args = get_args()
@@ -56,6 +59,7 @@ def main():
                 case "predict":
                     # For now, predict uses argparse and not hydra
                     run_sets_predict(args)
+
 
 if __name__ == "__main__":
     main()

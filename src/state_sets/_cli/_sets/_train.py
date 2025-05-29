@@ -3,13 +3,11 @@ import hydra
 
 from omegaconf import DictConfig, OmegaConf
 
+
 def add_arguments_train(parser: ap.ArgumentParser):
     # Allow remaining args to be passed through to Hydra
-    parser.add_argument(
-        "hydra_overrides",
-        nargs="*",
-        help="Hydra configuration overrides (e.g., data.batch_size=32)"
-    )
+    parser.add_argument("hydra_overrides", nargs="*", help="Hydra configuration overrides (e.g., data.batch_size=32)")
+
 
 def run_sets_train(cfg: DictConfig):
     import json

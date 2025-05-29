@@ -5,6 +5,7 @@ from ._train import add_arguments_train, run_sets_train
 
 __all__ = ["run_sets_train", "run_sets_predict", "add_arguments_sets"]
 
+
 def add_arguments_sets(parser: ap.ArgumentParser):
     """"""
     subparsers = parser.add_subparsers(required=True, dest="subcommand")

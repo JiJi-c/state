@@ -5,6 +5,7 @@ from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from os.path import join
 
+
 @contextmanager
 def time_it(timer_name: str):
     logging.debug(f"Starting timer {timer_name}")
@@ -15,6 +16,7 @@ def time_it(timer_name: str):
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         logging.debug(f"Elapsed time {timer_name}: {elapsed_time:.4f} seconds")
+
 
 def get_loggers(
     output_dir: str,
@@ -45,9 +47,8 @@ def get_loggers(
 
     return loggers
 
-def get_checkpoint_callbacks(
-    output_dir: str, name: str, val_freq: int, ckpt_every_n_steps: int
-):
+
+def get_checkpoint_callbacks(output_dir: str, name: str, val_freq: int, ckpt_every_n_steps: int):
     """
     Create checkpoint callbacks based on validation frequency.
 
@@ -80,6 +81,7 @@ def get_checkpoint_callbacks(
 
     return callbacks
 
+
 def get_lightning_module(model_type: str, data_config: dict, model_config: dict, training_config: dict, var_dims: dict):
     """Create model instance based on config."""
     # combine the model config and training config
@@ -97,6 +99,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
 
     if model_type.lower() == "embedsum":
         from ...sets.models.embed_sum import EmbedSumPerturbationModel
+
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -108,6 +111,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "old_neuralot":
         from ...sets.models.old_neural_ot import OldNeuralOTPerturbationModel
+
         return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -119,6 +123,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
         from ...sets.models.pert_sets import PertSetsPerturbationModel
+
         return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -130,6 +135,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "globalsimplesum":
         from ...sets.models.global_simple_sum import GlobalSimpleSumPerturbationModel
+
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -141,6 +147,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "celltypemean":
         from ...sets.models.cell_type_mean import CellTypeMeanModel
+
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -152,6 +159,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "decoder_only":
         from ...sets.models.decoder_only import DecoderOnlyPerturbationModel
+
         return DecoderOnlyPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -163,6 +171,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "pseudobulk":
         from ...sets.models.pseudobulk import PseudobulkPerturbationModel
+
         return PseudobulkPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -174,6 +183,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "cpa":
         from ...sets.models.cpa import CPAPerturbationModel
+
         return CPAPerturbationModel(
             input_dim=var_dims["input_dim"],
             output_dim=var_dims["output_dim"],
@@ -183,6 +193,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "scvi":
         from ...sets.models.scvi import SCVIPerturbationModel
+
         return SCVIPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
@@ -194,6 +205,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "scgpt-chemical" or model_type.lower() == "scgpt-genetic":
         from ...sets.models.scgpt import scGPTForPerturbation
+
         pretrained_path = module_config["pretrained_path"]
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
 

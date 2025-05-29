@@ -5,6 +5,7 @@ from ._train import add_arguments_train, run_state_train
 
 __all__ = ["run_state_embed", "run_state_train", "add_arguments_state"]
 
+
 def add_arguments_state(parser: ap.ArgumentParser):
     """"""
     subparsers = parser.add_subparsers(required=True, dest="subcommand")
