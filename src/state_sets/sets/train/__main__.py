@@ -15,8 +15,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.plugins.precision import MixedPrecision
 from omegaconf import DictConfig, OmegaConf
-from vc_load.data_modules.tasks import parse_dataset_specs
-from vc_load.utils.modules import get_datamodule
+from cell_load.data_modules.tasks import parse_dataset_specs
+from cell_load.utils.modules import get_datamodule
 
 from ..callbacks import BatchSpeedMonitorCallback
 from ..models import (

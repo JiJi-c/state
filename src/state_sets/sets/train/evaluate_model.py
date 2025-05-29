@@ -14,7 +14,7 @@ import pandas as pd
 import torch
 import yaml
 from tqdm import tqdm
-from vc_load.data_modules import PerturbationDataModule
+from cell_load.data_modules import PerturbationDataModule
 
 # Cell-eval for metrics computation
 from cell_eval import MetricsEvaluator
