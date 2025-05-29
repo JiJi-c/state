@@ -86,7 +86,8 @@ class CPATrainer(L.LightningModule):
 
         self.epoch_history = defaultdict(list)
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # TODO: remove unused
+        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.adv_loss = adv_loss.lower()
         self.gamma = kwargs.get("gamma", 2.0)
