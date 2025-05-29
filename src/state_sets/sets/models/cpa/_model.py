@@ -5,8 +5,8 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 from torchmetrics.functional import accuracy
 
-from models import PerturbationModel
-from models.decoders import DecoderInterface
+from ..base import PerturbationModel
+from ..decoders import DecoderInterface
 
 from ._module import CPAModule
 

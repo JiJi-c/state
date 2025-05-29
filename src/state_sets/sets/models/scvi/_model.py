@@ -3,8 +3,8 @@ from typing import Dict, Optional, Tuple
 import torch
 from torch.optim.lr_scheduler import StepLR
 
-from models import PerturbationModel
-from models.decoders import DecoderInterface
+from ..base import PerturbationModel
+from ..decoders import DecoderInterface
 
 from ._module import scVIModule
 

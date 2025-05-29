@@ -8,10 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from geomloss import SamplesLoss
 
-from models.base import PerturbationModel
-from models.decoders import DecoderInterface, FinetuneVCICountsDecoder
-from models.decoders_nb import NBDecoder, nb_nll
-from models.utils import build_mlp, get_activation_class, get_transformer_backbone
+from .base import PerturbationModel
+from .decoders import DecoderInterface, FinetuneVCICountsDecoder
+from .decoders_nb import NBDecoder, nb_nll
+from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from models.base import PerturbationModel
+from .base import PerturbationModel
 
 logger = logging.getLogger(__name__)
 

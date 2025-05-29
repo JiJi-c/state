@@ -15,18 +15,14 @@ kwargs:
   n_basal_samples: 1
   sampling_random_state: 42
   split_random_state: 42
-  basal_mapping_strategy: nearest
-  k_neighbors: 10
-  use_batch_ot: false 
+  basal_mapping_strategy: random
   should_yield_control_cells: true
   neighborhood_fraction: 0.1
-  preload_data: false
   batch_col: gem_group
   pert_col: gene
   cell_type_key: cell_type
   control_pert: DMSO_TF
   map_controls: true # for a control cell, should we use it as the target (learn identity) or sample a control?
-  normalize_counts: false # should we normalize the hvg counts before taking the log transform?
   perturbation_features_file: null
   store_raw_basal: ${model.kwargs.residual_decoder}
   int_counts: ${model.kwargs.nb_decoder}

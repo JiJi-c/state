@@ -3,9 +3,9 @@ from typing import Dict, Optional
 import torch
 from geomloss import SamplesLoss
 
-from models.base import PerturbationModel
-from models.decoders import DecoderInterface
-from models.utils import build_mlp, get_activation_class, get_transformer_backbone
+from .base import PerturbationModel
+from .decoders import DecoderInterface
+from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 
 class OldNeuralOTPerturbationModel(PerturbationModel):

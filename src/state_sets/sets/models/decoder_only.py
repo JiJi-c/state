@@ -3,8 +3,8 @@
 import torch
 from geomloss import SamplesLoss
 
-from models.base import PerturbationModel
-from models.utils import get_activation_class
+from .base import PerturbationModel
+from .utils import get_activation_class
 
 
 class DecoderOnlyPerturbationModel(PerturbationModel):

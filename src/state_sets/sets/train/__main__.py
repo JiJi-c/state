@@ -18,8 +18,8 @@ from omegaconf import DictConfig, OmegaConf
 from vc_load.data_modules.tasks import parse_dataset_specs
 from vc_load.utils.modules import get_datamodule
 
-from callbacks import BatchSpeedMonitorCallback
-from models import (
+from ..callbacks import BatchSpeedMonitorCallback
+from ..models import (
     CellTypeMeanModel,
     CPAPerturbationModel,
     DecoderOnlyPerturbationModel,
@@ -29,7 +29,6 @@ from models import (
     PertSetsPerturbationModel,
     PseudobulkPerturbationModel,
     SCVIPerturbationModel,
-    SimpleSumPerturbationModel,
     scGPTForPerturbation,
 )
 
@@ -74,16 +73,6 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         )
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
         return PertSetsPerturbationModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            hvg_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            batch_dim=var_dims["batch_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "simplesum":
-        return SimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
             hvg_dim=var_dims["hvg_dim"],
@@ -308,7 +297,7 @@ def get_checkpoint_callbacks(
     return callbacks
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="config")
+@hydra.main(version_base=None, config_path="../../../../configs", config_name="config")
 def train(cfg: DictConfig) -> None:
     """Main training function."""
     # Convert config to YAML for logging
@@ -528,7 +517,7 @@ def train(cfg: DictConfig) -> None:
                     f"{checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
                 )
                 # Rebuild the pert_encoder with the new pert input dimension
-                from models.utils import build_mlp
+                from ..models.utils import build_mlp
 
                 model.pert_encoder = build_mlp(
                     in_dim=model.pert_dim,

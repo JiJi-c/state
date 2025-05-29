@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 from lightning.pytorch import LightningModule
 
-from models.decoders import DecoderInterface
-from models.utils import build_mlp, get_activation_class, get_loss_fn
+from .decoders import DecoderInterface
+from .utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
 

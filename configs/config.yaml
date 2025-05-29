@@ -1,8 +1,8 @@
 # This is a template used in the application to generating the config file for
 # training tasks
 defaults:
-  - data: multidataset
-  - model: neuralot
+  - data: perturbation
+  - model: pertsets
   - training: default
   - wandb: abhinav # Change this as needed
   - _self_
