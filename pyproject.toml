@@ -19,9 +19,18 @@ dependencies = [
     "wandb>=0.19.11",
 ]
 
+[dependency-groups]
+dev = ["ruff>=0.11.11", "vulture>=2.14"]
+
+[tool.uv.sources]
+cell-load = { git = "ssh://github.com/arcinstitute/cell-load" }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+state-sets = "state_sets.__main__:main"
 
 [tool.ruff]
 # Allow fixes for all enabled rules
@@ -29,12 +38,3 @@ fix = true
 
 # Line length
 line-length = 120
-
-[tool.uv.sources]
-cell-load = { git = "ssh://github.com/arcinstitute/cell-load" }
-
-[dependency-groups]
-dev = [
-    "ruff>=0.11.11",
-    "vulture>=2.14",
-]
