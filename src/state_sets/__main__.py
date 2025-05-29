@@ -1,5 +1,4 @@
 import argparse as ap
-import sys
 from hydra import initialize, compose
 from omegaconf import DictConfig
 from ._cli import (
@@ -45,19 +44,17 @@ def main():
         case "state":
             match args.subcommand:
                 case "train":
-                    # For now, state functions still use argparse
-                    # You can later update them to use Hydra configs too
                     run_state_train(args)
                 case "embed":
                     run_state_embed(args)
         case "sets":
             match args.subcommand:
                 case "train":
-                    # Load Hydra config with overrides for sets train
+                    # Load Hydra config with overrides for sets training
                     cfg = load_hydra_config("sets", args.hydra_overrides)
                     run_sets_train(cfg)
                 case "predict":
-                    # For now, predict still uses argparse
+                    # For now, predict uses argparse and not hydra
                     run_sets_predict(args)
 
 if __name__ == "__main__":
