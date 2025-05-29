@@ -260,7 +260,8 @@ class CPAModule(nn.Module):
         pert_dosages: Optional[torch.Tensor] = None,
         n_samples: int = 1,
     ):
-        batch_size = x.shape[0]
+        # TODO: remove unused
+        # batch_size = x.shape[0]
 
         if self.recon_loss in ["nb", "zinb"]:
             # log the input to the variational distribution for numerical stability
