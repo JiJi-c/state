@@ -24,8 +24,8 @@ kwargs:
   control_pert: DMSO_TF
   map_controls: true # for a control cell, should we use it as the target (learn identity) or sample a control?
   perturbation_features_file: null
-  store_raw_basal: ${model.kwargs.residual_decoder}
-  int_counts: ${model.kwargs.nb_decoder}
+  store_raw_basal: false
+  int_counts: false
   randomize_sentence_per_epoch: false
 output_dir: null
 debug: true

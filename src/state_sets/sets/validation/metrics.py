@@ -15,8 +15,8 @@ from scipy.interpolate import interp1d
 from sklearn.metrics import auc
 from tqdm import tqdm
 
-from utils import time_it
-from validation.metric_utils import (
+from ..utils import time_it
+from .metric_utils import (
     compute_clustering_agreement,
     compute_cosine_similarity,
     compute_DE_for_truth_and_pred,
@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 ## TODO: Redefine this to take as input the mapping information
 def compute_metrics(
-    adata_pred,  # predictions in uce space
-    adata_real,  # true values in uce space
+    adata_pred,  # predictions in state
+    adata_real,  # true values in state
     adata_pred_gene=None,  # predictions in gene space
     adata_real_gene=None,  # true values in gene space
     embed_key=None,
