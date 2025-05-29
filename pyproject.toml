@@ -7,6 +7,7 @@ authors = []
 requires-python = ">=3.13"
 dependencies = [
     "anndata>=0.11.4",
+    "cell-load>=0.2.1",
     "numpy>=2.2.6",
     "pandas>=2.2.3",
     "pyyaml>=6.0.2",
@@ -28,6 +29,9 @@ fix = true
 
 # Line length
 line-length = 120
+
+[tool.uv.sources]
+cell-load = { git = "ssh://github.com/arcinstitute/cell-load" }
 
 [dependency-groups]
 dev = [
