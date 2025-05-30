@@ -11,83 +11,11 @@ from .utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
 
-
-class GeneWiseDecoder(nn.Module):
-    """
-    A gene-wise decoder that instantiates a separate MLP for each gene.
-
-    Each gene has its own small network that maps the latent embedding
-    (optionally concatenated with batch information) to a predicted count.
-
-    Args:
-        latent_dim (int): Input dimension of each per-gene decoder.
-        gene_dim (int): Number of genes (i.e. number of separate decoders).
-        hidden_dims (List[int], optional): Hidden layer sizes for each decoder.
-        dropout (float, optional): Dropout probability.
-        softplus (bool, optional): If True, apply Softplus to ensure non-negative outputs.
-    """
-
-    def __init__(
-        self,
-        latent_dim: int,
-        gene_dim: int,
-        hidden_dims: List[int] = [512, 1024],
-        dropout: float = 0.0,
-        softplus: bool = False,
-    ):
-        super().__init__()
-        self._gene_dim = gene_dim  # store gene dimension internally
-
-        # Build one MLP per gene. Each decoder maps the latent_dim to a scalar.
-        self.decoders = nn.ModuleList(
-            [
-                build_mlp(
-                    latent_dim,
-                    1,
-                    hidden_dim=512,
-                    n_layers=len(hidden_dims),
-                    dropout=dropout,
-                    activation=get_activation_class("gelu"),
-                )
-                for _ in range(gene_dim)
-            ]
-        )
-        self.softplus = torch.nn.ReLU() if softplus else None
-
-    def gene_dim(self):
-        """Return the output gene dimension for compatibility."""
-        return self._gene_dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through all per-gene decoders.
-
-        x can be of shape (B, latent_dim) or (B, S, latent_dim).
-        The output will be of shape (B, gene_dim) or (B, S, gene_dim) respectively.
-        """
-        # Handle the case of a sequence of latent vectors (e.g. when padded)
-        if x.dim() == 3:  # x has shape (B, S, latent_dim)
-            B, S, latent_dim = x.shape
-            x_flat = x.reshape(-1, latent_dim)  # Flatten to (B*S, latent_dim)
-            # Compute each gene’s prediction over the flattened batch
-            outputs = [decoder(x_flat) for decoder in self.decoders]  # each is (B*S, 1)
-            out = torch.cat(outputs, dim=1)  # (B*S, gene_dim)
-            out = out.reshape(B, S, self._gene_dim)
-        else:
-            # x has shape (B, latent_dim)
-            outputs = [decoder(x) for decoder in self.decoders]  # list of (B, 1)
-            out = torch.cat(outputs, dim=1)  # (B, gene_dim)
-
-        if self.softplus is not None:
-            out = self.softplus(out)
-        return out
-
-
 class LatentToGeneDecoder(nn.Module):
     """
     A decoder module to transform latent embeddings back to gene expression space.
 
-    This takes concat([cell embedding, batch onehot]) as the input, and predicts
+    This takes concat([cell embedding]) as the input, and predicts
     counts over all genes as output.
 
     This decoder is trained separately from the main perturbation model.
@@ -105,7 +33,6 @@ class LatentToGeneDecoder(nn.Module):
         gene_dim: int,
         hidden_dims: List[int] = [512, 1024],
         dropout: float = 0.0,
-        softplus: bool = False,
     ):
         super().__init__()
 
@@ -122,10 +49,8 @@ class LatentToGeneDecoder(nn.Module):
 
         # Final output layer
         layers.append(nn.Linear(input_dim, gene_dim))
-
-        # Just add a relu function for now
-        if softplus:
-            layers.append(nn.ReLU())
+        # Make sure outputs are non-negative
+        layers.append(nn.ReLU())
 
         self.decoder = nn.Sequential(*layers)
 
@@ -178,7 +103,6 @@ class PerturbationModel(ABC, LightningModule):
         control_pert: str = "non-targeting",
         embed_key: Optional[str] = None,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         gene_names: Optional[List[str]] = None,
         batch_size: int = 64,
         gene_dim: int = 5000,
@@ -198,6 +122,7 @@ class PerturbationModel(ABC, LightningModule):
             self.batch_dim = batch_dim
         else:
             self.batch_dim = None
+
         self.embed_key = embed_key
         self.output_space = output_space
         self.batch_size = batch_size
@@ -209,6 +134,8 @@ class PerturbationModel(ABC, LightningModule):
         self.lr = lr
         self.loss_fn = get_loss_fn(loss_fn)
 
+
+
         # this will either decode to hvg space if output space is a gene,
         # or to transcriptome space if output space is all. done this way to maintain
         # backwards compatibility with the old models
@@ -217,25 +144,16 @@ class PerturbationModel(ABC, LightningModule):
         if (embed_key and embed_key != "X_hvg" and output_space == "gene") or (
             embed_key and output_space == "all"
         ):  # we should be able to decode from hvg to all
-            if embed_key == "X_scfound":
-                if gene_dim > 18000:
-                    hidden_dims = [512, 1024, 256]
-                else:
-                    hidden_dims = [512, 1024]
-            elif gene_dim > 18000:  # paper tahoe
+            if gene_dim > 10000:
                 hidden_dims = [1024, 512, 256]
-            elif gene_dim > 10000:  # paper replogle
-                hidden_dims = [hidden_dim * 2, hidden_dim * 4]  # remove this
             else:
-                hidden_dims = [hidden_dim * 2, hidden_dim * 4]
+                hidden_dims = [1024, 512, 512]
 
             self.gene_decoder = LatentToGeneDecoder(
-                latent_dim=self.output_dim + self.batch_dim if self.batch_dim is not None else self.output_dim,
-                # latent_dim=self.output_dim,
+                latent_dim=self.output_dim,
                 gene_dim=gene_dim,
                 hidden_dims=hidden_dims,
                 dropout=dropout,
-                softplus=self.hparams.get("softplus", False),
             )
             logger.info(f"Initialized gene decoder for embedding {embed_key} to gene space")
 
