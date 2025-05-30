@@ -96,10 +96,10 @@ def get_transformer_backbone(key, kwargs) -> PreTrainedModel:
         model = GPT2Model(config)
 
         # Zero out position embeddings and freeze them
-        model.wpe.weight.zero_()
         model.wpe.weight.requires_grad = False
-        model.wte.weight.zero_()
         model.wte.weight.requires_grad = False
+        model.wpe.weight.zero_()
+        model.wte.weight.zero_()
 
         model_dim = config.n_embd
     elif key == "llama":

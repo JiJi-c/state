@@ -54,7 +54,7 @@ class CellContextPerturbationModel(PerturbationModel):
             lr: Learning rate if there's anything to optimize. We only keep a dummy param.
             loss_fn: The chosen PyTorch loss function for training (default MSE).
             embed_key: Possibly an embedding key from the datamodule (unused).
-            output_space: 'gene' or 'latent' (we handle either; just read from batch["X_hvg"] or batch["X"]).
+            output_space: 'gene' or 'latent' (we handle either; just read from batch["pert_cell_counts"] or batch["pert_cell_emb"]).
             decoder: Possibly a separate decoder if output_space='latent' for final evaluation.
             gene_names: Names of genes if needed for logging.
             kwargs: Catch-all for extra arguments from config.
@@ -110,9 +110,9 @@ class CellContextPerturbationModel(PerturbationModel):
                     or self.embed_key
                     and self.output_space == "all"
                 ):
-                    X_vals = batch["X_hvg"]
+                    X_vals = batch["pert_cell_counts"]
                 else:
-                    X_vals = batch["X"]
+                    X_vals = batch["pert_cell_emb"]
 
                 X_cpu = X_vals.float().cpu()
                 pert_names = batch["pert_name"]
@@ -195,7 +195,7 @@ class CellContextPerturbationModel(PerturbationModel):
             if offset_vec is None:
                 offset_vec = torch.zeros(self.output_dim, device=device)
 
-            pred_out[i] = batch["basal"][i] + offset_vec.to(device)
+            pred_out[i] = batch["ctrl_cell_emb"][i] + offset_vec.to(device)
 
         return pred_out
 
@@ -215,9 +215,9 @@ class CellContextPerturbationModel(PerturbationModel):
         if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") or (
             self.embed_key and self.output_space == "all"
         ):
-            target = batch["X_hvg"]
+            target = batch["pert_cell_counts"]
         else:
-            target = batch["X"]
+            target = batch["pert_cell_emb"]
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, prog_bar=True)
         return None

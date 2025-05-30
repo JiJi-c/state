@@ -180,10 +180,10 @@ class CPAPerturbationModel(PerturbationModel):
                 - cell_type: Cell type one-hot
                 - batch: Batch one-hot
         """
-        basal = batch["basal"]
-        pert = batch["pert"]
+        basal = batch["ctrl_cell_emb"]
+        pert = batch["pert_emb"]
         cell_type = batch["cell_type_onehot"]
-        batch_ids = batch["gem_group"]
+        batch_ids = batch["batch"]
         pert_dosages = batch.get("pert_dosage", None)
 
         # if pert is one-hot, convert to index
@@ -362,7 +362,7 @@ class CPAPerturbationModel(PerturbationModel):
         enc_outputs, dec_outputs = self._forward_step(batch)
 
         recon_loss, kl_loss = self.module.loss(
-            x_pert=batch["X"],
+            x_pert=batch["pert_cell_emb"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
@@ -374,9 +374,9 @@ class CPAPerturbationModel(PerturbationModel):
                 z_basal = enc_outputs["z_basal"]
 
                 adv_loss, adv_acc, adv_penalty = self.adversarial_loss(
-                    perts=batch["pert"].argmax(1),
+                    perts=batch["pert_emb"].argmax(1),
                     cell_types=batch["cell_type_onehot"].argmax(1),
-                    batch_ids=batch["gem_group"].argmax(1),
+                    batch_ids=batch["batch"].argmax(1),
                     z_basal=z_basal,
                     compute_penalty=False,
                 )
@@ -397,9 +397,9 @@ class CPAPerturbationModel(PerturbationModel):
                 opt_adv.zero_grad()
 
                 adv_loss, adv_acc, adv_penalty = self.adversarial_loss(
-                    perts=batch["pert"].argmax(1),
+                    perts=batch["pert_emb"].argmax(1),
                     cell_types=batch["cell_type_onehot"].argmax(1),
-                    batch_ids=batch["gem_group"].argmax(1),
+                    batch_ids=batch["batch"].argmax(1),
                     z_basal=z_basal.detach(),
                     compute_penalty=True,
                 )
@@ -423,9 +423,9 @@ class CPAPerturbationModel(PerturbationModel):
                 z_basal = enc_outputs["z_basal"]
 
                 adv_loss, adv_acc, adv_penalty = self.adversarial_loss(
-                    perts=batch["pert"].argmax(1),
+                    perts=batch["pert_emb"].argmax(1),
                     cell_types=batch["cell_type_onehot"].argmax(1),
-                    batch_ids=batch["gem_group"].argmax(1),
+                    batch_ids=batch["batch"].argmax(1),
                     z_basal=z_basal.detach(),
                     compute_penalty=True,
                 )
@@ -452,9 +452,9 @@ class CPAPerturbationModel(PerturbationModel):
                 z_basal = enc_outputs["z_basal"]
 
                 adv_loss, adv_acc, adv_penalty = self.adversarial_loss(
-                    perts=batch["pert"].argmax(1),
+                    perts=batch["pert_emb"].argmax(1),
                     cell_types=batch["cell_type_onehot"].argmax(1),
-                    batch_ids=batch["gem_group"].argmax(1),
+                    batch_ids=batch["batch"].argmax(1),
                     z_basal=z_basal,
                     compute_penalty=False,
                 )
@@ -492,9 +492,9 @@ class CPAPerturbationModel(PerturbationModel):
             opt_adv.zero_grad()
 
             adv_loss, adv_acc, adv_penalty = self.adversarial_loss(
-                perts=batch["pert"].argmax(1),
+                perts=batch["pert_emb"].argmax(1),
                 cell_types=batch["cell_type_onehot"].argmax(1),
-                batch_ids=batch["gem_group"].argmax(1),
+                batch_ids=batch["batch"].argmax(1),
                 z_basal=z_basal.detach(),
                 compute_penalty=True,
             )
@@ -513,16 +513,16 @@ class CPAPerturbationModel(PerturbationModel):
             opt_adv.step()
 
         r2_mean, pearson_lfc = self.module.r2_metric(
-            x_pert=batch["X"],
-            x_basal=batch["basal"],
+            x_pert=batch["pert_cell_emb"],
+            x_basal=batch["ctrl_cell_emb"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
 
         disnt_basal, disnt_after = self.module.disentanglement(
-            perts=batch["pert"].argmax(1),
+            perts=batch["pert_emb"].argmax(1),
             cell_types=batch["cell_type_onehot"].argmax(1),
-            batch_ids=batch["gem_group"].argmax(1),
+            batch_ids=batch["batch"].argmax(1),
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
@@ -602,22 +602,22 @@ class CPAPerturbationModel(PerturbationModel):
         enc_outputs, dec_outputs = self._forward_step(batch)
 
         recon_loss, kl_loss = self.module.loss(
-            x_pert=batch["X"],
+            x_pert=batch["pert_cell_emb"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
 
         r2_mean, pearson_lfc = self.module.r2_metric(
-            x_pert=batch["X"],
-            x_basal=batch["basal"],
+            x_pert=batch["pert_cell_emb"],
+            x_basal=batch["ctrl_cell_emb"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
 
         disnt_basal, disnt_after = self.module.disentanglement(
-            perts=batch["pert"].argmax(1),
+            perts=batch["pert_emb"].argmax(1),
             cell_types=batch["cell_type_onehot"].argmax(1),
-            batch_ids=batch["gem_group"].argmax(1),
+            batch_ids=batch["batch"].argmax(1),
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
@@ -631,7 +631,7 @@ class CPAPerturbationModel(PerturbationModel):
         enc_outputs, dec_outputs = self._forward_step(batch)
 
         recon_loss, kl_loss = self.module.loss(
-            x_pert=batch["X"],
+            x_pert=batch["pert_cell_emb"],
             encoder_outputs=enc_outputs,
             decoder_outputs=dec_outputs,
         )
@@ -666,13 +666,13 @@ class CPAPerturbationModel(PerturbationModel):
 
         outputs = {
             "preds": x_pred,
-            "X": batch.get("X", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
             "X_gene": batch.get("X_gene", None),
-            "pert": batch.get("pert", None),
+            "pert_emb": batch.get("pert_emb", None),
             "pert_name": batch.get("pert_name", None),
             "cell_type": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group_name", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch_name", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         outputs = {k: v for k, v in outputs.items() if v is not None}

@@ -146,7 +146,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         """
         The main forward call.
         """
-        prediction = self.perturb(batch["pert"], batch["basal"])
+        prediction = self.perturb(batch["pert_emb"], batch["ctrl_cell_emb"])
         output = self.project_out(prediction)
 
         return output
@@ -157,22 +157,22 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         pred = self(batch)
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         # TODO: please improve this, do not assume self.cell_sentence_len for this model
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
         main_loss = self.loss_fn(pred, target).mean()
         self.log("train_loss", main_loss)
 
         # Process decoder if available
         decoder_loss = None
-        if self.gene_decoder is not None and "X_hvg" in batch:
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
             # Train decoder to map latent predictions to gene space
             with torch.no_grad():
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
 
-            gene_preds = self.gene_decoder(latent_preds)
-            gene_targets = batch["X_hvg"]
+            pert_cell_counts_preds = self.gene_decoder(latent_preds)
+            gene_targets = batch["pert_cell_counts"]
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
@@ -187,7 +187,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         """Validation step logic."""
         pred = self(batch)
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
@@ -196,25 +196,25 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
 
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0) -> None:
         """Track decoder performance during validation without training it."""
-        if self.gene_decoder is not None and "X_hvg" in batch:
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
             # Get model predictions from validation step
             latent_preds = outputs["predictions"]
 
             # Train decoder to map latent predictions to gene space
-            gene_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
-            gene_targets = batch["X_hvg"]
+            pert_cell_counts_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
+            gene_targets = batch["pert_cell_counts"]
 
             # Get decoder predictions
-            gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
+            pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         pred = self.forward(batch, padded=False)
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
         pred = pred.reshape(1, -1, self.output_dim)
         target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
@@ -230,16 +230,16 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         latent_output = self.forward(batch)  # shape [B, ...]
         output_dict = {
             "preds": latent_output,
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X_hvg", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_output)
-            output_dict["gene_preds"] = gene_preds
+            pert_cell_counts_preds = self.gene_decoder(latent_output)
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict

@@ -164,9 +164,9 @@ class scGPTForPerturbation(PerturbationModel):
         batch,
         truncate=True,
     ):
-        x_basal = batch["basal"]  # (batch_size, n_genes)
-        x_pert = batch["X"]  # (batch_size, n_genes)
-        pert_ids = batch["pert"].argmax(dim=1)
+        x_basal = batch["ctrl_cell_emb"]  # (batch_size, n_genes)
+        x_pert = batch["pert_cell_emb"]  # (batch_size, n_genes)
+        pert_ids = batch["pert_emb"].argmax(dim=1)
         if self.perturbation_type == "chemical":
             pert_flags = torch.zeros_like(x_pert, dtype=torch.long)  # no genes are perturbed
         else:
@@ -312,11 +312,11 @@ class scGPTForPerturbation(PerturbationModel):
 
         return {
             "preds": batch_outputs["x_pred"].float(),
-            "X": batch_outputs["x_true"].float(),
+            "pert_cell_emb": batch_outputs["x_true"].float(),
             "X_gene": batch_outputs["x_true"].float(),
-            "pert": batch.get("pert", None),
+            "pert_emb": batch.get("pert_emb", None),
             "pert_name": batch.get("pert_name", None),
             "cell_type": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group_name", None),
-            "basal": batch_outputs["x_basal"].float(),
+            "batch": batch.get("batch_name", None),
+            "ctrl_cell_emb": batch_outputs["x_basal"].float(),
         }

@@ -228,15 +228,15 @@ def run_sets_predict(args: ap.ArgumentParser):
     ) or (data_module.embed_key is not None and cfg["data"]["kwargs"]["output_space"] == "all")
 
     final_X_hvg = None
-    final_gene_preds = None
+    final_pert_cell_counts_preds = None
     if store_raw_expression:
         # Preallocate matrices of shape (num_cells, gene_dim) for decoded predictions.
         if cfg["data"]["kwargs"]["output_space"] == "gene":
             final_X_hvg = np.empty((num_cells, hvg_dim), dtype=np.float16)
-            final_gene_preds = np.empty((num_cells, hvg_dim), dtype=np.float16)
+            final_pert_cell_counts_preds = np.empty((num_cells, hvg_dim), dtype=np.float16)
         if cfg["data"]["kwargs"]["output_space"] == "all":
             final_X_hvg = np.empty((num_cells, gene_dim), dtype=np.float16)
-            final_gene_preds = np.empty((num_cells, gene_dim), dtype=np.float16)
+            final_pert_cell_counts_preds = np.empty((num_cells, gene_dim), dtype=np.float16)
 
     current_idx = 0
 
@@ -267,15 +267,15 @@ def run_sets_predict(args: ap.ArgumentParser):
                 all_celltypes.append(batch_preds["celltype_name"])
 
             # Handle gem_group
-            if isinstance(batch_preds["gem_group"], list):
-                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"]])
-            elif isinstance(batch_preds["gem_group"], torch.Tensor):
-                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"].cpu().numpy()])
+            if isinstance(batch_preds["batch"], list):
+                all_gem_groups.extend([str(x) for x in batch_preds["batch"]])
+            elif isinstance(batch_preds["batch"], torch.Tensor):
+                all_gem_groups.extend([str(x) for x in batch_preds["batch"].cpu().numpy()])
             else:
-                all_gem_groups.append(str(batch_preds["gem_group"]))
+                all_gem_groups.append(str(batch_preds["batch"]))
 
             batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
-            batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
+            batch_real_np = batch_preds["pert_cell_emb"].cpu().numpy().astype(np.float16)
             batch_size = batch_pred_np.shape[0]
             final_preds[current_idx : current_idx + batch_size, :] = batch_pred_np
             final_reals[current_idx : current_idx + batch_size, :] = batch_real_np
@@ -283,13 +283,13 @@ def run_sets_predict(args: ap.ArgumentParser):
 
             # Handle X_hvg for HVG space ground truth
             if final_X_hvg is not None:
-                batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
+                batch_real_gene_np = batch_preds["pert_cell_counts"].cpu().numpy().astype(np.float16)
                 final_X_hvg[current_idx - batch_size : current_idx, :] = batch_real_gene_np
 
             # Handle decoded gene predictions if available
-            if final_gene_preds is not None:
-                batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
-                final_gene_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
+            if final_pert_cell_counts_preds is not None:
+                batch_gene_pred_np = batch_preds["pert_cell_counts_preds"].cpu().numpy().astype(np.float16)
+                final_pert_cell_counts_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
 
     logger.info("Creating anndatas from predictions from manual loop...")
 
@@ -305,7 +305,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     if final_X_hvg is not None:
         # Create adata for predictions - using the decoded gene expression values
-        adata_pred = anndata.AnnData(X=final_gene_preds, obs=obs, var=var)
+        adata_pred = anndata.AnnData(X=final_pert_cell_counts_preds, obs=obs, var=var)
         # Create adata for real - using the true gene expression values
         adata_real = anndata.AnnData(X=final_X_hvg, obs=obs, var=var)
 

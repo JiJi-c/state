@@ -143,7 +143,7 @@ class CPATrainer(L.LightningModule):
             z_basal = z_basal.requires_grad_(True)
 
         adv_logits = self.module.forward_adv(z_basal)
-        perts = batch["pert"].argmax(1)
+        perts = batch["pert_emb"].argmax(1)
         pert_logits = adv_logits["pert_logits"]
 
         pert_adv_loss = self.adv_loss_fn(pert_logits, perts.long())

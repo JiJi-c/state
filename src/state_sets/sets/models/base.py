@@ -11,6 +11,7 @@ from .utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
 
+
 class LatentToGeneDecoder(nn.Module):
     """
     A decoder module to transform latent embeddings back to gene expression space.
@@ -134,8 +135,6 @@ class PerturbationModel(ABC, LightningModule):
         self.lr = lr
         self.loss_fn = get_loss_fn(loss_fn)
 
-
-
         # this will either decode to hvg space if output space is a gene,
         # or to transcriptome space if output space is all. done this way to maintain
         # backwards compatibility with the old models
@@ -171,19 +170,19 @@ class PerturbationModel(ABC, LightningModule):
         pred = self(batch)
 
         # Compute main model loss
-        main_loss = self.loss_fn(pred, batch["X"])
+        main_loss = self.loss_fn(pred, batch["pert_cell_emb"])
         self.log("train_loss", main_loss)
 
         # Process decoder if available
         decoder_loss = None
-        if self.gene_decoder is not None and "X_hvg" in batch:
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
             # Train decoder to map latent predictions to gene space
             with torch.no_grad():
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
 
-            gene_preds = self.gene_decoder(latent_preds)
-            gene_targets = batch["X_hvg"]
-            decoder_loss = self.loss_fn(gene_preds, gene_targets)
+            pert_cell_counts_preds = self.gene_decoder(latent_preds)
+            gene_targets = batch["pert_cell_counts"]
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets)
 
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
@@ -197,7 +196,7 @@ class PerturbationModel(ABC, LightningModule):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         pred = self(batch)
-        loss = self.loss_fn(pred, batch["X"])
+        loss = self.loss_fn(pred, batch["pert_cell_emb"])
 
         # TODO: remove unused
         # is_control = self.control_pert in batch["pert_name"]
@@ -212,18 +211,18 @@ class PerturbationModel(ABC, LightningModule):
 
         output_dict = {
             "preds": latent_output,  # The distribution's sample
-            "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
+            "pert_cell_emb": batch.get("pert_cell_emb", None),  # The target gene expression or embedding
+            "pert_cell_counts": batch.get("pert_cell_counts", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_output)
-            output_dict["gene_preds"] = gene_preds
-            decoder_loss = self.loss_fn(gene_preds, batch["X_hvg"])
+            pert_cell_counts_preds = self.gene_decoder(latent_output)
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, batch["pert_cell_counts"])
             self.log("test_decoder_loss", decoder_loss, prog_bar=True)
 
         self.log("test_loss", loss, prog_bar=True)
@@ -236,17 +235,17 @@ class PerturbationModel(ABC, LightningModule):
         latent_output = self.forward(batch)
         output_dict = {
             "preds": latent_output,
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X_hvg", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_output)
-            output_dict["gene_preds"] = gene_preds
+            pert_cell_counts_preds = self.gene_decoder(latent_output)
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict
 
@@ -261,11 +260,11 @@ class PerturbationModel(ABC, LightningModule):
             Gene expression predictions or None if decoder is not available
         """
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_embeds)
+            pert_cell_counts_preds = self.gene_decoder(latent_embeds)
             if basal_expr is not None:
                 # Add basal expression if provided
-                gene_preds += basal_expr
-            return gene_preds
+                pert_cell_counts_preds += basal_expr
+            return pert_cell_counts_preds
         return None
 
     def configure_optimizers(self):

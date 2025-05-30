@@ -127,8 +127,8 @@ class EmbedSumPerturbationModel(PerturbationModel):
                 - pert: Perturbation one-hot
                 - basal: Control expression embedding
         """
-        pert = batch["pert"]
-        basal = batch["basal"]
+        pert = batch["pert_emb"]
+        basal = batch["ctrl_cell_emb"]
 
         # compute perturbed cell state to perturbation/cell co-embedding space
         perturbed_encoded = self.perturb(pert, basal)

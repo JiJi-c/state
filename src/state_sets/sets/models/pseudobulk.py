@@ -331,12 +331,12 @@ class PseudobulkPerturbationModel(PerturbationModel):
         expect a single batch, so that sentences can vary in length across batches.
         """
         if padded:
-            pert = batch["pert"].reshape(-1, self.cell_sentence_len, self.pert_dim)
-            basal = batch["basal"].reshape(-1, self.cell_sentence_len, self.input_dim)
+            pert = batch["pert_emb"].reshape(-1, self.cell_sentence_len, self.pert_dim)
+            basal = batch["ctrl_cell_emb"].reshape(-1, self.cell_sentence_len, self.input_dim)
         else:
             # we are inferencing on a single batch, so accept variable length sentences
-            pert = batch["pert"].reshape(1, -1, self.pert_dim)
-            basal = batch["basal"].reshape(1, -1, self.input_dim)
+            pert = batch["pert_emb"].reshape(1, -1, self.pert_dim)
+            basal = batch["ctrl_cell_emb"].reshape(1, -1, self.input_dim)
 
         # Shape: [B, S, hidden_dim]
         pert_embedding = self.encode_perturbation(pert)
@@ -349,9 +349,9 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         if self.batch_encoder is not None:
             if padded:
-                batch = batch["gem_group"].reshape(-1, self.cell_sentence_len, self.batch_dim)
+                batch = batch["batch"].reshape(-1, self.cell_sentence_len, self.batch_dim)
             else:
-                batch = batch["gem_group"].reshape(1, -1, self.batch_dim)
+                batch = batch["batch"].reshape(1, -1, self.batch_dim)
 
             seq_input = seq_input + self.batch_encoder(batch)  # Shape: [B, S, hidden_dim]
 
@@ -397,7 +397,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         else:
             pred, confidence_pred = self.forward(batch, padded=padded)
 
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
 
         if padded:
             pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
@@ -413,33 +413,35 @@ class PseudobulkPerturbationModel(PerturbationModel):
         decoder_loss = None
         total_loss = main_loss
 
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_targets = batch["X_hvg"]
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
+            gene_targets = batch["pert_cell_counts"]
             # Train decoder to map latent predictions to gene space
             latent_preds = pred
             # with torch.no_grad():
             #     latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
 
-            batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
+            batch_var = batch["batch"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
             # concatenate on the last axis
             if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
                 latent_preds = torch.cat([latent_preds, batch_var], dim=-1)
 
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
-                gene_targets = batch["X_hvg"].reshape_as(mu)
+                gene_targets = batch["pert_cell_counts"].reshape_as(mu)
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
-                gene_preds = self.gene_decoder(latent_preds)
+                pert_cell_counts_preds = self.gene_decoder(latent_preds)
                 if self.residual_decoder:
-                    basal_hvg = batch["basal_hvg"].reshape(gene_preds.shape)
-                    gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
+                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
+                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
+                        pert_cell_counts_preds
+                    )
                 if padded:
                     gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
                 else:
                     gene_targets = gene_targets.reshape(1, -1, self.gene_decoder.gene_dim())
 
-                decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+                decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
@@ -468,37 +470,34 @@ class PseudobulkPerturbationModel(PerturbationModel):
             pred, confidence_pred = self(batch)
 
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
         target = target.reshape(-1, self.cell_sentence_len, self.output_dim)
 
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
 
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_targets = batch["X_hvg"]
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
+            gene_targets = batch["pert_cell_counts"]
 
             # Get model predictions from validation step
             latent_preds = pred
 
-            # Train decoder to map latent predictions to gene space
-            batch_var = batch["gem_group"].reshape(latent_preds.shape[0], latent_preds.shape[1], -1)
-            # concatenate on the last axis
-            if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
-                latent_preds = torch.cat([latent_preds, batch_var], dim=-1)
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
-                gene_targets = batch["X_hvg"].reshape_as(mu)
+                gene_targets = batch["pert_cell_counts"].reshape_as(mu)
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
-                gene_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
+                pert_cell_counts_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
                 if self.residual_decoder:
-                    basal_hvg = batch["basal_hvg"].reshape(gene_preds.shape)
-                    gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
+                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
+                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
+                        pert_cell_counts_preds
+                    )
 
                 # Get decoder predictions
-                gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
+                pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
                 gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-                decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+                decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
@@ -519,7 +518,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
             pred = self.forward(batch, padded=False)
         else:
             pred, confidence_pred = self.forward(batch, padded=False)
-        target = batch["X"]
+        target = batch["pert_cell_emb"]
         pred = pred.reshape(1, -1, self.output_dim)
         target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
@@ -545,33 +544,35 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
         output_dict = {
             "preds": latent_output,
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X_hvg", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
-        basal_hvg = batch.get("basal_hvg", None)
+        basal_hvg = batch.get("ctrl_cell_counts", None)
 
         if self.gene_decoder is not None:
             if latent_output.dim() == 2:
-                batch_var = batch["gem_group"].reshape(latent_output.shape[0], -1)
+                batch_var = batch["batch"].reshape(latent_output.shape[0], -1)
             else:
-                batch_var = batch["gem_group"].reshape(latent_output.shape[0], latent_output.shape[1], -1)
+                batch_var = batch["batch"].reshape(latent_output.shape[0], latent_output.shape[1], -1)
             # concatenate on the last axis
             if self.batch_dim is not None and not isinstance(self.gene_decoder, FinetuneVCICountsDecoder):
                 latent_output = torch.cat([latent_output, batch_var], dim=-1)
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, _ = self.gene_decoder(latent_output)
-                gene_preds = mu
+                pert_cell_counts_preds = mu
             else:
-                gene_preds = self.gene_decoder(latent_output)
+                pert_cell_counts_preds = self.gene_decoder(latent_output)
             if self.residual_decoder and basal_hvg is not None:
-                basal_hvg = basal_hvg.reshape(gene_preds.shape)
-                gene_preds = gene_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(gene_preds)
-            output_dict["gene_preds"] = gene_preds
+                basal_hvg = basal_hvg.reshape(pert_cell_counts_preds.shape)
+                pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
+                    pert_cell_counts_preds
+                )
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict
 

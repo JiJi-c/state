@@ -147,8 +147,8 @@ class InferenceModule:
         3. Group cells by (cell_type, perturbation) and split each group into chunks
             (each chunk contains at most cell_set_len cells).
         4. For each chunk, create a batch with:
-                - "basal": embeddings from adata.obsm[self.embed_key]
-                - "pert": repeated one-hot vector for the perturbation.
+                - "ctrl_cell_emb": embeddings from adata.obsm[self.embed_key]
+                - "pert_emb": repeated one-hot vector for the perturbation.
         5. Run the model (and gene decoder, if available) on each batch.
         6. Restore the original order and add predictions as new keys in .obsm.
         7. Save the modified AnnData.
@@ -206,7 +206,7 @@ class InferenceModule:
                 basal = X_embed[chunk_indices, :]  # (chunk_size, embed_dim)
                 pert_tensor = onehot.unsqueeze(0).repeat(len(chunk_indices), 1)
                 pert_names = [p] * len(chunk_indices)
-                batch = {"basal": basal, "pert": pert_tensor, "pert_name": pert_names}
+                batch = {"ctrl_cell_emb": basal, "pert_emb": pert_tensor, "pert_name": pert_names}
                 with torch.no_grad():
                     # if self.model is class PertSetsPerturbationModel, need to set padded=False
                     if isinstance(self.model, PertSetsPerturbationModel):
