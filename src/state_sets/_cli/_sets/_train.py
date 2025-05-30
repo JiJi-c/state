@@ -1,5 +1,4 @@
 import argparse as ap
-import hydra
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -21,7 +20,6 @@ def run_sets_train(cfg: DictConfig):
 
     import lightning.pytorch as pl
     from lightning.pytorch.loggers import WandbLogger
-    from omegaconf import OmegaConf
     from lightning.pytorch.plugins.precision import MixedPrecision
 
     from cell_load.utils.modules import get_datamodule
@@ -113,7 +111,7 @@ def run_sets_train(cfg: DictConfig):
         cfg["model"]["kwargs"]["ntoken"] = len(vocab)
         cfg["model"]["kwargs"]["d_model"] = cfg["model"]["kwargs"]["embsize"]
 
-        logger.info(f"Added vocab and hvg_names_uns_key to data kwargs for scGPT")
+        logger.info("Added vocab and hvg_names_uns_key to data kwargs for scGPT")
 
     elif cfg["model"]["name"].lower() == "cpa" and cfg["model"]["kwargs"]["recon_loss"] == "gauss":
         cfg["data"]["kwargs"]["transform"] = "log-normalize"
@@ -138,7 +136,7 @@ def run_sets_train(cfg: DictConfig):
         with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
             # TODO-Abhi: only save necessary data
             pickle.dump(data_module, f)
-        logger.info(f"Data module saved.")
+        logger.info("Data module saved.")
 
     if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
         cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)
