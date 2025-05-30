@@ -69,7 +69,7 @@ def compute_metrics(
         )
 
     # compute metrics
-    if type(adata_real.obs.index) != pd.core.indexes.range.RangeIndex:
+    if not isinstance(adata_real.obs.index, pd.core.indexes.range.RangeIndex):
         adata_real.obs = adata_real.obs.reset_index()
     adata_pred.obs = adata_pred.obs.reset_index()
 
@@ -151,7 +151,8 @@ def compute_metrics(
                         adata_real_pert = adata_real[true_idx]
 
                         ## Use softmap to generate artificial control distributions
-                        pert_idx = adata_pred_pert.obs.index.astype("int").tolist()
+                        ## TODO: remove unused code
+                        # pert_idx = adata_pred_pert.obs.index.astype("int").tolist()
 
                         adata_pred_control.obs.index = pd.Categorical(adata_pred_control.obs.index)
                         adata_real_control.obs.index = pd.Categorical(adata_real_control.obs.index)
