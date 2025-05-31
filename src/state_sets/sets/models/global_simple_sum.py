@@ -33,13 +33,11 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
         hidden_dim: int,
         output_dim: int,
         pert_dim: int,
-        n_decoder_layers: int = 1,
         dropout: float = 0.0,
         lr: float = 1e-3,
         loss_fn=nn.MSELoss(),
         embed_key: str = None,
         output_space: str = "gene",
-        decoder=None,
         gene_names=None,
         **kwargs,
     ):
@@ -69,7 +67,6 @@ class GlobalSimpleSumPerturbationModel(PerturbationModel):
             loss_fn=loss_fn,
             embed_key=embed_key,
             output_space=output_space,
-            decoder=decoder,
             gene_names=gene_names,
             **kwargs,
         )

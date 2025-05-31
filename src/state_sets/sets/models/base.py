@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from lightning.pytorch import LightningModule
 
-from .decoders import DecoderInterface
 from .utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
@@ -88,7 +87,6 @@ class PerturbationModel(ABC, LightningModule):
         lr: Learning rate for optimizer
         loss_fn: Loss function ('mse' or custom nn.Module)
         output_space: 'gene' or 'latent'
-        decoder: Optionally a class implementing DecoderInterface, if output is latent
     """
 
     def __init__(

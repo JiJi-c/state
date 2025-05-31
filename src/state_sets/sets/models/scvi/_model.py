@@ -4,7 +4,6 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 
 from ..base import PerturbationModel
-from ..decoders import DecoderInterface
 from ._module import scVIModule
 
 
@@ -36,7 +35,6 @@ class SCVIPerturbationModel(PerturbationModel):
         n_perts: int,
         n_batches: int,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         lr=5e-4,
         wd=1e-6,
         n_steps_kl_warmup: int = None,
@@ -54,7 +52,6 @@ class SCVIPerturbationModel(PerturbationModel):
             output_dim=output_dim,
             pert_dim=pert_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 

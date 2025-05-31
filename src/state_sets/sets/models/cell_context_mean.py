@@ -33,13 +33,11 @@ class CellContextPerturbationModel(PerturbationModel):
         hidden_dim: int,
         output_dim: int,
         pert_dim: int,
-        n_decoder_layers: int = 1,
         dropout: float = 0.0,
         lr: float = 1e-3,
         loss_fn=nn.MSELoss(),
         embed_key: str = None,
         output_space: str = "gene",
-        decoder=None,
         gene_names=None,
         **kwargs,
     ):
@@ -69,7 +67,6 @@ class CellContextPerturbationModel(PerturbationModel):
             loss_fn=loss_fn,
             embed_key=embed_key,
             output_space=output_space,
-            decoder=decoder,
             gene_names=gene_names,
             **kwargs,
         )
@@ -268,21 +265,6 @@ class CellContextPerturbationModel(PerturbationModel):
         else:
             logger.warning("GlobalSimpleSum: No pert_mean_offsets found in checkpoint. All offsets set to zero.")
             self.pert_mean_offsets = {}
-
-    def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
-        """Not really used here, but required by abstract base. We do no param-based encoding."""
-        return pert
-
-    def encode_basal_expression(self, expr: torch.Tensor) -> torch.Tensor:
-        """No param-based encoding of basal. Just identity."""
-        return expr
-
-    def perturb(self, pert: torch.Tensor, basal: torch.Tensor) -> torch.Tensor:
-        """
-        Not used in the normal forward pass, because we look up offset by 'pert_name' strings.
-        But we must define it to meet the abstract contract.
-        """
-        return basal
 
     def _build_networks(self):
         """

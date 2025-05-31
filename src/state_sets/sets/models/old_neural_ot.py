@@ -4,7 +4,6 @@ import torch
 from geomloss import SamplesLoss
 
 from .base import PerturbationModel
-from .decoders import DecoderInterface
 from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 
@@ -28,7 +27,6 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
         transformer_backbone_key: str = "GPT2",
         transformer_backbone_kwargs: dict = None,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         gene_dim: Optional[int] = None,
         **kwargs,
     ):
@@ -51,7 +49,6 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
             output_dim=output_dim,
             pert_dim=pert_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 

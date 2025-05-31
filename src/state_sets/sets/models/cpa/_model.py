@@ -6,7 +6,6 @@ from torch.optim.lr_scheduler import StepLR
 from torchmetrics.functional import accuracy
 
 from ..base import PerturbationModel
-from ..decoders import DecoderInterface
 
 from ._module import CPAModule
 
@@ -41,7 +40,6 @@ class CPAPerturbationModel(PerturbationModel):
         output_space: str = "gene",
         encode_dosage: bool = False,
         dosage_non_linearity: str = "linear",
-        decoder: Optional[DecoderInterface] = None,
         lr=5e-4,
         wd=1e-6,
         n_steps_pretrain_ae: int = None,
@@ -69,7 +67,6 @@ class CPAPerturbationModel(PerturbationModel):
             output_dim=output_dim,
             pert_dim=pert_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 

@@ -62,16 +62,6 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
         latent = batch["pert_cell_emb"]
         return latent
 
-    # Implement abstract methods as identity functions (since they aren’t used here)
-    def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
-        return pert
-
-    def encode_basal_expression(self, expr: torch.Tensor) -> torch.Tensor:
-        return expr
-
-    def perturb(self, pert: torch.Tensor, basal: torch.Tensor) -> torch.Tensor:
-        return basal
-
     def training_step(self, batch, batch_idx):
         """
         Training step: The decoder output is compared against the target HVG expression.

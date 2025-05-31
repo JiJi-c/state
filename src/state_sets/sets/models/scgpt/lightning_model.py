@@ -56,7 +56,6 @@ class scGPTForPerturbation(PerturbationModel):
             loss_fn="mse",
             embed_key=embed_key,
             output_space="gene",
-            decoder=None,
             gene_names=gene_names,
             batch_size=64,
         )

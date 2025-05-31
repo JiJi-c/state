@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from geomloss import SamplesLoss
 
 from .base import PerturbationModel
-from .decoders import DecoderInterface, FinetuneVCICountsDecoder
+from .decoders import FinetuneVCICountsDecoder
 from .decoders_nb import NBDecoder, nb_nll
 from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
@@ -122,7 +122,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         transformer_backbone_key: str = "GPT2",
         transformer_backbone_kwargs: dict = None,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         gene_dim: Optional[int] = None,
         **kwargs,
     ):
@@ -146,7 +145,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             pert_dim=pert_dim,
             batch_dim=batch_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 

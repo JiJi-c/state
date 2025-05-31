@@ -9,22 +9,6 @@ from ...state.finetune_decoder import Finetune
 
 logger = logging.getLogger(__name__)
 
-
-class DecoderInterface(ABC):
-    """
-    An interface for decoding latent model outputs into DE genes.
-
-    Specific implementations may pass in their own kwargs.
-    """
-
-    @abstractmethod
-    def compute_de_genes(self, adata_latent, **kwargs):
-        """
-        Given an AnnData whose .X is in latent space, return a data frame of DE genes.
-        """
-        pass
-
-
 class FinetuneVCICountsDecoder(nn.Module):
     def __init__(
         self,
