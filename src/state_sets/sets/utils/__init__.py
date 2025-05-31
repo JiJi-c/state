@@ -210,7 +210,6 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"
 
         model_dir = Path(pretrained_path)
-        model_config_file = model_dir / "args.json"
         model_file = model_dir / "best_model.pt"
 
         model = scGPTForPerturbation(

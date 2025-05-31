@@ -28,11 +28,8 @@ def add_arguments_predict(parser: ap.ArgumentParser):
 
 
 def run_sets_predict(args: ap.ArgumentParser):
-    import argparse
     import logging
     import os
-    import pickle
-    import re
     import sys
 
     import anndata
@@ -95,23 +92,6 @@ def run_sets_predict(args: ap.ArgumentParser):
             cfg = yaml.safe_load(f)
         return cfg
 
-    def get_latest_step_checkpoint(directory):
-        """Find the latest checkpoint by step number."""
-        files = os.listdir(directory)
-        step_numbers = []
-        for f in files:
-            if f.startswith("step=") and "val_loss" not in f:
-                match = re.search(r"step=(\d+)(?:-v\d+)?\.ckpt", f)
-                if match:
-                    step_numbers.append(int(match.group(1)))
-
-        if not step_numbers:
-            raise ValueError("No checkpoint files found")
-
-        max_step = max(step_numbers)
-        checkpoint_path = os.path.join(directory, f"step={max_step}.ckpt")
-        return checkpoint_path
-
     # 1. Load the config
     config_path = os.path.join(args.output_dir, "config.yaml")
     cfg = load_config(config_path)
@@ -157,10 +137,7 @@ def run_sets_predict(args: ap.ArgumentParser):
         from ...sets.models.pert_sets import PertSetsPerturbationModel
 
         ModelClass = PertSetsPerturbationModel
-    elif model_class_name.lower() == "simplesum":
-        from ...sets.models.simple_sum import SimpleSumPerturbationModel
 
-        ModelClass = SimpleSumPerturbationModel
     elif model_class_name.lower() == "globalsimplesum":
         from ...sets.models.global_simple_sum import GlobalSimpleSumPerturbationModel
 
