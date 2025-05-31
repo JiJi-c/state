@@ -145,7 +145,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
         self.cell_sentence_len = self.transformer_backbone_kwargs["n_positions"]
         self.gene_dim = gene_dim
         self.batch_dim = batch_dim
-        self.residual_decoder = kwargs.get("residual_decoder", False)
 
         # Build the distributional loss from geomloss
         blur = kwargs.get("blur", 0.05)
@@ -411,11 +410,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
                 pert_cell_counts_preds = self.gene_decoder(latent_preds)
-                if self.residual_decoder:
-                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
-                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                        pert_cell_counts_preds
-                    )
                 if padded:
                     gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
                 else:
@@ -468,11 +462,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
                 pert_cell_counts_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
-                if self.residual_decoder:
-                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
-                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                        pert_cell_counts_preds
-                    )
 
                 # Get decoder predictions
                 pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
@@ -547,11 +536,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
                 pert_cell_counts_preds = mu
             else:
                 pert_cell_counts_preds = self.gene_decoder(latent_output)
-            if self.residual_decoder and basal_hvg is not None:
-                basal_hvg = basal_hvg.reshape(pert_cell_counts_preds.shape)
-                pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                    pert_cell_counts_preds
-                )
             output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict

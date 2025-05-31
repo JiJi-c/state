@@ -108,8 +108,6 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
-        self.convolve = torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim)
-
         print(self)
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:

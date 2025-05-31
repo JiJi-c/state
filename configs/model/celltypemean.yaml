@@ -10,7 +10,6 @@ kwargs:
   n_encoder_layers: 4
   n_decoder_layers: 4
   predict_residual: True
-  residual_decoder: False
   softplus: False
   freeze_pert: False
   transformer_decoder: False

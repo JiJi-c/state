@@ -43,5 +43,4 @@ kwargs:
   perturbation_type: "chemical"
   cell_sentence_len: 2048
   seed: 2025
-  residual_decoder: false
   nb_decoder: false

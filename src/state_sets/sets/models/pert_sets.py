@@ -16,20 +16,6 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 logger = logging.getLogger(__name__)
 
 
-class ScaledSamplesLoss(nn.Module):
-    """
-    A wrapper around SamplesLoss that scales the output by a given factor.
-    """
-
-    def __init__(self, base_loss, scale_factor):
-        super(ScaledSamplesLoss, self).__init__()
-        self.base_loss = base_loss
-        self.scale_factor = scale_factor
-
-    def forward(self, x, y):
-        return self.base_loss(x, y) / self.scale_factor
-
-
 class ConfidenceHead(nn.Module):
     """
     A confidence head that predicts the expected loss value for a set of cells.
@@ -162,7 +148,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.batch_dim = batch_dim
         else:
             self.batch_dim = None
-        self.residual_decoder = kwargs.get("residual_decoder", False)
 
         # Build the distributional loss from geomloss
         blur = kwargs.get("blur", 0.05)
@@ -171,10 +156,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
         elif loss_name == "mse":
             self.loss_fn = nn.MSELoss()
-        elif loss_name == "scaled_energy":
-            scale_factor = 512.0 / float(self.cell_sentence_len)
-            base_loss = SamplesLoss(loss=self.distributional_loss, blur=blur)
-            self.loss_fn = ScaledSamplesLoss(base_loss, scale_factor)
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 
@@ -208,7 +189,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             modules_to_freeze = [
                 self.transformer_backbone,
                 self.project_out,
-                self.convolve,
             ]
             for module in modules_to_freeze:
                 for param in module.parameters():
@@ -222,20 +202,8 @@ class PertSetsPerturbationModel(PerturbationModel):
                 dropout=self.dropout,
             )
 
-        if kwargs.get("transformer_decoder", False):
-            from models.decoders import TransformerLatentToGeneDecoder
-
-            self.gene_decoder = TransformerLatentToGeneDecoder(
-                latent_dim=self.output_dim,
-                gene_dim=self.gene_dim,
-                num_layers=self.n_decoder_layers,
-                dropout=self.dropout,
-                cell_sentence_len=self.cell_sentence_len,
-                softplus=kwargs.get("softplus", False),
-            )
-
         control_pert = kwargs.get("control_pert", "non-targeting")
-        if kwargs.get("finetune_vci_decoder", False):
+        if kwargs.get("finetune_vci_decoder", False): # TODO: This will go very soon
             gene_names = []
 
             if output_space == "gene":
@@ -264,7 +232,7 @@ class PertSetsPerturbationModel(PerturbationModel):
                 # latent_dim=self.output_dim + (self.batch_dim or 0),
             )
 
-        # print(self)
+        print(self)
 
     def _build_networks(self):
         """
@@ -303,7 +271,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
-        self.convolve = torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim)
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
@@ -338,8 +305,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         pert_embedding = self.encode_perturbation(pert)
         control_cells = self.encode_basal_expression(basal)
 
-        seq_input = torch.cat([pert_embedding, control_cells], dim=2)  # Shape: [B, S, 2 * hidden_dim]
-        seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
+        seq_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
 
         if self.batch_encoder is not None:
             if padded:
@@ -353,9 +319,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         if self.hparams.get("mask_attn", False):
             batch_size, seq_length, _ = seq_input.shape
             device = seq_input.device
-
-            # TODO: remove unused
-            # num_heads = self.transformer_backbone.config.n_head
 
             self.transformer_backbone._attn_implementation = "eager"
 
@@ -379,7 +342,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         # apply softplus if specified and we output to HVG space
         is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
-        if self.hparams.get("softplus", False) and is_gene_space:
+        if is_gene_space:
             out_pred = self.softplus(out_pred)
 
         output = out_pred.reshape(-1, self.output_dim)
@@ -428,11 +391,6 @@ class PertSetsPerturbationModel(PerturbationModel):
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
                 pert_cell_counts_preds = self.gene_decoder(latent_preds)
-                if self.residual_decoder:
-                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
-                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                        pert_cell_counts_preds
-                    )
                 if padded:
                     gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
                 else:
@@ -485,15 +443,8 @@ class PertSetsPerturbationModel(PerturbationModel):
                 gene_targets = batch["pert_cell_counts"].reshape_as(mu)
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
-                pert_cell_counts_preds = self.gene_decoder(latent_preds)  # verify this is automatically detached
-                if self.residual_decoder:
-                    basal_hvg = batch["ctrl_cell_counts"].reshape(pert_cell_counts_preds.shape)
-                    pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                        pert_cell_counts_preds
-                    )
-
                 # Get decoder predictions
-                pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
+                pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(-1, self.cell_sentence_len, self.gene_dim)
                 gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
                 decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
@@ -558,11 +509,7 @@ class PertSetsPerturbationModel(PerturbationModel):
                 pert_cell_counts_preds = mu
             else:
                 pert_cell_counts_preds = self.gene_decoder(latent_output)
-            if self.residual_decoder and basal_hvg is not None:
-                basal_hvg = basal_hvg.reshape(pert_cell_counts_preds.shape)
-                pert_cell_counts_preds = pert_cell_counts_preds + basal_hvg.mean(dim=1, keepdim=True).expand_as(
-                    pert_cell_counts_preds
-                )
+
             output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict
