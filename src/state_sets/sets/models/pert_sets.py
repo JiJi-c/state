@@ -144,7 +144,8 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.distributional_loss = distributional_loss
         self.cell_sentence_len = kwargs.get("cell_set_len", 256)
         self.gene_dim = gene_dim
-        if kwargs.get("batch_encoder", False):
+
+        if kwargs.get("batch_encoder", False) and batch_dim is not None:
             self.batch_dim = batch_dim
         else:
             self.batch_dim = None
@@ -170,12 +171,11 @@ class PertSetsPerturbationModel(PerturbationModel):
         else:
             self.batch_encoder = None
 
-        # if the model is outputting to counts space, apply softplus
+        # if the model is outputting to counts space, apply relu
         # otherwise its in embedding space and we don't want to
         is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
-        if kwargs.get("softplus", False) and is_gene_space:
-            # actually just set this to a relu for now
-            self.softplus = torch.nn.ReLU()
+        if is_gene_space:
+            self.relu = torch.nn.ReLU()
 
         if "confidence_head" in kwargs and kwargs["confidence_head"]:
             self.confidence_head = ConfidenceHead(hidden_dim, pooling_method="attention")
@@ -308,12 +308,22 @@ class PertSetsPerturbationModel(PerturbationModel):
         seq_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
 
         if self.batch_encoder is not None:
+            # Extract batch indices (assume they are integers or convert from one-hot)
+            batch_indices = batch["batch"]
+            
+            # Handle one-hot encoded batch indices
+            if batch_indices.dim() > 1 and batch_indices.size(-1) == self.batch_dim:
+                batch_indices = batch_indices.argmax(-1)
+            
+            # Reshape batch indices to match sequence structure
             if padded:
-                batch = batch["batch"].reshape(-1, self.cell_sentence_len, self.batch_dim)
+                batch_indices = batch_indices.reshape(-1, self.cell_sentence_len)
             else:
-                batch = batch["batch"].reshape(1, -1, self.batch_dim)
-
-            seq_input = seq_input + self.batch_encoder(batch)  # Shape: [B, S, hidden_dim]
+                batch_indices = batch_indices.reshape(1, -1)
+            
+            # Get batch embeddings and add to sequence input
+            batch_embeddings = self.batch_encoder(batch_indices.long())  # Shape: [B, S, hidden_dim]
+            seq_input = seq_input + batch_embeddings
 
         # forward pass + extract CLS last hidden state
         if self.hparams.get("mask_attn", False):
@@ -340,10 +350,10 @@ class PertSetsPerturbationModel(PerturbationModel):
         else:
             out_pred = self.project_out(res_pred)
 
-        # apply softplus if specified and we output to HVG space
+        # apply relu if specified and we output to HVG space
         is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
         if is_gene_space:
-            out_pred = self.softplus(out_pred)
+            out_pred = self.relu(out_pred)
 
         output = out_pred.reshape(-1, self.output_dim)
 
