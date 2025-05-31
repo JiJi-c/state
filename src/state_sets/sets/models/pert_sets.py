@@ -266,7 +266,7 @@ class PertSetsPerturbationModel(PerturbationModel):
                 # latent_dim=self.output_dim + (self.batch_dim or 0),
             )
 
-        print(self)
+        # print(self)
 
     def _build_networks(self):
         """
