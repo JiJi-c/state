@@ -174,7 +174,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         # if the model is outputting to counts space, apply relu
         # otherwise its in embedding space and we don't want to
         is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
-        if is_gene_space:
+        if is_gene_space or self.gene_decoder is None:
             self.relu = torch.nn.ReLU()
 
         if "confidence_head" in kwargs and kwargs["confidence_head"]:
@@ -352,7 +352,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         # apply relu if specified and we output to HVG space
         is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
-        if is_gene_space:
+        if is_gene_space or self.gene_decoder is None:
             out_pred = self.relu(out_pred)
 
         output = out_pred.reshape(-1, self.output_dim)
@@ -392,8 +392,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             gene_targets = batch["pert_cell_counts"]
             # Train decoder to map latent predictions to gene space
             latent_preds = pred
-            # with torch.no_grad():
-            #     latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
 
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
