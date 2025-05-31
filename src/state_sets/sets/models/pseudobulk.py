@@ -15,78 +15,6 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 
-
-class ConfidenceHead(nn.Module):
-    """
-    A confidence head that predicts the expected loss value for a set of cells.
-
-    The confidence head takes the transformer hidden states and predicts a single
-    scalar value representing the expected distribution loss.
-    """
-
-    def __init__(self, hidden_dim, pooling_method="mean", dropout=0.1):
-        """
-        Initialize the confidence head.
-
-        Args:
-            hidden_dim: Dimension of the transformer hidden states
-            pooling_method: Method to pool the hidden states ('mean', 'max', or 'attention')
-            dropout: Dropout rate for the confidence head
-        """
-        super().__init__()
-        self.pooling_method = pooling_method
-
-        # If using attention pooling, create an attention mechanism
-        if pooling_method == "attention":
-            self.attention = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim // 2), nn.Tanh(), nn.Linear(hidden_dim // 2, 1)
-            )
-
-        # MLP to predict confidence/uncertainty
-        self.confidence_net = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.LayerNorm(hidden_dim // 2),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim // 2, hidden_dim // 2),
-            nn.LayerNorm(hidden_dim // 2),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim // 2, 1),
-        )
-
-    def forward(self, hidden_states):
-        """
-        Forward pass of the confidence head.
-
-        Args:
-            hidden_states: Hidden states from the transformer [B, S, H]
-
-        Returns:
-            confidence: Predicted confidence value [B, 1]
-        """
-        # Pool the hidden states based on the specified method
-        if self.pooling_method == "mean":
-            # Mean pooling across sequence dimension
-            pooled = hidden_states.mean(dim=1)  # [B, H]
-
-        elif self.pooling_method == "max":
-            # Max pooling across sequence dimension
-            pooled, _ = hidden_states.max(dim=1)  # [B, H]
-
-        elif self.pooling_method == "attention":
-            # Attention pooling
-            attention_weights = self.attention(hidden_states)  # [B, S, 1]
-            attention_weights = F.softmax(attention_weights, dim=1)  # [B, S, 1]
-            pooled = torch.sum(hidden_states * attention_weights, dim=1)  # [B, H]
-
-        else:
-            raise ValueError(f"Unknown pooling method: {self.pooling_method}")
-
-        # Predict confidence/uncertainty value
-        confidence = self.confidence_net(pooled)  # [B, 1]
-
-        return confidence
-
-
 class PseudobulkPerturbationModel(PerturbationModel):
     """
     This model:
@@ -175,27 +103,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
         if kwargs.get("softplus", False) and is_gene_space:
             # actually just set this to a relu for now
-            self.softplus = torch.nn.ReLU()
-
-        if "confidence_head" in kwargs and kwargs["confidence_head"]:
-            self.confidence_head = ConfidenceHead(hidden_dim, pooling_method="attention")
-            self.confidence_loss_fn = nn.MSELoss()
-        else:
-            self.confidence_head = None
-            self.confidence_loss_fn = None
-
-        # self.freeze_pert = kwargs.get("freeze_pert", False)
-        # if self.freeze_pert:
-        #     modules_to_freeze = [
-        #         self.pert_encoder,
-        #         self.basal_encoder,
-        #         self.transformer_backbone,
-        #         self.project_out,
-        #         self.convolve,
-        #     ]
-        #     for module in modules_to_freeze:
-        #         for param in module.parameters():
-        #             param.requires_grad = False
+            self.relu = torch.nn.ReLU()
 
         if kwargs.get("nb_decoder", False):
             self.gene_decoder = NBDecoder(
@@ -203,18 +111,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
                 gene_dim=gene_dim,
                 hidden_dims=[512, 512, 512],
                 dropout=self.dropout,
-            )
-
-        if kwargs.get("transformer_decoder", False):
-            from models.decoders import TransformerLatentToGeneDecoder
-
-            self.gene_decoder = TransformerLatentToGeneDecoder(
-                latent_dim=self.output_dim,
-                gene_dim=self.gene_dim,
-                num_layers=self.n_decoder_layers,
-                dropout=self.dropout,
-                cell_sentence_len=self.cell_sentence_len,
-                softplus=kwargs.get("softplus", False),
             )
 
         control_pert = kwargs.get("control_pert", "non-targeting")
@@ -286,7 +182,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
-        self.convolve = torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim)
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
@@ -321,9 +216,7 @@ class PseudobulkPerturbationModel(PerturbationModel):
         pert_embedding = self.encode_perturbation(pert)
         control_cells = self.encode_basal_expression(basal)
 
-        seq_input = torch.cat([pert_embedding, control_cells], dim=2)  # Shape: [B, S, 2 * hidden_dim]
-        seq_input = self.convolve(seq_input)  # Shape: [B, S, hidden_dim]
-
+        seq_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
         batch_size = seq_input.shape[0]
 
         if self.batch_encoder is not None:
@@ -357,24 +250,14 @@ class PseudobulkPerturbationModel(PerturbationModel):
         # apply softplus if specified and we output to HVG space
         is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
         if self.hparams.get("softplus", False) and is_gene_space:
-            out_pred = self.softplus(out_pred)
+            out_pred = self.relu(out_pred)
 
-        output = out_pred.reshape(-1, self.output_dim)
-
-        if self.confidence_head is not None:
-            confidence = self.confidence_head(res_pred)
-            return output, confidence
-        else:
-            return output
+        return out_pred.reshape(-1, self.output_dim)
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
         """Training step logic for both main model and decoder."""
         # Get model predictions (in latent space)
-        confidence_pred = None
-        if self.confidence_head is None:
-            pred = self.forward(batch, padded=padded)
-        else:
-            pred, confidence_pred = self.forward(batch, padded=padded)
+        pred = self.forward(batch, padded=padded)
 
         target = batch["pert_cell_emb"]
 
@@ -422,26 +305,11 @@ class PseudobulkPerturbationModel(PerturbationModel):
 
             total_loss = total_loss + 0.1 * decoder_loss
 
-        if confidence_pred is not None:
-            # Detach main loss to prevent gradients flowing through it
-            loss_target = main_loss.detach().clone().unsqueeze(0)
-
-            # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
-            self.log("train/confidence_loss", confidence_loss)
-
-            # Add to total loss
-            total_loss = total_loss + confidence_loss
-
         return total_loss
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
-        confidence_pred = None
-        if self.confidence_head is None:
-            pred = self.forward(batch)
-        else:
-            pred, confidence_pred = self(batch)
+        pred = self.forward(batch)
 
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         target = batch["pert_cell_emb"]
@@ -471,45 +339,22 @@ class PseudobulkPerturbationModel(PerturbationModel):
             # Log the validation metric
             self.log("decoder_val_loss", decoder_loss)
 
-        if confidence_pred is not None:
-            # Detach main loss to prevent gradients flowing through it
-            loss_target = loss.detach().clone().unsqueeze(0)
-
-            # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
-            self.log("val/confidence_loss", confidence_loss)
-
         return {"loss": loss, "predictions": pred}
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        confidence_pred = None
-        if self.confidence_head is None:
-            pred = self.forward(batch, padded=False)
-        else:
-            pred, confidence_pred = self.forward(batch, padded=False)
+        pred = self.forward(batch, padded=False)
         target = batch["pert_cell_emb"]
         pred = pred.reshape(1, -1, self.output_dim)
         target = target.reshape(1, -1, self.output_dim)
         loss = self.loss_fn(pred, target).mean()
         self.log("test_loss", loss)
 
-        if confidence_pred is not None:
-            # Detach main loss to prevent gradients flowing through it
-            loss_target = loss.detach().clone().unsqueeze(0)
-
-            # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred, loss_target)
-            self.log("test/confidence_loss", confidence_loss)
-
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """
         Typically used for final inference. We'll replicate old logic:
          returning 'preds', 'X', 'pert_name', etc.
         """
-        if self.confidence_head is None:
-            latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
-        else:
-            latent_output, confidence_pred = self.forward(batch, padded=padded)
+        latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
 
         output_dict = {
             "preds": latent_output,

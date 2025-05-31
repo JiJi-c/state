@@ -11,7 +11,7 @@ kwargs:
   n_decoder_layers: 4
   predict_residual: True
   softplus: False
-  freeze_pert: False
+  freeze_pert_backbone: False
   transformer_decoder: False
   finetune_vci_decoder: False
   batch_encoder: False

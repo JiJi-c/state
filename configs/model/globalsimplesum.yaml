@@ -12,7 +12,7 @@ kwargs:
   predict_residual: True
   batch_encoder: False
   softplus: False
-  freeze_pert: False
+  freeze_pert_backbone: False
   transformer_decoder: False
   finetune_vci_decoder: False
   nb_decoder: False
