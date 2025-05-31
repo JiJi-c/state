@@ -43,5 +43,4 @@ kwargs:
   perturbation_type: genetic
   seed: 2025
   cell_sentence_len: 2048
-  residual_decoder: false
   nb_decoder: false

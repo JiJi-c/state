@@ -30,8 +30,6 @@ def add_arguments_predict(parser: ap.ArgumentParser):
 def run_sets_predict(args: ap.ArgumentParser):
     import logging
     import os
-    import pickle
-    import re
     import sys
 
     import anndata
@@ -94,23 +92,6 @@ def run_sets_predict(args: ap.ArgumentParser):
             cfg = yaml.safe_load(f)
         return cfg
 
-    def get_latest_step_checkpoint(directory):
-        """Find the latest checkpoint by step number."""
-        files = os.listdir(directory)
-        step_numbers = []
-        for f in files:
-            if f.startswith("step=") and "val_loss" not in f:
-                match = re.search(r"step=(\d+)(?:-v\d+)?\.ckpt", f)
-                if match:
-                    step_numbers.append(int(match.group(1)))
-
-        if not step_numbers:
-            raise ValueError("No checkpoint files found")
-
-        max_step = max(step_numbers)
-        checkpoint_path = os.path.join(directory, f"step={max_step}.ckpt")
-        return checkpoint_path
-
     # 1. Load the config
     config_path = os.path.join(args.output_dir, "config.yaml")
     cfg = load_config(config_path)
@@ -118,14 +99,11 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     # 2. Find run output directory & load data module
     run_output_dir = os.path.join(cfg["output_dir"], cfg["name"])
-    data_module_path = os.path.join(run_output_dir, "data_module.pkl")
+    data_module_path = os.path.join(run_output_dir, "data_module.torch")
     if not os.path.exists(data_module_path):
-        raise FileNotFoundError(
-            f"Could not find serialized data module at {data_module_path}.\n"
-            "Did you remember to pickle it in the training script?"
-        )
-
-    data_module: PerturbationDataModule = pickle.load(open(data_module_path, "rb"))
+        raise FileNotFoundError(f"Could not find data module at {data_module_path}?")
+    data_module = PerturbationDataModule.load_state(data_module_path)
+    data_module.setup(stage="test")
     logger.info("Loaded data module from %s", data_module_path)
 
     # Seed everything
@@ -157,10 +135,7 @@ def run_sets_predict(args: ap.ArgumentParser):
         from ...sets.models.pert_sets import PertSetsPerturbationModel
 
         ModelClass = PertSetsPerturbationModel
-    elif model_class_name.lower() == "simplesum":
-        from ...sets.models.simple_sum import SimpleSumPerturbationModel
 
-        ModelClass = SimpleSumPerturbationModel
     elif model_class_name.lower() == "globalsimplesum":
         from ...sets.models.global_simple_sum import GlobalSimpleSumPerturbationModel
 
@@ -227,15 +202,15 @@ def run_sets_predict(args: ap.ArgumentParser):
     ) or (data_module.embed_key is not None and cfg["data"]["kwargs"]["output_space"] == "all")
 
     final_X_hvg = None
-    final_gene_preds = None
+    final_pert_cell_counts_preds = None
     if store_raw_expression:
         # Preallocate matrices of shape (num_cells, gene_dim) for decoded predictions.
         if cfg["data"]["kwargs"]["output_space"] == "gene":
             final_X_hvg = np.empty((num_cells, hvg_dim), dtype=np.float16)
-            final_gene_preds = np.empty((num_cells, hvg_dim), dtype=np.float16)
+            final_pert_cell_counts_preds = np.empty((num_cells, hvg_dim), dtype=np.float16)
         if cfg["data"]["kwargs"]["output_space"] == "all":
             final_X_hvg = np.empty((num_cells, gene_dim), dtype=np.float16)
-            final_gene_preds = np.empty((num_cells, gene_dim), dtype=np.float16)
+            final_pert_cell_counts_preds = np.empty((num_cells, gene_dim), dtype=np.float16)
 
     current_idx = 0
 
@@ -266,15 +241,15 @@ def run_sets_predict(args: ap.ArgumentParser):
                 all_celltypes.append(batch_preds["celltype_name"])
 
             # Handle gem_group
-            if isinstance(batch_preds["gem_group"], list):
-                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"]])
-            elif isinstance(batch_preds["gem_group"], torch.Tensor):
-                all_gem_groups.extend([str(x) for x in batch_preds["gem_group"].cpu().numpy()])
+            if isinstance(batch_preds["batch"], list):
+                all_gem_groups.extend([str(x) for x in batch_preds["batch"]])
+            elif isinstance(batch_preds["batch"], torch.Tensor):
+                all_gem_groups.extend([str(x) for x in batch_preds["batch"].cpu().numpy()])
             else:
-                all_gem_groups.append(str(batch_preds["gem_group"]))
+                all_gem_groups.append(str(batch_preds["batch"]))
 
             batch_pred_np = batch_preds["preds"].cpu().numpy().astype(np.float16)
-            batch_real_np = batch_preds["X"].cpu().numpy().astype(np.float16)
+            batch_real_np = batch_preds["pert_cell_emb"].cpu().numpy().astype(np.float16)
             batch_size = batch_pred_np.shape[0]
             final_preds[current_idx : current_idx + batch_size, :] = batch_pred_np
             final_reals[current_idx : current_idx + batch_size, :] = batch_real_np
@@ -282,13 +257,13 @@ def run_sets_predict(args: ap.ArgumentParser):
 
             # Handle X_hvg for HVG space ground truth
             if final_X_hvg is not None:
-                batch_real_gene_np = batch_preds["X_hvg"].cpu().numpy().astype(np.float16)
+                batch_real_gene_np = batch_preds["pert_cell_counts"].cpu().numpy().astype(np.float16)
                 final_X_hvg[current_idx - batch_size : current_idx, :] = batch_real_gene_np
 
             # Handle decoded gene predictions if available
-            if final_gene_preds is not None:
-                batch_gene_pred_np = batch_preds["gene_preds"].cpu().numpy().astype(np.float16)
-                final_gene_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
+            if final_pert_cell_counts_preds is not None:
+                batch_gene_pred_np = batch_preds["pert_cell_counts_preds"].cpu().numpy().astype(np.float16)
+                final_pert_cell_counts_preds[current_idx - batch_size : current_idx, :] = batch_gene_pred_np
 
     logger.info("Creating anndatas from predictions from manual loop...")
 
@@ -304,7 +279,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     if final_X_hvg is not None:
         # Create adata for predictions - using the decoded gene expression values
-        adata_pred = anndata.AnnData(X=final_gene_preds, obs=obs, var=var)
+        adata_pred = anndata.AnnData(X=final_pert_cell_counts_preds, obs=obs, var=var)
         # Create adata for real - using the true gene expression values
         adata_real = anndata.AnnData(X=final_X_hvg, obs=obs, var=var)
 

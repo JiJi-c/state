@@ -6,88 +6,16 @@ import torch
 import torch.nn as nn
 from lightning.pytorch import LightningModule
 
-from .decoders import DecoderInterface
 from .utils import build_mlp, get_activation_class, get_loss_fn
 
 logger = logging.getLogger(__name__)
-
-
-class GeneWiseDecoder(nn.Module):
-    """
-    A gene-wise decoder that instantiates a separate MLP for each gene.
-
-    Each gene has its own small network that maps the latent embedding
-    (optionally concatenated with batch information) to a predicted count.
-
-    Args:
-        latent_dim (int): Input dimension of each per-gene decoder.
-        gene_dim (int): Number of genes (i.e. number of separate decoders).
-        hidden_dims (List[int], optional): Hidden layer sizes for each decoder.
-        dropout (float, optional): Dropout probability.
-        softplus (bool, optional): If True, apply Softplus to ensure non-negative outputs.
-    """
-
-    def __init__(
-        self,
-        latent_dim: int,
-        gene_dim: int,
-        hidden_dims: List[int] = [512, 1024],
-        dropout: float = 0.0,
-        softplus: bool = False,
-    ):
-        super().__init__()
-        self._gene_dim = gene_dim  # store gene dimension internally
-
-        # Build one MLP per gene. Each decoder maps the latent_dim to a scalar.
-        self.decoders = nn.ModuleList(
-            [
-                build_mlp(
-                    latent_dim,
-                    1,
-                    hidden_dim=512,
-                    n_layers=len(hidden_dims),
-                    dropout=dropout,
-                    activation=get_activation_class("gelu"),
-                )
-                for _ in range(gene_dim)
-            ]
-        )
-        self.softplus = torch.nn.ReLU() if softplus else None
-
-    def gene_dim(self):
-        """Return the output gene dimension for compatibility."""
-        return self._gene_dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through all per-gene decoders.
-
-        x can be of shape (B, latent_dim) or (B, S, latent_dim).
-        The output will be of shape (B, gene_dim) or (B, S, gene_dim) respectively.
-        """
-        # Handle the case of a sequence of latent vectors (e.g. when padded)
-        if x.dim() == 3:  # x has shape (B, S, latent_dim)
-            B, S, latent_dim = x.shape
-            x_flat = x.reshape(-1, latent_dim)  # Flatten to (B*S, latent_dim)
-            # Compute each gene’s prediction over the flattened batch
-            outputs = [decoder(x_flat) for decoder in self.decoders]  # each is (B*S, 1)
-            out = torch.cat(outputs, dim=1)  # (B*S, gene_dim)
-            out = out.reshape(B, S, self._gene_dim)
-        else:
-            # x has shape (B, latent_dim)
-            outputs = [decoder(x) for decoder in self.decoders]  # list of (B, 1)
-            out = torch.cat(outputs, dim=1)  # (B, gene_dim)
-
-        if self.softplus is not None:
-            out = self.softplus(out)
-        return out
 
 
 class LatentToGeneDecoder(nn.Module):
     """
     A decoder module to transform latent embeddings back to gene expression space.
 
-    This takes concat([cell embedding, batch onehot]) as the input, and predicts
+    This takes concat([cell embedding]) as the input, and predicts
     counts over all genes as output.
 
     This decoder is trained separately from the main perturbation model.
@@ -105,7 +33,6 @@ class LatentToGeneDecoder(nn.Module):
         gene_dim: int,
         hidden_dims: List[int] = [512, 1024],
         dropout: float = 0.0,
-        softplus: bool = False,
     ):
         super().__init__()
 
@@ -122,10 +49,8 @@ class LatentToGeneDecoder(nn.Module):
 
         # Final output layer
         layers.append(nn.Linear(input_dim, gene_dim))
-
-        # Just add a relu function for now
-        if softplus:
-            layers.append(nn.ReLU())
+        # Make sure outputs are non-negative
+        layers.append(nn.ReLU())
 
         self.decoder = nn.Sequential(*layers)
 
@@ -162,7 +87,6 @@ class PerturbationModel(ABC, LightningModule):
         lr: Learning rate for optimizer
         loss_fn: Loss function ('mse' or custom nn.Module)
         output_space: 'gene' or 'latent'
-        decoder: Optionally a class implementing DecoderInterface, if output is latent
     """
 
     def __init__(
@@ -178,7 +102,6 @@ class PerturbationModel(ABC, LightningModule):
         control_pert: str = "non-targeting",
         embed_key: Optional[str] = None,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         gene_names: Optional[List[str]] = None,
         batch_size: int = 64,
         gene_dim: int = 5000,
@@ -194,10 +117,12 @@ class PerturbationModel(ABC, LightningModule):
         self.output_dim = output_dim
         self.pert_dim = pert_dim
         self.batch_dim = batch_dim
+
         if kwargs.get("batch_encoder", False):
             self.batch_dim = batch_dim
         else:
             self.batch_dim = None
+
         self.embed_key = embed_key
         self.output_space = output_space
         self.batch_size = batch_size
@@ -217,25 +142,16 @@ class PerturbationModel(ABC, LightningModule):
         if (embed_key and embed_key != "X_hvg" and output_space == "gene") or (
             embed_key and output_space == "all"
         ):  # we should be able to decode from hvg to all
-            if embed_key == "X_scfound":
-                if gene_dim > 18000:
-                    hidden_dims = [512, 1024, 256]
-                else:
-                    hidden_dims = [512, 1024]
-            elif gene_dim > 18000:  # paper tahoe
+            if gene_dim > 10000:
                 hidden_dims = [1024, 512, 256]
-            elif gene_dim > 10000:  # paper replogle
-                hidden_dims = [hidden_dim * 2, hidden_dim * 4]  # remove this
             else:
-                hidden_dims = [hidden_dim * 2, hidden_dim * 4]
+                hidden_dims = [1024, 512, 512]
 
             self.gene_decoder = LatentToGeneDecoder(
-                latent_dim=self.output_dim + self.batch_dim if self.batch_dim is not None else self.output_dim,
-                # latent_dim=self.output_dim,
+                latent_dim=self.output_dim,
                 gene_dim=gene_dim,
                 hidden_dims=hidden_dims,
                 dropout=dropout,
-                softplus=self.hparams.get("softplus", False),
             )
             logger.info(f"Initialized gene decoder for embedding {embed_key} to gene space")
 
@@ -253,19 +169,19 @@ class PerturbationModel(ABC, LightningModule):
         pred = self(batch)
 
         # Compute main model loss
-        main_loss = self.loss_fn(pred, batch["X"])
+        main_loss = self.loss_fn(pred, batch["pert_cell_emb"])
         self.log("train_loss", main_loss)
 
         # Process decoder if available
         decoder_loss = None
-        if self.gene_decoder is not None and "X_hvg" in batch:
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
             # Train decoder to map latent predictions to gene space
             with torch.no_grad():
                 latent_preds = pred.detach()  # Detach to prevent gradient flow back to main model
 
-            gene_preds = self.gene_decoder(latent_preds)
-            gene_targets = batch["X_hvg"]
-            decoder_loss = self.loss_fn(gene_preds, gene_targets)
+            pert_cell_counts_preds = self.gene_decoder(latent_preds)
+            gene_targets = batch["pert_cell_counts"]
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets)
 
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
@@ -279,7 +195,7 @@ class PerturbationModel(ABC, LightningModule):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         pred = self(batch)
-        loss = self.loss_fn(pred, batch["X"])
+        loss = self.loss_fn(pred, batch["pert_cell_emb"])
 
         # TODO: remove unused
         # is_control = self.control_pert in batch["pert_name"]
@@ -294,18 +210,18 @@ class PerturbationModel(ABC, LightningModule):
 
         output_dict = {
             "preds": latent_output,  # The distribution's sample
-            "X": batch.get("X", None),  # The target gene expression or embedding
-            "X_hvg": batch.get("X_hvg", None),  # the true, raw gene expression
+            "pert_cell_emb": batch.get("pert_cell_emb", None),  # The target gene expression or embedding
+            "pert_cell_counts": batch.get("pert_cell_counts", None),  # the true, raw gene expression
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_output)
-            output_dict["gene_preds"] = gene_preds
-            decoder_loss = self.loss_fn(gene_preds, batch["X_hvg"])
+            pert_cell_counts_preds = self.gene_decoder(latent_output)
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, batch["pert_cell_counts"])
             self.log("test_decoder_loss", decoder_loss, prog_bar=True)
 
         self.log("test_loss", loss, prog_bar=True)
@@ -318,17 +234,17 @@ class PerturbationModel(ABC, LightningModule):
         latent_output = self.forward(batch)
         output_dict = {
             "preds": latent_output,
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X_hvg", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_output)
-            output_dict["gene_preds"] = gene_preds
+            pert_cell_counts_preds = self.gene_decoder(latent_output)
+            output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict
 
@@ -343,11 +259,11 @@ class PerturbationModel(ABC, LightningModule):
             Gene expression predictions or None if decoder is not available
         """
         if self.gene_decoder is not None:
-            gene_preds = self.gene_decoder(latent_embeds)
+            pert_cell_counts_preds = self.gene_decoder(latent_embeds)
             if basal_expr is not None:
                 # Add basal expression if provided
-                gene_preds += basal_expr
-            return gene_preds
+                pert_cell_counts_preds += basal_expr
+            return pert_cell_counts_preds
         return None
 
     def configure_optimizers(self):

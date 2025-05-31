@@ -10,7 +10,7 @@ from .utils import get_activation_class
 class DecoderOnlyPerturbationModel(PerturbationModel):
     """
     DecoderOnlyPerturbationModel learns to map the ground truth latent embedding
-    (provided in batch["X"]) to the ground truth HVG space (batch["X_hvg"]).
+    (provided in batch["pert_cell_emb"]) to the ground truth HVG space (batch["pert_cell_counts"]).
 
     Unlike the other perturbation models that compute a control mapping (e.g. via a mapping strategy),
     this model simply feeds the latent representation through a decoder network. The loss is computed
@@ -57,25 +57,15 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
 
     def forward(self, batch: dict) -> torch.Tensor:
         """
-        Forward pass: use the ground truth latent embedding (batch["X"]) as the prediction.
+        Forward pass: use the ground truth latent embedding (batch["pert_cell_emb"]) as the prediction.
         """
-        latent = batch["X"]
+        latent = batch["pert_cell_emb"]
         return latent
-
-    # Implement abstract methods as identity functions (since they aren’t used here)
-    def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
-        return pert
-
-    def encode_basal_expression(self, expr: torch.Tensor) -> torch.Tensor:
-        return expr
-
-    def perturb(self, pert: torch.Tensor, basal: torch.Tensor) -> torch.Tensor:
-        return basal
 
     def training_step(self, batch, batch_idx):
         """
         Training step: The decoder output is compared against the target HVG expression.
-        We assume that when output_space=="gene", the target is in batch["X_hvg"].
+        We assume that when output_space=="gene", the target is in batch["pert_cell_counts"].
         The predictions and targets are reshaped (using a cell sentence length, if provided)
         before computing the loss.
         """
@@ -83,12 +73,12 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
         # log a zero tensor
         self.log("train_loss", 0.0)
 
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_preds = self.gene_decoder(pred)
-            gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            gene_targets = batch["X_hvg"]
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
+            pert_cell_counts_preds = self.gene_decoder(pred)
+            pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
+            gene_targets = batch["pert_cell_counts"]
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
             self.log("decoder_loss", decoder_loss)
         else:
             self.log("decoder_loss", 0.0)
@@ -104,22 +94,22 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
     def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
         preds = outputs["predictions"]
 
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_preds = self.gene_decoder(preds)
-            gene_targets = batch["X_hvg"]
-            gene_preds = gene_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
+            pert_cell_counts_preds = self.gene_decoder(preds)
+            gene_targets = batch["pert_cell_counts"]
+            pert_cell_counts_preds = pert_cell_counts_preds.reshape(-1, self.cell_sentence_len, self.gene_dim)
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
             self.log("decoder_val_loss", decoder_loss)
 
     def test_step(self, batch, batch_idx):
         pred = self(batch)
 
-        if self.gene_decoder is not None and "X_hvg" in batch:
-            gene_preds = self.gene_decoder(pred)
-            gene_targets = batch["X_hvg"]
+        if self.gene_decoder is not None and "pert_cell_counts" in batch:
+            pert_cell_counts_preds = self.gene_decoder(pred)
+            gene_targets = batch["pert_cell_counts"]
             gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
-            decoder_loss = self.loss_fn(gene_preds, gene_targets).mean()
+            decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
             self.log("decoder_test_loss", decoder_loss)
         return {"loss": None, "predictions": pred}
 
@@ -131,15 +121,15 @@ class DecoderOnlyPerturbationModel(PerturbationModel):
         latent_output = self.forward(batch)  # shape [B, ...]
         output_dict = {
             "preds": latent_output,
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X_hvg", None),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
             "pert_name": batch.get("pert_name", None),
             "celltype_name": batch.get("cell_type", None),
-            "gem_group": batch.get("gem_group", None),
-            "basal": batch.get("basal", None),
+            "batch": batch.get("batch", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
-        gene_preds = self.gene_decoder(latent_output)
-        output_dict["gene_preds"] = gene_preds
+        pert_cell_counts_preds = self.gene_decoder(latent_output)
+        output_dict["pert_cell_counts_preds"] = pert_cell_counts_preds
 
         return output_dict

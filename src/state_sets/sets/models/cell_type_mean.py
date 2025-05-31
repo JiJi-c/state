@@ -33,13 +33,11 @@ class CellTypeMeanModel(PerturbationModel):
         hidden_dim: int,
         output_dim: int,
         pert_dim: int,
-        n_decoder_layers: int = 1,
         dropout: float = 0.0,
         lr: float = 1e-3,
         loss_fn=nn.MSELoss(),
         embed_key: str = None,
         output_space: str = "gene",
-        decoder=None,
         gene_names=None,
         **kwargs,
     ):
@@ -69,7 +67,6 @@ class CellTypeMeanModel(PerturbationModel):
             loss_fn=loss_fn,
             embed_key=embed_key,
             output_space=output_space,
-            decoder=decoder,
             gene_names=gene_names,
             **kwargs,
         )
@@ -99,12 +96,12 @@ class CellTypeMeanModel(PerturbationModel):
         with torch.no_grad():
             for batch in train_loader:
                 # Select the proper expression space
-                if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") or (
+                if (self.embed_key and self.embed_key != "pert_cell_counts" and self.output_space == "gene") or (
                     self.embed_key and self.output_space == "all"
                 ):
-                    X_vals = batch["X_hvg"]
+                    X_vals = batch["pert_cell_counts"]
                 else:
-                    X_vals = batch["X"]
+                    X_vals = batch["pert_cell_emb"]
 
                 # Ensure the expression values are in float and on CPU
                 X_cpu = X_vals.float().cpu()
@@ -148,7 +145,7 @@ class CellTypeMeanModel(PerturbationModel):
 
         Args:
             batch (dict): Dictionary containing at least the keys "cell_type", "pert_name", and the expression key
-                          ("X_hvg" if output_space == "gene", else "X").
+                          ("pert_cell_counts" if output_space == "gene", else "pert_cell_emb").
 
         Returns:
             torch.Tensor: Predicted expression tensor of shape (B, output_dim).
@@ -157,10 +154,10 @@ class CellTypeMeanModel(PerturbationModel):
         device = self.dummy_param.device
         # Determine which key to use for the expression values.
         output_key = (
-            "X_hvg"
+            "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
-            else "X"
+            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            else "pert_cell_emb"
         )
         pred_out = torch.zeros((B, self.output_dim), device=device)
 
@@ -192,10 +189,10 @@ class CellTypeMeanModel(PerturbationModel):
         """
         pred = self(batch)
         output_key = (
-            "X_hvg"
+            "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
-            else "X"
+            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            else "pert_cell_emb"
         )
         target = batch[output_key]
         loss = self.loss_fn(pred, target)
@@ -227,24 +224,6 @@ class CellTypeMeanModel(PerturbationModel):
         else:
             logger.warning("CellTypeMeanModel: No celltype_pert_means found in checkpoint. All means set to empty.")
             self.celltype_pert_means = {}
-
-    def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
-        """
-        Identity encoding; no perturbation embedding is learned.
-        """
-        return pert
-
-    def encode_basal_expression(self, expr: torch.Tensor) -> torch.Tensor:
-        """
-        Identity encoding; no basal expression transformation.
-        """
-        return expr
-
-    def perturb(self, pert: torch.Tensor, basal: torch.Tensor) -> torch.Tensor:
-        """
-        Not used in the normal forward pass. Returns basal unchanged.
-        """
-        return basal
 
     def _build_networks(self):
         """

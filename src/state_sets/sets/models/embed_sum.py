@@ -3,7 +3,6 @@ from typing import Dict, Optional
 import torch
 
 from .base import PerturbationModel
-from .decoders import DecoderInterface
 from .utils import build_mlp, get_activation_class
 
 
@@ -39,7 +38,6 @@ class EmbedSumPerturbationModel(PerturbationModel):
         output_dim: int,
         pert_dim: int,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         **kwargs,
     ):
         # Register with parent constructor
@@ -49,7 +47,6 @@ class EmbedSumPerturbationModel(PerturbationModel):
             output_dim=output_dim,
             pert_dim=pert_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 
@@ -127,8 +124,8 @@ class EmbedSumPerturbationModel(PerturbationModel):
                 - pert: Perturbation one-hot
                 - basal: Control expression embedding
         """
-        pert = batch["pert"]
-        basal = batch["basal"]
+        pert = batch["pert_emb"]
+        basal = batch["ctrl_cell_emb"]
 
         # compute perturbed cell state to perturbation/cell co-embedding space
         perturbed_encoded = self.perturb(pert, basal)

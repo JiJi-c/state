@@ -47,7 +47,7 @@ class scGPTPerturbationDataset(PerturbationDataset):
         batch_onehot_map: Optional[Dict[str, int]] = None,
         pert_col: str = "gene",
         cell_type_key: str = "cell_type",
-        batch_col: str = "gem_group",
+        batch_col: str = "batch",
         control_pert: str = "non-targeting",
         embed_key: Literal["X_uce", "X_pca"] = "X_uce",
         store_raw_expression: bool = False,
@@ -71,7 +71,7 @@ class scGPTPerturbationDataset(PerturbationDataset):
             cell_type_key: Column in the h5 file containing cell type information
             batch_col: Column in the h5 file containing batch information
             control_pert: Name of the control perturbation
-            embed_key: Key in the h5 file containing the expression data, one of "X" or "X_uce"
+            embed_key: Key in the h5 file containing the expression data, one of "pert_cell_emb" or "X_uce"
             random_state: Random seed for reproducibility
             pert_tracker: PerturbationTracker instance for tracking valid perturbations
             should_yield_control_cells: If True, control cells will be included in the dataset
@@ -141,7 +141,7 @@ class scGPTPerturbationDataset(PerturbationDataset):
         split = self._find_split_for_idx(underlying_idx)
 
         # Get expression from the h5 file.
-        # For now, we assume the data is stored in "X" (could be counts) and/or in obsm (embed_key)
+        # For now, we assume the data is stored in "pert_cell_emb" (could be counts) and/or in obsm (embed_key)
         # (It is up to the downstream code to decide whether to use raw gene expression or a precomputed embedding.)
 
         pert_expr, ctrl_expr, ctrl_idx = self.mapping_strategy.get_mapped_expressions(self, split, underlying_idx)
@@ -175,14 +175,14 @@ class scGPTPerturbationDataset(PerturbationDataset):
             batch = None
 
         sample = {
-            "X": pert_expr,  # the perturbed cell’s data
-            "basal": ctrl_expr,  # will be filled in by the mapping strategy
-            "pert": pert_onehot,
+            "pert_cell_emb": pert_expr,  # the perturbed cell’s data
+            "ctrl_cell_emb": ctrl_expr,  # will be filled in by the mapping strategy
+            "pert_emb": pert_onehot,
             "pert_name": pert_name,
             "cell_type": cell_type,
             "cell_type_onehot": cell_type_onehot,
-            "gem_group": batch,
-            "gem_group_name": batch_name,
+            "batch": batch,
+            "batch_name": batch_name,
             "gene_ids": torch.tensor(
                 self.gene_ids, dtype=torch.long
             ),  # TODO: should be a more efficient way to do this as this is repeated for every cell
@@ -193,15 +193,10 @@ class scGPTPerturbationDataset(PerturbationDataset):
 
         # Optionally, if raw gene expression is needed:
         # backwards compatibility for old cktps
-        if "output_space" not in self.__dict__:
-            # for models trained before I added output_space here, infer the output space
-            if pert_expr.shape[0] > 10000:
-                self.output_space = "all"
-            else:
-                self.output_space = "gene"
-            sample["X_hvg"] = self.fetch_obsm_expression(underlying_idx, "X_hvg")
+        if self.store_raw_expression and self.output_space == "gene":
+            sample["pert_cell_counts"] = self.fetch_obsm_expression(underlying_idx, "X_hvg")
         elif self.store_raw_expression and self.output_space == "all":
-            sample["X_hvg"] = self.fetch_gene_expression(underlying_idx)
+            sample["pert_cell_counts"] = self.fetch_gene_expression(underlying_idx)
         return sample
 
     def fetch_obsm_expression(self, idx: int, key: str) -> torch.Tensor:
@@ -243,23 +238,23 @@ class scGPTPerturbationDataset(PerturbationDataset):
         """
         # First do normal collation
         batch_dict = {
-            "X": torch.stack([item["X"] for item in batch]),
-            "basal": torch.stack([item["basal"] for item in batch]),
-            "pert": torch.stack([item["pert"] for item in batch]),
+            "pert_cell_emb": torch.stack([item["pert_cell_emb"] for item in batch]),
+            "ctrl_cell_emb": torch.stack([item["ctrl_cell_emb"] for item in batch]),
+            "pert_emb": torch.stack([item["pert_emb"] for item in batch]),
             "pert_name": [item["pert_name"] for item in batch],
             "cell_type": [item["cell_type"] for item in batch],
             "cell_type_onehot": torch.stack([item["cell_type_onehot"] for item in batch]),
-            "gem_group": torch.stack([item["gem_group"] for item in batch]),
-            "gem_group_name": [item["gem_group_name"] for item in batch],
+            "batch": torch.stack([item["batch"] for item in batch]),
+            "batch_name": [item["batch_name"] for item in batch],
             "gene_ids": torch.stack([item["gene_ids"] for item in batch]),
         }
 
         if "pert_flags" in batch[0]:  # only add pert_flags in case of genetic perturbations
             batch_dict["pert_flags"] = torch.stack([item["pert_flags"] for item in batch])
 
-        # If the first sample has "X_hvg", assume the entire batch does
-        if "X_hvg" in batch[0]:
-            X_hvg = torch.stack([item["X_hvg"] for item in batch])
+        # If the first sample has "pert_cell_counts", assume the entire batch does
+        if "pert_cell_counts" in batch[0]:
+            X_hvg = torch.stack([item["pert_cell_counts"] for item in batch])
 
             # Handle Tahoe dataset (needs log transform)
             if pert_col == "drug" or pert_col == "drugname_drugconc":
@@ -270,16 +265,16 @@ class scGPTPerturbationDataset(PerturbationDataset):
                     # Replace zeros with ones (will result in no change for zero vectors)
                     safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
                     X_hvg_norm = X_hvg * 10000 / safe_sizes
-                    batch_dict["X_hvg"] = torch.log1p(X_hvg_norm)
+                    batch_dict["pert_cell_counts"] = torch.log1p(X_hvg_norm)
                 elif transform == "log1p" or transform is True:
-                    batch_dict["X_hvg"] = torch.log1p(X_hvg)
+                    batch_dict["pert_cell_counts"] = torch.log1p(X_hvg)
                 elif int_counts:
                     # this is for log transformed data. let's make it count data
-                    batch_dict["X_hvg"] = torch.expm1(X_hvg).round().to(torch.int32)
+                    batch_dict["pert_cell_counts"] = torch.expm1(X_hvg).round().to(torch.int32)
 
-        # If the first sample has "basal_hvg", assume the entire batch does
-        if "basal_hvg" in batch[0]:  # either control hvg gene space or 19k gene space
-            basal_hvg = torch.stack([item["basal_hvg"] for item in batch])
+        # If the first sample has "ctrl_cell_counts", assume the entire batch does
+        if "ctrl_cell_counts" in batch[0]:  # either control hvg gene space or 19k gene space
+            basal_hvg = torch.stack([item["ctrl_cell_counts"] for item in batch])
 
             # Handle Tahoe dataset (needs log transform)
             if pert_col == "drug" or pert_col == "drugname_drugconc":
@@ -290,32 +285,32 @@ class scGPTPerturbationDataset(PerturbationDataset):
                     # Replace zeros with ones (will result in no change for zero vectors)
                     safe_sizes = torch.where(library_sizes > 0, library_sizes, torch.ones_like(library_sizes) * 10000)
                     basal_hvg_norm = basal_hvg * 10000 / safe_sizes
-                    batch_dict["basal_hvg"] = torch.log1p(basal_hvg_norm)
+                    batch_dict["ctrl_cell_counts"] = torch.log1p(basal_hvg_norm)
                 elif transform == "log1p" or transform is True:
-                    batch_dict["basal_hvg"] = torch.log1p(basal_hvg)
+                    batch_dict["ctrl_cell_counts"] = torch.log1p(basal_hvg)
             elif int_counts:
                 # this is for log transformed data. let's make it count data
-                batch_dict["basal_hvg"] = torch.expm1(basal_hvg).round().to(torch.int32)
+                batch_dict["ctrl_cell_counts"] = torch.expm1(basal_hvg).round().to(torch.int32)
             else:
-                batch_dict["basal_hvg"] = basal_hvg
+                batch_dict["ctrl_cell_counts"] = basal_hvg
         # Apply transform if provided
         if transform == "log-normalize":
-            X_library_sizes = batch_dict["X"].sum(dim=1, keepdim=True)
+            X_library_sizes = batch_dict["pert_cell_emb"].sum(dim=1, keepdim=True)
             X_safe_sizes = torch.where(X_library_sizes > 0, X_library_sizes, torch.ones_like(X_library_sizes) * 10000)
-            X_norm = batch_dict["X"] * 10000 / X_safe_sizes
-            batch_dict["X"] = torch.log1p(X_norm)
+            X_norm = batch_dict["pert_cell_emb"] * 10000 / X_safe_sizes
+            batch_dict["pert_cell_emb"] = torch.log1p(X_norm)
 
             # Normalize basal by library size before log transform
-            basal_library_sizes = batch_dict["basal"].sum(dim=1, keepdim=True)
+            basal_library_sizes = batch_dict["ctrl_cell_emb"].sum(dim=1, keepdim=True)
             basal_safe_sizes = torch.where(
                 basal_library_sizes > 0, basal_library_sizes, torch.ones_like(basal_library_sizes) * 10000
             )
-            basal_norm = batch_dict["basal"] * 10000 / basal_safe_sizes
-            batch_dict["basal"] = torch.log1p(basal_norm)
+            basal_norm = batch_dict["ctrl_cell_emb"] * 10000 / basal_safe_sizes
+            batch_dict["ctrl_cell_emb"] = torch.log1p(basal_norm)
         elif transform == "log1p" or transform is True:  # True is for backwards compatibility
             # Original behavior: just log transform without normalization
-            batch_dict["X"] = torch.log1p(batch_dict["X"])
-            batch_dict["basal"] = torch.log1p(batch_dict["basal"])
+            batch_dict["pert_cell_emb"] = torch.log1p(batch_dict["pert_cell_emb"])
+            batch_dict["ctrl_cell_emb"] = torch.log1p(batch_dict["ctrl_cell_emb"])
 
         return batch_dict
 

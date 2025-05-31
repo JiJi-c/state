@@ -13,7 +13,6 @@ def run_sets_train(cfg: DictConfig):
     import os
     from pathlib import Path
     import shutil
-    import pickle
     from os.path import join, exists
 
     import torch
@@ -22,8 +21,8 @@ def run_sets_train(cfg: DictConfig):
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.plugins.precision import MixedPrecision
 
+    from cell_load.data_modules import PerturbationDataModule
     from cell_load.utils.modules import get_datamodule
-    from cell_load.data_modules.tasks import parse_dataset_specs  # TODO-Abhi: Should this move?
 
     from ...sets.callbacks import BatchSpeedMonitorCallback
     from ...sets.utils import get_checkpoint_callbacks, get_lightning_module, get_loggers
@@ -35,7 +34,6 @@ def run_sets_train(cfg: DictConfig):
 
     cfg_yaml = OmegaConf.to_yaml(cfg, resolve=True)
     cfg = OmegaConf.to_container(cfg, resolve=True)
-    print(cfg_yaml)
 
     # Setup output directory
     run_output_dir = join(cfg["output_dir"], cfg["name"])
@@ -52,28 +50,12 @@ def run_sets_train(cfg: DictConfig):
         f.write(cfg_yaml)
 
     # Set random seeds
-    if "train_seed" in cfg["training"]:
-        pl.seed_everything(cfg["training"]["train_seed"])
+    pl.seed_everything(cfg["training"]["train_seed"])
 
     # if the provided pert_col is drugname_drugconc, hard code the value of control pert
     # this is because it's surprisingly hard to specify a list of tuples in the config as a string
     if cfg["data"]["kwargs"]["pert_col"] == "drugname_drugconc":
         cfg["data"]["kwargs"]["control_pert"] = "[('DMSO_TF', 0.0, 'uM')]"
-
-    # Use the multi dataset perturbation data module for training perturbation models
-    # that involve mapping strageties (e.g., connecting perturbed cells to control cells.)
-    if cfg["data"]["name"] == "PerturbationDataModule":
-        # Parse train specs
-        if isinstance(cfg["data"]["kwargs"]["train_task"], list):
-            cfg["data"]["kwargs"]["train_specs"] = parse_dataset_specs(cfg["data"]["kwargs"]["train_task"])
-        else:
-            cfg["data"]["kwargs"]["train_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["train_task"]])
-
-        # Parse test specs
-        if isinstance(cfg["data"]["kwargs"]["test_task"], list):
-            cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs(cfg["data"]["kwargs"]["test_task"])
-        else:
-            cfg["data"]["kwargs"]["test_specs"] = parse_dataset_specs([cfg["data"]["kwargs"]["test_task"]])
 
     # Initialize data module. this is backwards compatible with previous configs
     try:
@@ -118,25 +100,18 @@ def run_sets_train(cfg: DictConfig):
     elif cfg["model"]["name"].lower() == "scvi":
         cfg["data"]["kwargs"]["transform"] = None
 
-    data_module = get_datamodule(
+    data_module: PerturbationDataModule = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
         batch_size=cfg["training"]["batch_size"],
         cell_sentence_len=sentence_len,
     )
 
-    # Special handling for multi-dataset case - TODO-now: revisit this.
-    if cfg["data"]["name"] == "PerturbationDataModule":
-        # if the data module already exists, just read it in
-        data_module.setup(stage="fit")
-        data_module.setup(stage="test")
+    with open(join(run_output_dir, "data_module.torch"), "wb") as f:
+        # TODO-Abhi: only save necessary data
+        data_module.save_state(f)
 
-        # Save data module for reproducibility
-        logger.info("Saving data module...")
-        with open(join(run_output_dir, "data_module.pkl"), "wb") as f:
-            # TODO-Abhi: only save necessary data
-            pickle.dump(data_module, f)
-        logger.info("Data module saved.")
+    data_module.setup(stage="fit")
 
     if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
         cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)
@@ -249,7 +224,7 @@ def run_sets_train(cfg: DictConfig):
                     f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
                 )
                 # Rebuild the pert_encoder with the new pert input dimension
-                from models.utils import build_mlp
+                from ...sets.models.utils import build_mlp
 
                 model.pert_encoder = build_mlp(
                     in_dim=model.pert_dim,

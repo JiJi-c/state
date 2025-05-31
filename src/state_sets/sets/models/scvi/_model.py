@@ -4,7 +4,6 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 
 from ..base import PerturbationModel
-from ..decoders import DecoderInterface
 from ._module import scVIModule
 
 
@@ -36,7 +35,6 @@ class SCVIPerturbationModel(PerturbationModel):
         n_perts: int,
         n_batches: int,
         output_space: str = "gene",
-        decoder: Optional[DecoderInterface] = None,
         lr=5e-4,
         wd=1e-6,
         n_steps_kl_warmup: int = None,
@@ -54,7 +52,6 @@ class SCVIPerturbationModel(PerturbationModel):
             output_dim=output_dim,
             pert_dim=pert_dim,
             output_space=output_space,
-            decoder=decoder,
             **kwargs,
         )
 
@@ -160,11 +157,11 @@ class SCVIPerturbationModel(PerturbationModel):
     def extract_batch_tensors(
         self, batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        x_pert = batch["X"]
-        x_basal = batch["basal"]
-        pert = batch["pert"]
+        x_pert = batch["pert_cell_emb"]
+        x_basal = batch["ctrl_cell_emb"]
+        pert = batch["pert_emb"]
         cell_type = batch["cell_type_onehot"]
-        batch_ids = batch["gem_group"]
+        batch_ids = batch["batch"]
 
         # if pert is one-hot, convert to index
         if pert.dim() == 2 and pert.size(1) == self.n_perts:
@@ -335,16 +332,16 @@ class SCVIPerturbationModel(PerturbationModel):
 
         return {
             "preds": torch.nan_to_num(torch.log(x_pred + 1), nan=0.0, posinf=1e4, neginf=0.0),
-            "gene_preds": torch.nan_to_num(torch.log(x_pred + 1), nan=0.0, posinf=1e4, neginf=0.0),
-            "X": batch.get("X", None),
-            "X_hvg": batch.get("X", None),
-            "pert": batch.get("pert", None),
+            "pert_cell_counts_preds": torch.nan_to_num(torch.log(x_pred + 1), nan=0.0, posinf=1e4, neginf=0.0),
+            "pert_cell_emb": batch.get("pert_cell_emb", None),
+            "pert_cell_counts": batch.get("pert_cell_counts", None),
+            "pert_emb": batch.get("pert_emb", None),
             "pert_name": batch.get("pert_name", None),
             "cell_type": batch.get("cell_type", None),
             "cell_type_name": batch.get("cell_type_name", None),
-            "gem_group": batch.get("gem_group", None),
+            "batch": batch.get("batch", None),
             "batch_name": batch.get("batch_name", None),
-            "basal": batch.get("basal", None),
+            "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
         }
 
     def configure_optimizers(self):

@@ -10,10 +10,9 @@ kwargs:
   n_decoder_layers: 4
   predict_residual: True
   softplus: True
-  freeze_pert: False
+  freeze_pert_backbone: False
   transformer_decoder: False
   finetune_vci_decoder: False
-  residual_decoder: False
   batch_encoder: False
   nb_decoder: False
   distributional_loss: energy
