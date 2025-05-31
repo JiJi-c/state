@@ -15,6 +15,7 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 
+
 class PseudobulkPerturbationModel(PerturbationModel):
     """
     This model:
@@ -181,7 +182,6 @@ class PseudobulkPerturbationModel(PerturbationModel):
             dropout=self.dropout,
             activation=self.activation_class,
         )
-
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""

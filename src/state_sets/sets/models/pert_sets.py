@@ -18,17 +18,18 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 
+
 class ConfidenceToken(nn.Module):
     """
     Learnable confidence token that gets appended to the input sequence
     and learns to predict the expected loss value.
     """
-    
+
     def __init__(self, hidden_dim: int, dropout: float = 0.1):
         super().__init__()
         # Learnable confidence token embedding
         self.confidence_token = nn.Parameter(torch.randn(1, 1, hidden_dim))
-        
+
         # Projection head to map confidence token output to scalar loss prediction
         self.confidence_projection = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -40,16 +41,16 @@ class ConfidenceToken(nn.Module):
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 4, 1),
-            nn.ReLU()  # Ensure positive loss prediction
+            nn.ReLU(),  # Ensure positive loss prediction
         )
-    
+
     def append_confidence_token(self, seq_input: torch.Tensor) -> torch.Tensor:
         """
         Append confidence token to the sequence input.
-        
+
         Args:
             seq_input: Input tensor of shape [B, S, E]
-            
+
         Returns:
             Extended tensor of shape [B, S+1, E]
         """
@@ -58,26 +59,28 @@ class ConfidenceToken(nn.Module):
         confidence_tokens = self.confidence_token.expand(batch_size, -1, -1)
         # Concatenate along sequence dimension
         return torch.cat([seq_input, confidence_tokens], dim=1)
-    
+
     def extract_confidence_prediction(self, transformer_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Extract main output and confidence prediction from transformer output.
-        
+
         Args:
             transformer_output: Output tensor of shape [B, S+1, E]
-            
+
         Returns:
-            main_output: Tensor of shape [B, S, E] 
+            main_output: Tensor of shape [B, S, E]
             confidence_pred: Tensor of shape [B, 1]
         """
         # Split the output
         main_output = transformer_output[:, :-1, :]  # [B, S, E]
         confidence_output = transformer_output[:, -1:, :]  # [B, 1, E]
-        
+
         # Project confidence token output to scalar
         confidence_pred = self.confidence_projection(confidence_output).squeeze(-1)  # [B, 1]
-        
+
         return main_output, confidence_pred
+
+
 class PertSetsPerturbationModel(PerturbationModel):
     """
     This model:
@@ -134,7 +137,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
-        self.transformer_backbone_kwargs['n_positions'] = self.cell_sentence_len + kwargs.get("extra_tokens", 0)
+        self.transformer_backbone_kwargs["n_positions"] = self.cell_sentence_len + kwargs.get("extra_tokens", 0)
 
         self.distributional_loss = distributional_loss
         self.gene_dim = gene_dim
@@ -172,10 +175,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.confidence_token = None
         self.confidence_loss_fn = None
         if kwargs.get("confidence_token", False):
-            self.confidence_token = ConfidenceToken(
-                hidden_dim=self.hidden_dim,
-                dropout=self.dropout
-            )
+            self.confidence_token = ConfidenceToken(hidden_dim=self.hidden_dim, dropout=self.dropout)
             self.confidence_loss_fn = nn.MSELoss()
 
         self.freeze_pert_backbone = kwargs.get("freeze_pert_backbone", False)
@@ -197,7 +197,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             )
 
         control_pert = kwargs.get("control_pert", "non-targeting")
-        if kwargs.get("finetune_vci_decoder", False): # TODO: This will go very soon
+        if kwargs.get("finetune_vci_decoder", False):  # TODO: This will go very soon
             gene_names = []
 
             if output_space == "gene":
@@ -265,7 +265,6 @@ class PertSetsPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
-
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
         return self.pert_encoder(pert)
@@ -304,17 +303,17 @@ class PertSetsPerturbationModel(PerturbationModel):
         if self.batch_encoder is not None:
             # Extract batch indices (assume they are integers or convert from one-hot)
             batch_indices = batch["batch"]
-            
+
             # Handle one-hot encoded batch indices
             if batch_indices.dim() > 1 and batch_indices.size(-1) == self.batch_dim:
                 batch_indices = batch_indices.argmax(-1)
-            
+
             # Reshape batch indices to match sequence structure
             if padded:
                 batch_indices = batch_indices.reshape(-1, self.cell_sentence_len)
             else:
                 batch_indices = batch_indices.reshape(1, -1)
-            
+
             # Get batch embeddings and add to sequence input
             batch_embeddings = self.batch_encoder(batch_indices.long())  # Shape: [B, S, hidden_dim]
             seq_input = seq_input + batch_embeddings
@@ -422,7 +421,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             # Ensure proper shapes for confidence loss computation
             if confidence_pred.dim() == 2:  # [B, 1]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
-            else:  # confidence_pred is [B,] 
+            else:  # confidence_pred is [B,]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
 
             # Compute confidence loss
@@ -466,7 +465,9 @@ class PertSetsPerturbationModel(PerturbationModel):
                 decoder_loss = nb_nll(gene_targets, mu, theta)
             else:
                 # Get decoder predictions
-                pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(-1, self.cell_sentence_len, self.gene_dim)
+                pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(
+                    -1, self.cell_sentence_len, self.gene_dim
+                )
                 gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
                 decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
@@ -477,11 +478,11 @@ class PertSetsPerturbationModel(PerturbationModel):
         if confidence_pred is not None:
             # Detach main loss to prevent gradients flowing through it
             loss_target = loss.detach().clone() * 10
-            
+
             # Ensure proper shapes for confidence loss computation
             if confidence_pred.dim() == 2:  # [B, 1]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
-            else:  # confidence_pred is [B,] 
+            else:  # confidence_pred is [B,]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
 
             # Compute confidence loss
@@ -506,11 +507,11 @@ class PertSetsPerturbationModel(PerturbationModel):
         if confidence_pred is not None:
             # Detach main loss to prevent gradients flowing through it
             loss_target = loss.detach().clone() * 10.0
-            
+
             # Ensure proper shapes for confidence loss computation
             if confidence_pred.dim() == 2:  # [B, 1]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
-            else:  # confidence_pred is [B,] 
+            else:  # confidence_pred is [B,]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
 
             # Compute confidence loss

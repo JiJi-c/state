@@ -9,6 +9,7 @@ from ...state.finetune_decoder import Finetune
 
 logger = logging.getLogger(__name__)
 
+
 class FinetuneVCICountsDecoder(nn.Module):
     def __init__(
         self,

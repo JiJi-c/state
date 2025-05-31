@@ -117,7 +117,7 @@ class PerturbationModel(ABC, LightningModule):
         self.output_dim = output_dim
         self.pert_dim = pert_dim
         self.batch_dim = batch_dim
-        
+
         if kwargs.get("batch_encoder", False):
             self.batch_dim = batch_dim
         else:

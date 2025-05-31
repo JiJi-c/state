@@ -111,7 +111,7 @@ def run_sets_train(cfg: DictConfig):
         # TODO-Abhi: only save necessary data
         data_module.save_state(f)
 
-    data_module.setup(stage='fit')
+    data_module.setup(stage="fit")
 
     if cfg["model"]["name"].lower() in ["cpa", "scvi"] or cfg["model"]["name"].lower().startswith("scgpt"):
         cfg["model"]["kwargs"]["n_cell_types"] = len(data_module.celltype_onehot_map)

@@ -101,11 +101,9 @@ def run_sets_predict(args: ap.ArgumentParser):
     run_output_dir = os.path.join(cfg["output_dir"], cfg["name"])
     data_module_path = os.path.join(run_output_dir, "data_module.torch")
     if not os.path.exists(data_module_path):
-        raise FileNotFoundError(
-            f"Could not find data module at {data_module_path}?"
-        )
+        raise FileNotFoundError(f"Could not find data module at {data_module_path}?")
     data_module = PerturbationDataModule.load_state(data_module_path)
-    data_module.setup(stage='test')
+    data_module.setup(stage="test")
     logger.info("Loaded data module from %s", data_module_path)
 
     # Seed everything
