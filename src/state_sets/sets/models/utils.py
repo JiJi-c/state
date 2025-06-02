@@ -1,6 +1,5 @@
 from typing import Union
 
-import torch
 import torch.nn as nn
 from transformers import GPT2Config, GPT2Model, LlamaConfig, LlamaModel, PreTrainedModel
 

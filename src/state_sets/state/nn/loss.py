@@ -3,12 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from geomloss import SamplesLoss
 
+
 class WassersteinLoss(nn.Module):
     """
     Implements Wasserstein distance loss for distributions represented by logits.
     This implementation supports both 1D and 2D Wasserstein distance calculations.
     """
-    def __init__(self, p=1, reduction='mean'):
+
+    def __init__(self, p=1, reduction="mean"):
         """
         Args:
             p (int): Order of Wasserstein distance (1 or 2)
@@ -42,20 +44,21 @@ class WassersteinLoss(nn.Module):
 
         max_len = max(pred_cdf.size(1), target_cdf.size(1))
         if pred_cdf.size(1) < max_len:
-            pred_cdf = F.pad(pred_cdf, (0, max_len - pred_cdf.size(1)), 'constant', 0)
+            pred_cdf = F.pad(pred_cdf, (0, max_len - pred_cdf.size(1)), "constant", 0)
         if target_cdf.size(1) < max_len:
-            target_cdf = F.pad(target_cdf, (0, max_len - target_cdf.size(1)), 'constant', 0)
+            target_cdf = F.pad(target_cdf, (0, max_len - target_cdf.size(1)), "constant", 0)
 
         # Compute Wasserstein distance
         wasserstein_dist = torch.abs(pred_cdf - target_cdf).pow(self.p)
         wasserstein_dist = wasserstein_dist.sum(dim=-1)
 
         # Apply reduction if specified
-        if self.reduction == 'mean':
+        if self.reduction == "mean":
             return wasserstein_dist.mean()
-        elif self.reduction == 'sum':
+        elif self.reduction == "sum":
             return wasserstein_dist.sum()
         return wasserstein_dist
+
 
 class KLDivergenceLoss(nn.Module):
     def __init__(self, apply_normalization=False, epsilon=1e-10):
@@ -69,15 +72,16 @@ class KLDivergenceLoss(nn.Module):
 
         max_len = max(p.size(1), q.size(1))
         if p.size(1) < max_len:
-            p = F.pad(p, (0, max_len - p.size(1)), 'constant', 0)
+            p = F.pad(p, (0, max_len - p.size(1)), "constant", 0)
         if q.size(1) < max_len:
-            q = F.pad(q, (0, max_len - q.size(1)), 'constant', 0)
+            q = F.pad(q, (0, max_len - q.size(1)), "constant", 0)
 
         if self.apply_normalization:
             p = F.softmax(p, dim=-1)
             q = F.softmax(q, dim=-1)
 
         return torch.sum(p * torch.log(p / q))
+
 
 class MMDLoss(nn.Module):
     def __init__(self, kernel="energy", blur=0.05, scaling=0.5, downsample=1):
@@ -90,6 +94,7 @@ class MMDLoss(nn.Module):
         target = target.reshape(-1, self.downsample, target.shape[-1])
 
         return self.mmd_loss(input, target).mean()
+
 
 class TabularLoss(nn.Module):
     def __init__(self, shared=128, downsample=1):
@@ -106,8 +111,8 @@ class TabularLoss(nn.Module):
         gene_mmd = self.gene_loss(input, target).mean()
 
         # cell_mmd should only be on the shared genes, and match scale to mse loss
-        cell_inputs = input[:, :, -self.shared:]
-        cell_targets = target[:, :, -self.shared:]
+        cell_inputs = input[:, :, -self.shared :]
+        cell_targets = target[:, :, -self.shared :]
 
         # need to reshape each from (B, self.downsample, F) to (F, self.downsample, B)
         cell_inputs = cell_inputs.transpose(2, 0)

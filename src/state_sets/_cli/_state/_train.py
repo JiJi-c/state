@@ -4,7 +4,9 @@ import argparse as ap
 def add_arguments_train(parser: ap.ArgumentParser):
     """Add arguments for state training CLI."""
     parser.add_argument("--conf", type=str, default="configs/state-defaults.yaml", help="Path to config YAML file")
-    parser.add_argument("hydra_overrides", nargs="*", help="Hydra configuration overrides (e.g., embeddings.current=esm2-cellxgene)")
+    parser.add_argument(
+        "hydra_overrides", nargs="*", help="Hydra configuration overrides (e.g., embeddings.current=esm2-cellxgene)"
+    )
 
 
 def run_state_train(args: ap.ArgumentParser):
@@ -14,10 +16,10 @@ def run_state_train(args: ap.ArgumentParser):
     import logging
     import os
     import sys
-    
+
     import hydra
-    from omegaconf import DictConfig, OmegaConf
-    
+    from omegaconf import OmegaConf
+
     from ...state.train.trainer import main as trainer_main
 
     log = logging.getLogger(__name__)

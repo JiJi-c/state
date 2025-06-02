@@ -5,7 +5,6 @@ import anndata as ad
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from geomloss import SamplesLoss
 
 from .base import PerturbationModel
