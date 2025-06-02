@@ -1,8 +1,11 @@
-import logging
+import copy
 import time
+import logging
 
-import lightning as L
 import torch
+import lightning as L
+
+from typing import Any
 
 
 class LogLR(L.Callback):
@@ -19,7 +22,7 @@ class LogLR(L.Callback):
         if trainer.global_rank == 0:
             if trainer.global_step % self.interval == 0 and trainer.logger is not None:
                 trainer.logger.log_metrics(
-                    {"trainer/learning_rate": pl_module.lr_schedulers().get_last_lr()[0]},
+                    { "trainer/learning_rate": pl_module.lr_schedulers().get_last_lr()[0] },
                     step=trainer.global_step,
                 )
 
@@ -32,6 +35,7 @@ class PerfProfilerCallback(L.Callback):
         self.iterations_count = 0
         self.last_ipm_time = None
         self.ipm_history = []
+
 
     def on_train_batch_start(self, trainer: L.Trainer, pl_module, batch, batch_idx):
         self.batch_start_time = time.time()
@@ -110,13 +114,12 @@ class ResumeCallback(L.Callback):
         self._cfg = cfg
 
     def on_train_start(self, trainer, pl_module):
-        if self._cfg.optimizer.get("reset_lr_on_restart", False):
+        if self._cfg.optimizer.get('reset_lr_on_restart', False):
             for optimizer in trainer.optimizers:
                 for param_group in optimizer.param_groups:
-                    original_lr = param_group.get("lr", None)
-                    param_group["lr"] = self._cfg.optimizer.max_lr
+                    original_lr = param_group.get('lr', None)
+                    param_group['lr'] = self._cfg.optimizer.max_lr
                     logging.info(f"Reset learning rate from {original_lr} to {param_group['lr']}")
-
 
 class EMACallback(L.Callback):
     def __init__(self, decay: float = 0.999):
@@ -138,3 +141,4 @@ class EMACallback(L.Callback):
 
                     self.velocity[param_id] = self.beta * self.velocity[param_id] + (1 - self.beta) * param.grad
                     param.grad = self.velocity[param_id].clone()
+
