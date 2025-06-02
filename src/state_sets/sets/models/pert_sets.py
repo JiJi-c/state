@@ -5,10 +5,9 @@ import anndata as ad
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from geomloss import SamplesLoss
-from typing import Dict, Optional, Tuple
+from typing import Tuple
 
 from .base import PerturbationModel
 from .decoders import FinetuneVCICountsDecoder

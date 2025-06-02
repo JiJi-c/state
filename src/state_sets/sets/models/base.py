@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from lightning.pytorch import LightningModule
 
-from .utils import build_mlp, get_activation_class, get_loss_fn
+from .utils import get_loss_fn
 
 logger = logging.getLogger(__name__)
 
