@@ -1,3 +1,5 @@
+import sys
+from types import ModuleType
 import argparse as ap
 
 
@@ -22,10 +24,11 @@ def run_state_embed(args: ap.ArgumentParser):
     import logging
     
     from omegaconf import OmegaConf
-    from ...state.inference import Inference
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
+
+    from ...state.inference import Inference
 
     # Load configuration
     logger.info(f"Loading config from {args.config}")

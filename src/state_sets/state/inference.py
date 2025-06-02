@@ -96,7 +96,7 @@ class Inference():
             raise ValueError('Model already initialized')
 
         # Load and initialize model for eval
-        self.model = LitUCEModel.load_from_checkpoint(checkpoint, strict=False, cfg=self._vci_conf)
+        self.model = LitUCEModel.load_from_checkpoint(checkpoint, strict=False, cfg=self._vci_conf) ### THIS IS THE LINE THAT FAILS
         all_pe = get_embeddings(self._vci_conf)
         all_pe.requires_grad = False
         self.model.pe_embedding = nn.Embedding.from_pretrained(all_pe)
