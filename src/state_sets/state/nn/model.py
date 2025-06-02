@@ -6,34 +6,30 @@ import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from torch import nn, Tensor
 import torch.nn.functional as F
-from torch.nn import (TransformerEncoder,
-                      TransformerEncoderLayer,
-                      BCEWithLogitsLoss)
-from vci.utils import compute_gene_overlap_cross_pert, compute_pearson_delta, compute_perturbation_ranking_score
-
-
-import sys
-sys.path.append('../')
 import torch
 import lightning as L
 
+from torch import nn, Tensor
+from torch.nn import (TransformerEncoder,
+                      TransformerEncoderLayer,
+                      BCEWithLogitsLoss)
+
+
 from tqdm.auto import tqdm
-from typing import Any
 from torch.optim.lr_scheduler import (ChainedScheduler,
                                       LinearLR,
                                       CosineAnnealingLR,
                                       ReduceLROnPlateau)
-from vci.data import create_dataloader
-from vci.utils import compute_gene_overlap_cross_pert, get_embedding_cfg, get_dataset_cfg
-from vci.eval.emb import cluster_embedding
+
+from ..data import create_dataloader
+from ..utils import compute_gene_overlap_cross_pert, get_embedding_cfg, get_dataset_cfg, compute_pearson_delta, compute_perturbation_ranking_score
+from ..eval.emb import cluster_embedding
 from .loss import WassersteinLoss, KLDivergenceLoss, MMDLoss, TabularLoss
 
 
-# if flash-attn package is installed and available
-from vci.nn.flash_transformer import FlashTransformerEncoderLayer
-from vci.nn.flash_transformer import FlashTransformerEncoder
+from .flash_transformer import FlashTransformerEncoderLayer
+from .flash_transformer import FlashTransformerEncoder
 
 
 class SkipBlock(nn.Module):

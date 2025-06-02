@@ -9,12 +9,7 @@ import numpy as np
 from typing import Dict
 
 from torch.utils.data import DataLoader
-import vci.utils as utils
-import pandas as pd
-
-import fcntl
-import tempfile
-import os
+from .. import utils
 
 log = logging.getLogger(__file__)
 

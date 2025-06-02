@@ -10,10 +10,10 @@ from tqdm import tqdm
 from torch import nn
 from pathlib import Path
 
-from vci.nn.model import LitUCEModel
-from vci.train.trainer import get_embeddings
-from vci.data import create_dataloader
-from vci.utils import get_embedding_cfg
+from .nn.model import LitUCEModel
+from .train.trainer import get_embeddings
+from .data import create_dataloader
+from .utils import get_embedding_cfg
 
 log = logging.getLogger(__name__)
 

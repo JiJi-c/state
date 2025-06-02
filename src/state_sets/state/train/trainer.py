@@ -7,17 +7,14 @@ from torch.utils.data import DataLoader
 from datetime import timedelta
 
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 from zclip import ZClipLightningCallback
 
-from vci.nn.model import LitUCEModel
-from vci.data import H5adSentenceDataset, VCIDatasetSentenceCollator
-from vci.train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback, PerfProfilerCallback
-from vci.utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
-
-from vci.data.sampler import DatasetBatchSampler
+from ..nn.model import LitUCEModel
+from ..data import H5adSentenceDataset, VCIDatasetSentenceCollator
+from ..train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback, PerfProfilerCallback
+from ..utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
 def get_embeddings(cfg):
     # Load in ESM2 embeddings and special tokens
@@ -53,9 +50,7 @@ def main(cfg):
 
     # Training dataloader
     train_dataset = DatasetClass(cfg)
-    # train_batch_sampler = DatasetBatchSampler(train_dataset, batch_size=cfg.model.batch_size)
     train_dataloader = DataLoader(train_dataset,
-                                #   batch_sampler=train_batch_sampler,
                                   batch_size=cfg.model.batch_size,
                                   shuffle=True,
                                   collate_fn=train_dataset_sentence_collator,
@@ -112,7 +107,6 @@ def main(cfg):
 
     callbacks = [checkpoint_callback,
                  LogLR(100),
-                 RichProgressBar(),
                  ResumeCallback(cfg),
                  PerfProfilerCallback()]
 

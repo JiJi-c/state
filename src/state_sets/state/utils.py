@@ -10,7 +10,6 @@ import uuid
 
 import logging
 import requests
-import mygene
 import numpy as np
 import time
 
@@ -58,6 +57,7 @@ def convert_gene_symbols_to_ensembl_rest(gene_symbols, species="human"):
     return gene_to_ensembl
 
 def convert_symbols_to_ensembl(adata):
+    import mygene
     gene_symbols = adata.var_names.tolist()
 
     mg = mygene.MyGeneInfo()
