@@ -8,7 +8,6 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 from torch import nn
-from pathlib import Path
 
 from .nn.model import LitUCEModel
 from .train.trainer import get_embeddings

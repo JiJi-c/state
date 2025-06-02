@@ -10,6 +10,10 @@ import torch.nn.functional as F
 import torch
 import lightning as L
 
+import sys
+sys.path.append('../../')
+sys.path.append('../')
+
 from torch import nn, Tensor
 from torch.nn import (TransformerEncoder,
                       TransformerEncoderLayer,
