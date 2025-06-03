@@ -105,6 +105,9 @@ def get_transformer_backbone(key, kwargs) -> PreTrainedModel:
         config = LlamaConfig(**kwargs)
         model = LlamaBidirectionalModel(config)
         model_dim = config.hidden_size
+
+        model.embed_tokens.weight.zero_()
+        model.embed_tokens.weight.requires_grad = False
     else:
         raise ValueError(f"Unknown backbone key {key}")
 
