@@ -116,7 +116,7 @@ class LlamaBidirectionalModel(LlamaModel):
     By overriding _update_causal_mask to return None, all tokens attend to each other.
     """
 
-    def __init__(self, config: Qwen3Config):
+    def __init__(self, config: LlamaConfig):
         super().__init__(config)
 
     def _update_causal_mask(
