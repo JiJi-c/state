@@ -318,29 +318,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     # Compute all metrics
     evaluator.compute()
-    results = evaluator.metrics
+    evaluator.save_metrics_per_celltype(average=True)
+    evaluator.save_metrics_per_celltype(average=False)
 
-    # 7. Save and display results
-    eval_basedir = os.path.join(
-        run_output_dir,
-        "eval",
-        args.checkpoint.replace(".ckpt", ""),
-    )
-    os.makedirs(eval_basedir, exist_ok=True)
-
-    # Save results
-    results_path = os.path.join(eval_basedir, "cell_eval_results.csv")
-    results_df = pd.DataFrame([results])
-    results_df.to_csv(results_path, index=False)
-    logger.info(f"Cell-eval results saved to {results_path}")
-
-    # Display summary
-    logger.info("Cell-eval Results Summary:")
-    if isinstance(results, dict):
-        for metric, value in results.items():
-            if isinstance(value, (int, float)):
-                logger.info(f"  {metric}: {value:.4f}")
-    else:
-        logger.info(str(results_df))
-
-    logger.info("Evaluation complete!")
+    logger.info(f"Cell-eval results saved to {args.output_dir}")

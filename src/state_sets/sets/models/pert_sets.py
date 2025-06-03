@@ -442,7 +442,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         if self.confidence_token is None:
             pred, confidence_pred = self.forward(batch), None
         else:
-            pred, confidence_pred = self(batch)
+            pred, confidence_pred = self.forward(batch)
 
         pred = pred.reshape(-1, self.cell_sentence_len, self.output_dim)
         target = batch["pert_cell_emb"]
