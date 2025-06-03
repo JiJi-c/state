@@ -5,7 +5,6 @@ import torch
 import lightning as L
 
 
-
 class LogLR(L.Callback):
     def __init__(self, interval=10):
         super().__init__()
