@@ -29,7 +29,7 @@ def load_hydra_config(method: str, overrides: list[str] = None) -> DictConfig:
 
     # Initialize Hydra with the path to your configs directory
     # Adjust the path based on where this file is relative to configs/
-    with initialize(version_base=None, config_path="../../configs"):
+    with initialize(version_base=None, config_path="configs"):
         match method:
             case "state":
                 cfg = compose(config_name="state-defaults", overrides=overrides)
