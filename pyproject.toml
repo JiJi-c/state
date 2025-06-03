@@ -7,7 +7,7 @@ authors = []
 requires-python = ">=3.13"
 dependencies = [
     "anndata>=0.11.4",
-    "cell-load>=0.3.1",
+    "cell-load>=0.3.4",
     "numpy>=2.2.6",
     "pandas>=2.2.3",
     "pyyaml>=6.0.2",
@@ -21,15 +21,15 @@ dependencies = [
     "geomloss>=0.2.6",
     "zclip>=0.0.1",
     "transformers>=4.52.3",
-    "cell-eval>=0.4.5",
+    "cell-eval>=0.4.7",
 ]
 
 [dependency-groups]
 dev = ["ruff>=0.11.11", "vulture>=2.14"]
 
 [tool.uv.sources]
-cell-eval = { git = "ssh://github.com/arcinstitute/cell-eval" }
 cell-load = { git = "ssh://github.com/arcinstitute/cell-load" }
+cell-eval = { git = "ssh://github.com/arcinstitute/cell-eval" }
 zclip = { git = "https://github.com/bluorion-com/ZClip.git" }
 
 [build-system]
