@@ -220,10 +220,10 @@ class GPT2BidirectionalModel(GPT2Model):
         if seq_len is not None:
             # Print the (1, 1, seq_len, seq_len) slice of the bias for the first block
             bias_mask = self.h[0].attn.bias[0, 0, :seq_len, :seq_len]
-            print("Bias mask (block 0) slice [0,0,:seq_len,:seq_len]:")
-            print(bias_mask)
-        else:
-            print("Cannot infer sequence length to print bias mask.")
+        #     print("Bias mask (block 0) slice [0,0,:seq_len,:seq_len]:")
+        #     print(bias_mask)
+        # else:
+        #     print("Cannot infer sequence length to print bias mask.")
 
         # If a 2D attention_mask was provided, print its expanded 4D version:
         if attention_mask is not None:
@@ -233,8 +233,8 @@ class GPT2BidirectionalModel(GPT2Model):
             # Convert to float mask (1→0.0, 0→-inf) just like GPT2 does internally
             neg_inf = torch.finfo(self.dtype).min
             float_mask = (1.0 - expanded.to(self.dtype)) * neg_inf
-            print(f"Expanded attention_mask (shape {expanded.shape}) → float mask:")
-            print(float_mask)
+            # print(f"Expanded attention_mask (shape {expanded.shape}) → float mask:")
+            # print(float_mask)
 
         # Finally, call the parent forward method
         return super().forward(
