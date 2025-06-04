@@ -47,7 +47,8 @@ def main():
         case "state":
             match args.subcommand:
                 case "train":
-                    run_state_train(args)
+                    cfg = load_hydra_config("state", args.hydra_overrides)
+                    run_state_train(cfg, args)
                 case "embed":
                     run_state_embed(args)
         case "sets":
