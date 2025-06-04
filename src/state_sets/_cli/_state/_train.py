@@ -17,7 +17,6 @@ def run_state_train(cfg, args):
     import os
     import sys
 
-    import hydra
     from omegaconf import OmegaConf
 
     from ...state.train.trainer import main as trainer_main

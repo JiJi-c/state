@@ -68,7 +68,10 @@ def run_sets_train(cfg: DictConfig):
             else:
                 sentence_len = 1
         else:
-            sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+            try:
+                sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["n_positions"]
+            except:
+                sentence_len = cfg["model"]["kwargs"]["transformer_backbone_kwargs"]["max_position_embeddings"]
 
     if cfg["model"]["name"].lower().startswith("scgpt"):  # scGPT uses log-normalized expression
         cfg["data"]["kwargs"]["transform"] = "log-normalize"

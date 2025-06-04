@@ -21,8 +21,10 @@ kwargs:
   init_from: null # initial checkpoint to start the model
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
-      n_positions: ${model.kwargs.cell_set_len}
-      n_embd: ${model.kwargs.hidden_dim}
+      max_position_embeddings: ${model.kwargs.cell_set_len} # llama
+      n_positions: ${model.kwargs.cell_set_len} # gpt2
+      hidden_size: ${model.kwargs.hidden_dim} # llama
+      n_embd: ${model.kwargs.hidden_dim} # gpt2
       n_layer: 8
       n_head: 8
       resid_pdrop: 0.0
