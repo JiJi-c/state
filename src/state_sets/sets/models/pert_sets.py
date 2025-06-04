@@ -207,7 +207,7 @@ class PertSetsPerturbationModel(PerturbationModel):
                     )
                 elif "non-targeting" in control_pert:
                     temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5")
-                    gene_names = temp.var.index.values
+                    # gene_names = temp.var.index.values
             else:
                 assert output_space == "all"
                 if "DMSO_TF" in control_pert:
@@ -519,7 +519,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """
-        Typically used for final inference. We'll replicate old logic:
+        Typically used for final inference. We'll replicate old logic:s
          returning 'preds', 'X', 'pert_name', etc.
         """
         if self.confidence_token is None:
