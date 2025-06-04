@@ -1,5 +1,6 @@
 from typing import Union
 
+import torch
 import torch.nn as nn
 from transformers import GPT2Config, GPT2Model, LlamaConfig, LlamaModel, PreTrainedModel
 
@@ -113,6 +114,7 @@ def get_transformer_backbone(key, kwargs) -> PreTrainedModel:
 
     return model, model_dim
 
+
 class LlamaBidirectionalModel(LlamaModel):
     """
     A drop-in replacement for LlamaModel with bidirectional attention.
@@ -127,7 +129,7 @@ class LlamaBidirectionalModel(LlamaModel):
         attention_mask: torch.Tensor,
         input_tensor: torch.Tensor,
         cache_position: torch.Tensor,
-        past_key_values: Cache,
+        past_key_values,
         output_attentions: bool = False,
     ):
         # By returning None, we disable any causal‐(look‐ahead) masking.
@@ -140,7 +142,7 @@ class LlamaBidirectionalModel(LlamaModel):
         input_ids: torch.LongTensor = None,
         attention_mask: torch.Tensor = None,
         position_ids: torch.LongTensor = None,
-        past_key_values: Cache = None,
+        past_key_values=None,
         inputs_embeds: torch.FloatTensor = None,
         use_cache: bool = None,
         output_attentions: bool = None,
@@ -148,8 +150,6 @@ class LlamaBidirectionalModel(LlamaModel):
         cache_position: torch.LongTensor = None,
         **flash_attn_kwargs,
     ):
-
-
         flash_attn_kwargs["is_causal"] = False
 
         return super().forward(
@@ -165,11 +165,13 @@ class LlamaBidirectionalModel(LlamaModel):
             **flash_attn_kwargs,
         )
 
+
 class GPT2BidirectionalModel(GPT2Model):
     """
     A thin wrapper around GPT2Model that disables the causal (unidirectional) mask,
     allowing full bidirectional attention—and prints the internal bias mask each forward pass.
     """
+
     def __init__(self, config: GPT2Config):
         # Mark as not‐a‐decoder (for downstream utilities).
         config.is_decoder = False
@@ -180,7 +182,7 @@ class GPT2BidirectionalModel(GPT2Model):
             # block.attn.bias is a bool‐tensor of shape (1, 1, max_pos, max_pos).
             block.attn.bias.data.fill_(True)
             block.attn.is_causal = False
-        
+
         def _no_causal_mask(
             self,
             attention_mask: torch.Tensor,
@@ -192,7 +194,6 @@ class GPT2BidirectionalModel(GPT2Model):
             return None
 
         self._update_causal_mask = _no_causal_mask.__get__(self, GPT2Model)
-
 
     def forward(
         self,
