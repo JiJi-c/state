@@ -145,7 +145,10 @@ class PerturbationModel(ABC, LightningModule):
             if gene_dim > 10000:
                 hidden_dims = [1024, 512, 256]
             else:
-                hidden_dims = [2048, 1024, 1024]  # make this config
+                if self.control_pert == "non-targeting":
+                    hidden_dims = [1024, 1024, 512]  # make this config
+                else:
+                    hidden_dims = [2048, 1024, 1024]
 
             self.gene_decoder = LatentToGeneDecoder(
                 latent_dim=self.output_dim,
