@@ -1,13 +1,13 @@
 [project]
 name = "state-sets"
-version = "0.3.10"
+version = "0.4.0"
 description = "Add your description here"
 readme = "README.md"
 authors = []
 requires-python = ">=3.13"
 dependencies = [
     "anndata>=0.11.4",
-    "cell-load>=0.3.8",
+    "cell-load>=0.4.0",
     "numpy>=2.2.6",
     "pandas>=2.2.3",
     "pyyaml>=6.0.2",
@@ -28,10 +28,8 @@ dependencies = [
 dev = ["ruff>=0.11.11", "vulture>=2.14"]
 
 [tool.uv.sources]
-# cell-load = { git = "ssh://github.com/arcinstitute/cell-load.git" }
-# cell-eval = { git = "ssh://github.com/arcinstitute/cell-eval.git" }
-cell-load = { path = "/home/aadduri/cell-load" }
-cell-eval = { path = "/home/aadduri/cell-eval" }
+cell-load = { git = "ssh://github.com/arcinstitute/cell-load.git" }
+cell-eval = { git = "ssh://github.com/arcinstitute/cell-eval.git" }
 zclip = { git = "https://github.com/bluorion-com/ZClip.git" }
 
 [build-system]

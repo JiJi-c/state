@@ -93,6 +93,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     # 1. Load the config
     config_path = os.path.join(args.output_dir, "config.yaml")
+    cfg = load_config(config_path)
     logger.info(f"Loaded config from {config_path}")
 
     # 2. Find run output directory & load data module

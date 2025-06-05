@@ -154,9 +154,9 @@ class CellTypeMeanModel(PerturbationModel):
         device = self.dummy_param.device
         # Determine which key to use for the expression values.
         output_key = (
-            "X_hvg"
+            "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
             else "pert_cell_emb"
         )
         pred_out = torch.zeros((B, self.output_dim), device=device)
@@ -191,7 +191,7 @@ class CellTypeMeanModel(PerturbationModel):
         output_key = (
             "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
             else "pert_cell_emb"
         )
         target = batch[output_key]
