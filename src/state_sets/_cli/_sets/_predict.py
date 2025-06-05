@@ -1,5 +1,6 @@
 import argparse as ap
 
+
 def add_arguments_predict(parser: ap.ArgumentParser):
     """
     CLI for evaluation using cell-eval metrics.
@@ -93,6 +94,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     # 1. Load the config
     config_path = os.path.join(args.output_dir, "config.yaml")
+    cfg = load_config(config_path)
     logger.info(f"Loaded config from {config_path}")
 
     # 2. Find run output directory & load data module
@@ -274,8 +276,8 @@ def run_sets_predict(args: ap.ArgumentParser):
         }
     )
 
-    var = pd.DataFrame({"gene_names": var_dims['gene_names']})
-    
+    var = pd.DataFrame({"gene_names": var_dims["gene_names"]})
+
     if final_X_hvg is not None:
         # Create adata for predictions - using the decoded gene expression values
         adata_pred = anndata.AnnData(X=final_pert_cell_counts_preds, obs=obs, var=var)
@@ -310,6 +312,7 @@ def run_sets_predict(args: ap.ArgumentParser):
     evaluator = MetricsEvaluator(
         adata_pred=adata_pred,
         adata_real=adata_real,
+        embed_key=data_module.embed_key,
         control_pert=control_pert,
         pert_col=data_module.pert_col,
         celltype_col=data_module.cell_type_key,

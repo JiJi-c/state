@@ -96,7 +96,7 @@ class CellTypeMeanModel(PerturbationModel):
         with torch.no_grad():
             for batch in train_loader:
                 # Select the proper expression space
-                if (self.embed_key and self.embed_key != "pert_cell_counts" and self.output_space == "gene") or (
+                if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") or (
                     self.embed_key and self.output_space == "all"
                 ):
                     X_vals = batch["pert_cell_counts"]
@@ -156,7 +156,7 @@ class CellTypeMeanModel(PerturbationModel):
         output_key = (
             "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
             else "pert_cell_emb"
         )
         pred_out = torch.zeros((B, self.output_dim), device=device)
@@ -191,7 +191,7 @@ class CellTypeMeanModel(PerturbationModel):
         output_key = (
             "pert_cell_counts"
             if self.embed_key
-            and ((self.output_space == "gene" and self.embed_key != "pert_cell_counts") or self.output_space == "all")
+            and ((self.output_space == "gene" and self.embed_key != "X_hvg") or self.output_space == "all")
             else "pert_cell_emb"
         )
         target = batch[output_key]
