@@ -7,9 +7,9 @@
 #SBATCH --gres=gpu:1                                                                                                                                                                                                                    
 #SBATCH --time=1-00:00:00                                                                                                                                                                                                               
 #SBATCH --array=1-4                         
-#SBATCH --output=logs/replogle_llama_11538696_%a.out                                                                                                                                                                                    
-#SBATCH --error=logs/replogle_llama_115386960_%a.err                                                                                                                                                                                     
-#SBATCH --job-name=replogle_llama_11538696                                                                                                                                                                                           
+#SBATCH --output=logs/replogle_llama_11645640_%a.out                                                                                                                                                                                    
+#SBATCH --error=logs/replogle_llama_11645640_%a.err                                                                                                                                                                                     
+#SBATCH --job-name=replogle_llama_11645640                                                                                                                                                                                           
                                                                                                                                                                                                                                         
 # Define TOML config path for each fold - each fold holds out a different cell type                                                                                                                                                     
 if [ $SLURM_ARRAY_TASK_ID -eq 1 ]; then                                                                                                                                                                                                 
@@ -46,6 +46,6 @@ state-sets sets train \
     "training.lr=1e-4" \
     "model.kwargs.cell_set_len=64" \
     "wandb.tags=[architecture_search]" \
-    "model=replogle_llama_11538696" \
-    "output_dir=/large_storage/ctc/userspace/rohankshah/preprint/replogle_llama_11538696" \
+    "model=replogle_llama_11645640" \
+    "output_dir=/large_storage/ctc/userspace/rohankshah/preprint/replogle_llama_11645640" \
     "name=${CELLTYPE}"
