@@ -311,9 +311,11 @@ def run_sets_predict(args: ap.ArgumentParser):
     evaluator = MetricsEvaluator(
         adata_pred=adata_pred,
         adata_real=adata_real,
+        embed_key=data_module.embed_key,
         control_pert=control_pert,
         pert_col=data_module.pert_col,
         celltype_col=data_module.cell_type_key,
+        outdir=args.output_dir,
     )
 
     # Compute all metrics
