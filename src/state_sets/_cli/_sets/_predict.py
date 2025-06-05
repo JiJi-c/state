@@ -1,5 +1,6 @@
 import argparse as ap
 
+
 def add_arguments_predict(parser: ap.ArgumentParser):
     """
     CLI for evaluation using cell-eval metrics.
@@ -275,8 +276,8 @@ def run_sets_predict(args: ap.ArgumentParser):
         }
     )
 
-    var = pd.DataFrame({"gene_names": var_dims['gene_names']})
-    
+    var = pd.DataFrame({"gene_names": var_dims["gene_names"]})
+
     if final_X_hvg is not None:
         # Create adata for predictions - using the decoded gene expression values
         adata_pred = anndata.AnnData(X=final_pert_cell_counts_preds, obs=obs, var=var)
