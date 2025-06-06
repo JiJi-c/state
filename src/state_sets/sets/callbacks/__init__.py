@@ -5,7 +5,7 @@ from torch.optim import Optimizer
 from ..models import PerturbationModel
 from .batch_speed_monitor import BatchSpeedMonitorCallback
 
-__all__ = [PerturbationModel, BatchSpeedMonitorCallback]
+__all__ = ["PerturbationModel", "BatchSpeedMonitorCallback"]
 
 
 class GradNormCallback(Callback):
