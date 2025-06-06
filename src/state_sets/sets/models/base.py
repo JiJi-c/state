@@ -145,7 +145,7 @@ class PerturbationModel(ABC, LightningModule):
             if gene_dim > 10000:
                 hidden_dims = [1024, 512, 256]
             else:
-                if 'DMSO_TF' in self.control_pert:
+                if "DMSO_TF" in self.control_pert:
                     hidden_dims = [2048, 1024, 1024]
                 else:
                     hidden_dims = [1024, 1024, 512]  # make this config

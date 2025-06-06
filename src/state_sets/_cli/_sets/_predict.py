@@ -26,6 +26,14 @@ def add_arguments_predict(parser: ap.ArgumentParser):
         help="If >0, run test-time fine-tuning for the specified number of epochs on only control cells.",
     )
 
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default="full",
+        choices=["full", "minimal", "de", "anndata"],
+        help="run all metrics, minimal, only de metrics, or only output adatas",
+    )
+
 
 def run_sets_predict(args: ap.ArgumentParser):
     import logging
@@ -333,8 +341,10 @@ def run_sets_predict(args: ap.ArgumentParser):
             profile=args.profile,
             metric_configs={
                 "discrimination_score": {
-                    "embed_key": "X_pca",
-                }
-            },
+                    "embed_key": data_module.embed_key,
+                },
+            }
+            if data_module.embed_key and data_module.embed_key != "X_hvg"
+            else {},
         )
-        results.write_csv(os.path.join(args.outdir, f"{ct}_results.csv"))
+        results.write_csv(os.path.join(args.output_dir, f"{ct}_results.csv"))
