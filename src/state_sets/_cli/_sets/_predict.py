@@ -327,7 +327,7 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     for ct in ct_split_real.keys():
         real_ct = ct_split_real[ct]
-        pred_ct = ct_split_real[ct]
+        pred_ct = ct_split_pred[ct]
 
         evaluator = MetricsEvaluator(
             adata_pred=pred_ct,
