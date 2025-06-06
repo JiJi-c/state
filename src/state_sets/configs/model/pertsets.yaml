@@ -14,6 +14,7 @@ kwargs:
   predict_residual: True # if true, predicts the residual in embedding space to the basal cells
   freeze_pert_backbone: False # if true, the perturbation model is frozen
   finetune_vci_decoder: False # if true, the pretrained state decoder is used in finetuning
+  residual_decoder: False # if true, the pretrained state decoder is used in finetuning
   batch_encoder: False # if true, batch variables are used
   nb_decoder: False # if true, use a negative binomial decoder
   mask_attn: False # if true, mask the attention
