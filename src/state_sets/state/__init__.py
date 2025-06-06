@@ -56,4 +56,4 @@ _setup_vci_aliases()
 # Your existing exports
 from .inference import Inference
 
-__all__ = [Inference]
+__all__ = ["Inference"]
