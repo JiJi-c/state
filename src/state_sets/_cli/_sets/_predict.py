@@ -38,11 +38,12 @@ def run_sets_predict(args: ap.ArgumentParser):
     import pandas as pd
     import torch
     import yaml
-    from tqdm import tqdm
-    from cell_load.data_modules import PerturbationDataModule
 
     # Cell-eval for metrics computation
     from cell_eval import MetricsEvaluator
+    from cell_eval.utils import split_anndata_on_celltype
+    from cell_load.data_modules import PerturbationDataModule
+    from tqdm import tqdm
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -309,19 +310,31 @@ def run_sets_predict(args: ap.ArgumentParser):
 
     control_pert = data_module.get_control_pert()
 
-    evaluator = MetricsEvaluator(
-        adata_pred=adata_pred,
-        adata_real=adata_real,
-        embed_key=data_module.embed_key,
-        control_pert=control_pert,
-        pert_col=data_module.pert_col,
-        celltype_col=data_module.cell_type_key,
-        outdir=args.output_dir,
+    ct_split_real = split_anndata_on_celltype(adata=adata_real, celltype_col=data_module.cell_type_key)
+    ct_split_pred = split_anndata_on_celltype(adata=adata_pred, celltype_col=data_module.cell_type_key)
+
+    assert len(ct_split_real) == len(ct_split_pred), (
+        f"Number of celltypes in real and pred anndata must match: {len(ct_split_real)} != {len(ct_split_pred)}"
     )
 
-    # Compute all metrics
-    evaluator.compute()
-    evaluator.save_metrics_per_celltype(average=True)
-    evaluator.save_metrics_per_celltype(average=False)
+    for ct in ct_split_real.keys():
+        real_ct = ct_split_real[ct]
+        pred_ct = ct_split_real[ct]
 
-    logger.info(f"Cell-eval results saved to {args.output_dir}")
+        evaluator = MetricsEvaluator(
+            adata_pred=pred_ct,
+            adata_real=real_ct,
+            control_pert=control_pert,
+            pert_col=data_module.pert_col,
+            outdir=args.output_dir,
+            prefix=ct,
+        )
+        results = evaluator.compute(
+            profile=args.profile,
+            metric_configs={
+                "discrimination_score": {
+                    "embed_key": "X_pca",
+                }
+            },
+        )
+        results.write_csv(os.path.join(args.outdir, f"{ct}_results.csv"))
