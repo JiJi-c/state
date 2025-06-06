@@ -12,10 +12,8 @@ from typing import Dict, List, Literal, Optional, Union
 import h5py
 import numpy as np
 import torch
-from cell_load.data.dataset.perturbation_dataset import PerturbationDataset
-
-# We import our mapping strategy base class for type hints
-from cell_load.data.mapping_strategies import BaseMappingStrategy
+from cell_load.dataset import PerturbationDataset
+from cell_load.mapping_strategies import BaseMappingStrategy
 from cell_load.utils.data_utils import GlobalH5MetadataCache
 
 logger = logging.getLogger(__name__)
