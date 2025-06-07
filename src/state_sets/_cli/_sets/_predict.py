@@ -33,12 +33,7 @@ def add_arguments_predict(parser: ap.ArgumentParser):
         choices=["full", "minimal", "de", "anndata"],
         help="run all metrics, minimal, only de metrics, or only output adatas",
     )
-    parser.add_argument(
-        "--results_dir",
-        type=str,
-        required=True,
-        help="Path to the dir where results will be saved.",
-    )
+
 
 def run_sets_predict(args: ap.ArgumentParser):
     import logging
@@ -309,9 +304,10 @@ def run_sets_predict(args: ap.ArgumentParser):
         adata_real = anndata.AnnData(X=final_reals, obs=obs, var=var)
 
     # Save the AnnData objects
-    os.makedirs(args.results_dir, exist_ok=True)
-    adata_pred_path = os.path.join(args.results_dir, "adata_pred.h5ad")
-    adata_real_path = os.path.join(args.results_dir, "adata_real.h5ad")
+    results_dir = os.path.join(args.output_dir, "eval_" + os.path.basename(args.checkpoint))
+    os.makedirs(results_dir, exist_ok=True)
+    adata_pred_path = os.path.join(results_dir, "adata_pred.h5ad")
+    adata_real_path = os.path.join(results_dir, "adata_real.h5ad")
 
     adata_pred.write_h5ad(adata_pred_path)
     adata_real.write_h5ad(adata_real_path)
@@ -340,7 +336,7 @@ def run_sets_predict(args: ap.ArgumentParser):
             adata_real=real_ct,
             control_pert=control_pert,
             pert_col=data_module.pert_col,
-            outdir=args.results_dir,
+            outdir=results_dir,
             prefix=ct,
         )
         results = evaluator.compute(
@@ -353,4 +349,4 @@ def run_sets_predict(args: ap.ArgumentParser):
             if data_module.embed_key and data_module.embed_key != "X_hvg"
             else {},
         )
-        results.write_csv(os.path.join(args.results_dir, f"{ct}_results.csv"))
+        results.write_csv(os.path.join(results_dir, f"{ct}_results.csv"))
