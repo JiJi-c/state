@@ -133,6 +133,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.n_decoder_layers = kwargs.get("n_decoder_layers", 2)
         self.activation_class = get_activation_class(kwargs.get("activation", "gelu"))
         self.cell_sentence_len = kwargs.get("cell_set_len", 256)
+        self.decoder_loss_weight = kwargs.get("decoder_weight", 1.0)
 
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
@@ -411,7 +412,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             # Log decoder loss
             self.log("decoder_loss", decoder_loss)
 
-            total_loss = total_loss + 0.1 * decoder_loss
+            total_loss = total_loss + self.decoder_loss_weight * decoder_loss
 
         if confidence_pred is not None:
             # Detach main loss to prevent gradients flowing through it
@@ -472,7 +473,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
             # Log the validation metric
             self.log("val/decoder_loss", decoder_loss)
-            loss = loss + 0.1 * decoder_loss
+            loss = loss + self.decoder_loss_weight * decoder_loss
 
         if confidence_pred is not None:
             # Detach main loss to prevent gradients flowing through it
