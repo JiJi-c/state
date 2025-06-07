@@ -3,7 +3,7 @@ checkpoint: null
 device: cuda
 
 kwargs:
-  cell_set_len: 64 # how many cells to group together into a single set of cells
+  cell_set_len: 32 # how many cells to group together into a single set of cells
   extra_tokens: 1  # configurable buffer for confidence/special tokens
   blur: 0.05
   hidden_dim: 492 # hidden dimension going into the transformer backbone
@@ -16,6 +16,7 @@ kwargs:
   finetune_vci_decoder: False # if true, the pretrained state decoder is used in finetuning
   batch_encoder: False # if true, batch variables are used
   nb_decoder: False # if true, use a negative binomial decoder
+  decoder_loss_weight: 1.0
   mask_attn: False # if true, mask the attention
   distributional_loss: energy
   init_from: null # initial checkpoint to start the model
