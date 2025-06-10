@@ -18,6 +18,7 @@ kwargs:
   nb_decoder: False # if true, use a negative binomial decoder
   mask_attn: False # if true, mask the attention
   distributional_loss: energy
+  regularization: 0.0
   init_from: null # initial checkpoint to start the model
   transformer_backbone_key: llama
   transformer_backbone_kwargs:

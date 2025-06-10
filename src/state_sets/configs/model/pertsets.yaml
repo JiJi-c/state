@@ -20,6 +20,7 @@ kwargs:
   decoder_loss_weight: 1.0
   mask_attn: False # if true, mask the attention
   distributional_loss: energy
+  regularization: 0.0
   init_from: null # initial checkpoint to start the model
   transformer_backbone_key: GPT2
   transformer_backbone_kwargs:
