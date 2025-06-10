@@ -135,6 +135,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.cell_sentence_len = kwargs.get("cell_set_len", 256)
         self.decoder_loss_weight = kwargs.get("decoder_weight", 1.0)
         self.regularization = kwargs.get("regularization", 0.0)
+        self.detach_decoder = kwargs.get("detach_decoder", False)
 
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
@@ -395,7 +396,15 @@ class PertSetsPerturbationModel(PerturbationModel):
         if self.gene_decoder is not None and "pert_cell_counts" in batch:
             gene_targets = batch["pert_cell_counts"]
             # Train decoder to map latent predictions to gene space
-            latent_preds = pred
+
+            if self.detach_decoder:
+                # with some random change, use the true targets
+                if np.random.rand() < 0.1:
+                    latent_preds = target.reshape_as(pred).detach()
+                else:
+                    latent_preds = pred.detach()
+            else:
+                latent_preds = pred
 
             if isinstance(self.gene_decoder, NBDecoder):
                 mu, theta = self.gene_decoder(latent_preds)
