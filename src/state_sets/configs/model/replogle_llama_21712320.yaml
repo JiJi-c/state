@@ -19,6 +19,7 @@ kwargs:
   mask_attn: False # if true, mask the attention
   distributional_loss: energy
   regularization: 0.0
+  detach_decoder: False
   init_from: null # initial checkpoint to start the model
   transformer_backbone_key: llama
   transformer_backbone_kwargs:
