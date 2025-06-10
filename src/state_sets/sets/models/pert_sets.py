@@ -134,6 +134,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         self.activation_class = get_activation_class(kwargs.get("activation", "gelu"))
         self.cell_sentence_len = kwargs.get("cell_set_len", 256)
         self.decoder_loss_weight = kwargs.get("decoder_weight", 1.0)
+        self.regularization = kwargs.get("regularization", 0.0)
 
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
@@ -370,10 +371,10 @@ class PertSetsPerturbationModel(PerturbationModel):
         """Training step logic for both main model and decoder."""
         # Get model predictions (in latent space)
         confidence_pred = None
-        if self.confidence_token is None:
-            pred = self.forward(batch, padded=padded)
-        else:
+        if self.confidence_token is not None:
             pred, confidence_pred = self.forward(batch, padded=padded)
+        else:
+            pred = self.forward(batch, padded=padded)
 
         target = batch["pert_cell_emb"]
 
@@ -435,6 +436,19 @@ class PertSetsPerturbationModel(PerturbationModel):
 
             # Add to total loss
             total_loss = total_loss + confidence_loss
+
+        if self.regularization > 0.0:
+            ctrl_cell_emb = batch["ctrl_cell_emb"].reshape_as(pred)
+            delta = pred - ctrl_cell_emb
+
+            # compute l1 loss
+            l1_loss = torch.abs(delta).mean()
+
+            # Log the regularization loss
+            self.log("train/l1_regularization", l1_loss)
+
+            # Add regularization to total loss
+            total_loss = total_loss + self.regularization * l1_loss
 
         return total_loss
 
