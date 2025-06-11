@@ -340,6 +340,7 @@ def run_sets_predict(args: ap.ArgumentParser):
         f"Number of celltypes in real and pred anndata must match: {len(ct_split_real)} != {len(ct_split_pred)}"
     )
 
+    pdex_kwargs = dict(exp_post_agg=True, is_log1p=True)
     for ct in ct_split_real.keys():
         real_ct = ct_split_real[ct]
         pred_ct = ct_split_pred[ct]
@@ -351,7 +352,9 @@ def run_sets_predict(args: ap.ArgumentParser):
             pert_col=data_module.pert_col,
             outdir=results_dir,
             prefix=ct,
+            pdex_kwargs=pdex_kwargs,
         )
+
         results = evaluator.compute(
             profile=args.profile,
             metric_configs={
