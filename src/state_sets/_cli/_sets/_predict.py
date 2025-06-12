@@ -34,6 +34,12 @@ def add_arguments_predict(parser: ap.ArgumentParser):
         help="run all metrics, minimal, only de metrics, or only output adatas",
     )
 
+    parser.add_argument(
+        "--predict_only",
+        action="store_true",
+        help="If set, only run prediction without evaluation metrics.",
+    )
+
 
 def run_sets_predict(args: ap.ArgumentParser):
     import logging
@@ -328,41 +334,42 @@ def run_sets_predict(args: ap.ArgumentParser):
     logger.info(f"Saved adata_pred to {adata_pred_path}")
     logger.info(f"Saved adata_real to {adata_real_path}")
 
-    # 6. Compute metrics using cell-eval
-    logger.info("Computing metrics using cell-eval...")
+    if not args.predict_only:
+        # 6. Compute metrics using cell-eval
+        logger.info("Computing metrics using cell-eval...")
 
-    control_pert = data_module.get_control_pert()
+        control_pert = data_module.get_control_pert()
 
-    ct_split_real = split_anndata_on_celltype(adata=adata_real, celltype_col=data_module.cell_type_key)
-    ct_split_pred = split_anndata_on_celltype(adata=adata_pred, celltype_col=data_module.cell_type_key)
+        ct_split_real = split_anndata_on_celltype(adata=adata_real, celltype_col=data_module.cell_type_key)
+        ct_split_pred = split_anndata_on_celltype(adata=adata_pred, celltype_col=data_module.cell_type_key)
 
-    assert len(ct_split_real) == len(ct_split_pred), (
-        f"Number of celltypes in real and pred anndata must match: {len(ct_split_real)} != {len(ct_split_pred)}"
-    )
-
-    pdex_kwargs = dict(exp_post_agg=True, is_log1p=True)
-    for ct in ct_split_real.keys():
-        real_ct = ct_split_real[ct]
-        pred_ct = ct_split_pred[ct]
-
-        evaluator = MetricsEvaluator(
-            adata_pred=pred_ct,
-            adata_real=real_ct,
-            control_pert=control_pert,
-            pert_col=data_module.pert_col,
-            outdir=results_dir,
-            prefix=ct,
-            pdex_kwargs=pdex_kwargs,
+        assert len(ct_split_real) == len(ct_split_pred), (
+            f"Number of celltypes in real and pred anndata must match: {len(ct_split_real)} != {len(ct_split_pred)}"
         )
 
-        results = evaluator.compute(
-            profile=args.profile,
-            metric_configs={
-                "discrimination_score": {
-                    "embed_key": data_module.embed_key,
-                },
-            }
-            if data_module.embed_key and data_module.embed_key != "X_hvg"
-            else {},
-        )
-        results.write_csv(os.path.join(results_dir, f"{ct}_results.csv"))
+        pdex_kwargs = dict(exp_post_agg=True, is_log1p=True)
+        for ct in ct_split_real.keys():
+            real_ct = ct_split_real[ct]
+            pred_ct = ct_split_pred[ct]
+
+            evaluator = MetricsEvaluator(
+                adata_pred=pred_ct,
+                adata_real=real_ct,
+                control_pert=control_pert,
+                pert_col=data_module.pert_col,
+                outdir=results_dir,
+                prefix=ct,
+                pdex_kwargs=pdex_kwargs,
+            )
+
+            results = evaluator.compute(
+                profile=args.profile,
+                metric_configs={
+                    "discrimination_score": {
+                        "embed_key": data_module.embed_key,
+                    },
+                }
+                if data_module.embed_key and data_module.embed_key != "X_hvg"
+                else {},
+            )
+            results.write_csv(os.path.join(results_dir, f"{ct}_results.csv"))
