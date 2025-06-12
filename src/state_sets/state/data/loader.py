@@ -207,6 +207,7 @@ class FilteredGenesCounts(H5adSentenceDataset):
                 gene_names = adata.var["gene_name"].values
                 new_mapping = np.array([global_pos.get(g, -1) for g in gene_names])
 
+            log.info(f"{(new_mapping != -1).sum()} genes mapped to embedding file (out of {len(new_mapping)}")
             self.ds_emb_map[adata_name] = new_mapping
 
         if utils.get_embedding_cfg(self.cfg).ds_emb_mapping is not None:
