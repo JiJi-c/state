@@ -193,6 +193,8 @@ class PerturbationModel(ABC, LightningModule):
                         hidden_dims = [2058, 2058, 2058, 2058, 2058]
                     else:
                         hidden_dims = [4096, 2048, 2048]
+                elif "PBS" in self.control_pert:
+                    hidden_dims = [2048, 1024, 1024]
                 else:
                     hidden_dims = [1024, 1024, 512]  # make this config
 
