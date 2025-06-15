@@ -362,7 +362,7 @@ def run_sets_predict(args: ap.ArgumentParser):
                 pdex_kwargs=pdex_kwargs,
             )
 
-            results = evaluator.compute(
+            evaluator.compute(
                 profile=args.profile,
                 metric_configs={
                     "discrimination_score": {
@@ -373,4 +373,3 @@ def run_sets_predict(args: ap.ArgumentParser):
                 else {},
                 skip_metrics=["clustering_agreement", "pearson_edistance"],
             )
-            results.write_csv(os.path.join(results_dir, f"{ct}_results.csv"))
