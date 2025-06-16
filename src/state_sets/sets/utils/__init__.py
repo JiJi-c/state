@@ -157,6 +157,18 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
+    elif model_type.lower() == "cellcontextmean":
+        from ...sets.models.cell_context_mean import CellContextPerturbationModel
+
+        return CellContextPerturbationModel(
+            input_dim=var_dims["input_dim"],
+            gene_dim=gene_dim,
+            hvg_dim=var_dims["hvg_dim"],
+            output_dim=var_dims["output_dim"],
+            pert_dim=var_dims["pert_dim"],
+            batch_dim=var_dims["batch_dim"],
+            **module_config,
+        )
     elif model_type.lower() == "decoder_only":
         from ...sets.models.decoder_only import DecoderOnlyPerturbationModel
 

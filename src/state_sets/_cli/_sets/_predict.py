@@ -306,6 +306,10 @@ def run_sets_predict(args: ap.ArgumentParser):
         # Create adata for real - using the true gene expression values
         adata_real = anndata.AnnData(X=final_X_hvg, obs=obs, var=var)
 
+        # for some reason log transformed - let's exp them?
+        # adata_pred.X = np.expm1(adata_pred.X)
+        # adata_real.X = np.expm1(adata_real.X)
+
         # add the embedding predictions
         adata_pred.obsm[data_module.embed_key] = final_preds
         adata_real.obsm[data_module.embed_key] = final_reals
