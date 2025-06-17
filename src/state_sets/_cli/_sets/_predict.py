@@ -315,16 +315,18 @@ def run_sets_predict(args: ap.ArgumentParser):
         adata_real.obsm[data_module.embed_key] = final_reals
         logger.info(f"Added predicted embeddings to adata.obsm['{data_module.embed_key}']")
     else:
-        if len(gene_names) != final_preds.shape[1]:
-            gene_names = np.load(
-                "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy", allow_pickle=True
-            )
-            var = pd.DataFrame({"gene_names": gene_names})
+        # if len(gene_names) != final_preds.shape[1]:
+        #     gene_names = np.load(
+        #         "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy", allow_pickle=True
+        #     )
+        #     var = pd.DataFrame({"gene_names": gene_names})
 
         # Create adata for predictions - model was trained on gene expression space already
-        adata_pred = anndata.AnnData(X=final_preds, obs=obs, var=var)
+        # adata_pred = anndata.AnnData(X=final_preds, obs=obs, var=var)
+        adata_pred = anndata.AnnData(X=final_preds, obs=obs)
         # Create adata for real - using the true gene expression values
-        adata_real = anndata.AnnData(X=final_reals, obs=obs, var=var)
+        # adata_real = anndata.AnnData(X=final_reals, obs=obs, var=var)
+        adata_real = anndata.AnnData(X=final_reals, obs=obs)
 
     # Save the AnnData objects
     results_dir = os.path.join(args.output_dir, "eval_" + os.path.basename(args.checkpoint))
