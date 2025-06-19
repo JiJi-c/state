@@ -1,18 +1,19 @@
-# Arc Research Institute State-Sets Model Acceptable Use Policy
 
-**_Last updated June 18, 2025_**
+# Arc Research Institute State Model Acceptable Use Policy
 
-Arc Research Institute (the “**Institute**,” “**we**” or “**us**”) makes its State-Sets Model available and free to use for non-commercial purposes, subject to the terms of the [Arc Research Institute State-Sets Model Non-Commercial License] (the “**License**”) and this Acceptable Use Policy (“**Policy**”). The purpose of this Policy is to ensure the State-Sets Model is used safely, ethically, and in accordance with all applicable laws and regulations. Any defined terms used but not defined in this Policy have the meaning given in the License. 
+**_Last updated June 23, 2025_**
+
+Arc Research Institute (the “**Institute**,” “**we**” or “**us**”) makes its State Model available and free to use for non-commercial purposes, subject to the terms of the [Arc Research Institute State Model Non-Commercial License](MODEL_LICENSE) (the “**License**”) and this Acceptable Use Policy (“**Policy**”). The purpose of this Policy is to ensure the State Model is used safely, ethically, and in accordance with all applicable laws and regulations. Any defined terms used but not defined in this Policy have the meaning given in the License. 
 
 ## Purpose and Permitted Use
 
-The intent of the State-Sets Model is to support and enable research that advances knowledge and serves the public interest. This model is made available for use only by non-commercial entities such as government institutions, non-profit organizations, research institutes, and educational institutions.
+The intent of the State Model is to support and enable research that advances knowledge and serves the public interest. This model is made available for use only by non-commercial entities such as government institutions, non-profit organizations, research institutes, and educational institutions.
 
-Although the State-Sets Model may only be used for non-commercial purposes, you are free to use any outputs you create for any purpose. 
+Although the State Model may only be used for non-commercial purposes, you are free to use any outputs you create for any purpose. 
 
 ## Prohibited Uses
 
-Unless otherwise expressly permitted pursuant to the License, you may not use the State-Sets Model, or any outputs or derivatives thereof, for any of the following purposes:
+Unless otherwise expressly permitted pursuant to the License, you may not use the State Model, or any outputs or derivatives thereof, for any of the following purposes:
 
 **1)  For-Profit Use:**
 -  Use by or for any for-profit entity, including but not limited to corporations, partnerships, or other commercial organizations.
@@ -34,29 +35,19 @@ Unless otherwise expressly permitted pursuant to the License, you may not use th
 -  Collecting, storing, or sharing sensitive, health, or personal data without proper authorization or consent.
 
 **5)  Claiming Endorsement:**
--  Making any statements or claims or engaging in any other behavior or communication that indicates or suggests that the Institute endorses your use of the State-Sets Model, including any Derivative Works or Outputs (each as defined in the License). 
+-  Making any statements or claims or engaging in any other behavior or communication that indicates or suggests that the Institute endorses your use of the State Model, including any Derivative Works or Outputs (each as defined in the License). 
 
 ## Attribution
 
-If You redistribute the State-Sets Model, or any outputs or derivatives thereof, you must also include a prominent and readable citation to the State-Sets Model research paper: Adduri, A. et al. (2025) State-Sets: Learning Perturbation Effects across Heterogenous Cellular Contexts at Scale.
+If You redistribute the State Model, or any outputs or derivatives thereof, you must also include a prominent and readable citation to the State Model research paper: Adduri, A. et al. (2025) State: Learning Perturbation Effects across Heterogenous Cellular Contexts at Scale.
 
 ## Disclaimer
 
-The State-Sets Model is provided AS IS and is intended for informational, theoretical, and research purposes only and is not intended for use in the diagnosis of disease or other conditions, or in the cure, mitigation, treatment, or prevention of disease. It should not be used or substituted for professional, medical advice.
+The State Model is provided AS IS and is intended for informational, theoretical, and research purposes only and is not intended for use in the diagnosis of disease or other conditions, or in the cure, mitigation, treatment, or prevention of disease. It should not be used or substituted for professional, medical advice.
 
 ## Third Party Integrations
 
-The Institute is not responsible for the content, security, or privacy practices of any third-party technology, data, materials, or services that you may use in connection with the State-Sets Model. Use of such integrations is at your own risk and subject to the terms and policies of the respective third parties. The Institute disclaims any liability for damages or losses resulting from third-party integrations.
+The Institute is not responsible for the content, security, or privacy practices of any third-party technology, data, materials, or services that you may use in connection with the State Model. Use of such integrations is at your own risk and subject to the terms and policies of the respective third parties. The Institute disclaims any liability for damages or losses resulting from third-party integrations.
 
 ## Legal and Regulatory Compliance
-
-The State-Sets Model may not be appropriate or available for use in some jurisdictions. Any use of the State-Sets Model is at your own risk, and you must comply with applicable laws, rules, and regulations in doing so. This includes, but is not limited to, data protection, privacy, and export control laws.  
-
-## Enforcement and Disclaimer
-
-Violation of this Policy may result in suspension or termination of the License and access to the State-Sets Model, and may subject you to legal liability. We reserve the right to investigate suspected violations and to cooperate with law enforcement authorities. The Institute disclaims liability for any misuse of or unauthorized training of the State-Sets Model.
-
-## Contact
-
-For questions about this Policy or to report suspected violations, please contact the State-Sets Model administrator at <info@arcinstitute.org>.
 
