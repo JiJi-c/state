@@ -3,7 +3,7 @@
 
 **_Last updated June 23, 2025_**
 
-Arc Research Institute (the “**Institute**,” “**we**” or “**us**”) makes its State Model available and free to use for non-commercial purposes, subject to the terms of the [Arc Research Institute State Model Non-Commercial License](MODEL_LICENSE) (the “**License**”) and this Acceptable Use Policy (“**Policy**”). The purpose of this Policy is to ensure the State Model is used safely, ethically, and in accordance with all applicable laws and regulations. Any defined terms used but not defined in this Policy have the meaning given in the License. 
+Arc Research Institute (the “**Institute**,” “**we**” or “**us**”) makes its State Model available and free to use for non-commercial purposes, subject to the terms of the [Arc Research Institute State Model Non-Commercial License](MODEL_LICENSE.md) (the “**License**”) and this Acceptable Use Policy (“**Policy**”). The purpose of this Policy is to ensure the State Model is used safely, ethically, and in accordance with all applicable laws and regulations. Any defined terms used but not defined in this Policy have the meaning given in the License. 
 
 ## Purpose and Permitted Use
 
