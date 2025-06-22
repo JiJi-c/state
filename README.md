@@ -1,10 +1,15 @@
-# Modeling Perturbational Effects with State-Sets
+# Predicting cellular responses to perturbation across diverse contexts with State
 
-> Train Sets perturbation models or pretrain State embedding models
+> Train State perturbation models or pretrain State embedding models
+
+## Associated repositories
+
+- Model evaluation framework: [cell-bench](https://github.com/ArcInstitute/cell-bench)
+- Dataloaders and preprocessing: [cell-load](https://github.com/ArcInstitute/cell-load)
 
 ## Installation
 
-Distributed via [`uv`](https://docs.astral.sh/uv).
+This package is distributed via [`uv`](https://docs.astral.sh/uv).
 
 ```bash
 # Clone repo
@@ -18,18 +23,26 @@ uv venv
 uv tool install -e .
 ```
 
-state-sets --help
+## CLI Usage
+
+You can access the CLI help menu with:
+
+```state-sets --help```
+
+Output:
+```
 usage: state-sets [-h] {state,sets} ...
 
 positional arguments:
   {state,sets}
 
 options:
-  -h, --help    show this help message and exit
+  -h, --help
+```
 
-## Sets
+## State Transition Model (SM)
 
-An example training command for a sets model:
+Example: Training an SM:
 
 ```bash
 state-sets sets train \
@@ -54,7 +67,7 @@ state-sets sets train \
   name="test"
 ```
 
-An example evaluation command for a sets model:
+Example: Evaluating an SM
 
 ```bash
 state-sets sets predict --output_dir /home/aadduri/state-sets/test/ --checkpoint last.ckpt
@@ -106,9 +119,9 @@ replogle = "train"
 [fewshot]
 ```
 
-## State
+## State Embedding Model (SE)
 
-To train a State model:
+Example: Pre-training an SE instance:
 
 ```bash
 state-sets state train --conf ${CONFIG}
