@@ -1,6 +1,6 @@
 # Predicting cellular responses to perturbation across diverse contexts with State
 
-> Train State perturbation models or pretrain State embedding models
+> Train State perturbation models or pretrain State embedding models. See the State [paper](https://arcinstitute.org/manuscripts/State). 
 
 ## Associated repositories
 
@@ -137,3 +137,10 @@ state-sets state embed \
   --output "/home/aadduri/vci_pretrain/test_output.h5ad" \
   --embed-key "X_vci_1.5.2"
 ```
+
+## Licenses
+State code is [licensed](LICENSE) under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0). 
+
+The model weights and output are licensed under the [Arc Research Institute State Model Non-Commercial License](MODEL_LICENSE.md) and subject to the [Arc Research Institute State Model Acceptable Use Policy](MODEL_ACCEPTABLE_USE_POLICY.md).
+
+Any publication that uses this source code or model parameters should cite the State [paper](https://arcinstitute.org/manuscripts/State). 
