@@ -1,9 +1,16 @@
 [project]
-name = "state-sets"
-version = "0.8.2"
-description = "Add your description here"
+name = "arc-state"
+version = "0.8.3"
+description = "State is a machine learning model that predicts cellular perturbation response across diverse contexts."
 readme = "README.md"
-authors = []
+license = "MODEL_LICENSE.md"
+authors = [
+    { name = "Abhinav Adduri", email = "abhinav.adduri@arcinstitute.org" },
+    { name = "Yusuf Roohani", email = "yusuf.roohani@arcinstitute.org" },
+    { name = "Noam Teyssier", email = "noam.teyssier@arcinstitute.org" },
+    { name = "Rajesh Ilango" },
+    { name = "Dhruv Gautam", email = "dhruvgautam@berkeley.edu" },
+]
 requires-python = ">=3.13"
 dependencies = [
     "anndata>=0.11.4",
@@ -35,8 +42,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-state-sets = "state_sets.__main__:main"
+state = "state.__main__:main"
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/state"]
