@@ -1,6 +1,6 @@
 # Predicting cellular responses to perturbation across diverse contexts with State
 
-> Train State perturbation models or pretrain State embedding models. See the State [paper](https://arcinstitute.org/manuscripts/State).
+> Train State transition models or pretrain State embedding models. See the State [paper](https://arcinstitute.org/manuscripts/State).
 
 ## Associated repositories
 
@@ -32,14 +32,14 @@ options:
   -h, --help  show this help message and exit
 ```
 
-## State Transition Model (SM)
+## State Transition Model (ST)
 
-Example: Training an SM:
+Example: Training an ST:
 
 ```bash
 state tx train \
   data.kwargs.toml_config_path="/home/aadduri/cell-load/example.toml" \
-  data.kwargs.embed_key=X_vci_1.4.2 \
+  data.kwargs.embed_key=X_hvg \
   data.kwargs.output_space=gene \
   data.kwargs.num_workers=12 \
   data.kwargs.batch_col=gem_group \
@@ -55,7 +55,7 @@ state tx train \
   model.kwargs.hidden_dim=328 \
   model=pertsets \
   wandb.tags="[test]" \
-  output_dir="/home/aadduri/state-sets" \
+  output_dir="/home/aadduri/state" \
   name="test"
 ```
 
@@ -68,7 +68,7 @@ state tx predict --output_dir /home/aadduri/state-sets/test/ --checkpoint last.c
 An example inference command for a sets model:
 
 ```bash
-state tx infer --output /home/dhruvgautam/state-sets/test/ --output_dir /path/to/model/ --checkpoint /path/to/model/checkpoints/last.ckpt --adata /path/to/anndata/processed.h5 --pert_col gene --embed_key X_hvg
+state tx infer --output /home/dhruvgautam/state-sets/test/ --output_dir /path/to/model/ --checkpoint /path/to/model/final.ckpt --adata /path/to/anndata/processed.h5 --pert_col gene --embed_key X_hvg
 ```
 
 The toml files should be setup to define perturbation splits, if running fewshot experiments. Here are some examples:
@@ -102,7 +102,7 @@ An example with only zeroshot:
 # example_config.toml
 # Dataset paths - maps dataset names to their directories
 [datasets]
-replogle = "/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle_copy/"
+replogle = "/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle"
 
 # Training specifications
 # All cell types in a dataset automatically go into training (excluding zeroshot/fewshot overrides)
@@ -125,15 +125,13 @@ Example: Pre-training an SE instance:
 state emb fit --conf ${CONFIG}
 ```
 
-To run inference with a trained State checkpoint, e.g., the State 1.5.2 trained to 4 epochs:
+To run inference with a trained State checkpoint, e.g., the State trained to 4 epochs:
 
 ```bash
 state emb transform \
-  --checkpoint "/large_storage/ctc/userspace/aadduri/vci_1.5.0_btc_step=195000_epoch=4.ckpt" \
-  --config "/large_storage/ctc/userspace/aadduri/vci_1.5.0_btc.yaml" \
+  --checkpoint "/large_storage/ctc/userspace/aadduri/SE-600M" \
   --input "/large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad" \
   --output "/home/aadduri/vci_pretrain/test_output.h5ad" \
-  --embed-key "X_vci_1.5.2"
 ```
 
 ## Licenses
