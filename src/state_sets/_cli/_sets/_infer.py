@@ -12,7 +12,7 @@ from ...sets.models.pert_sets import PertSetsPerturbationModel
 
 
 def add_arguments_infer(parser: argparse.ArgumentParser):
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to model checkpoint (.ckpt)")
+    parser.add_argument("--checkpoint", type=str, required=False, help="Path to model checkpoint (.ckpt). If not provided, will use model_dir/checkpoints/final.ckpt")
     parser.add_argument("--adata", type=str, required=True, help="Path to input AnnData file (.h5ad)")
     parser.add_argument("--embed_key", type=str, default="X_hvg", help="Key in adata.obsm for input features")
     parser.add_argument(
@@ -20,10 +20,10 @@ def add_arguments_infer(parser: argparse.ArgumentParser):
     )
     parser.add_argument("--output", type=str, default=None, help="Path to output AnnData file (.h5ad)")
     parser.add_argument(
-        "--output_dir",
+        "--model_dir",
         type=str,
         required=True,
-        help="Path to the output_dir containing the config.yaml file and the pert_onehot_map.pt file that was saved during training.",
+        help="Path to the model_dir containing the config.yaml file and the pert_onehot_map.pt file that was saved during training.",
     )
     parser.add_argument(
         "--celltype_col", type=str, default=None, help="Column in adata.obs for cell type labels (optional)"
@@ -49,19 +49,26 @@ def run_sets_infer(args):
         return cfg
 
     # Load the config
-    config_path = os.path.join(args.output_dir, "config.yaml")
+    config_path = os.path.join(args.model_dir, "config.yaml")
     cfg = load_config(config_path)
     logger.info(f"Loaded config from {config_path}")
 
+    # Determine checkpoint path
+    if args.checkpoint is not None:
+        checkpoint_path = args.checkpoint
+    else:
+        checkpoint_path = os.path.join(args.model_dir, "checkpoints", "final.ckpt")
+        logger.info(f"No checkpoint provided, using default: {checkpoint_path}")
+
     # Get perturbation dimensions and mapping from data module
-    var_dims_path = os.path.join(args.output_dir, "var_dims.pkl")
+    var_dims_path = os.path.join(args.model_dir, "var_dims.pkl")
     with open(var_dims_path, "rb") as f:
         var_dims = pickle.load(f)
     pert_dim = var_dims["pert_dim"]
 
     # Load model
-    logger.info(f"Loading model from checkpoint: {args.checkpoint}")
-    model = PertSetsPerturbationModel.load_from_checkpoint(args.checkpoint)
+    logger.info(f"Loading model from checkpoint: {checkpoint_path}")
+    model = PertSetsPerturbationModel.load_from_checkpoint(checkpoint_path)
     model.eval()
     cell_sentence_len = model.cell_sentence_len
     device = next(model.parameters()).device
@@ -97,7 +104,7 @@ def run_sets_infer(args):
     logger.info(f"Perturbation tensor shape: {pert_tensor.shape}")
 
     # Load perturbation mapping from torch file
-    pert_onehot_map_path = os.path.join(args.output_dir, "pert_onehot_map.pt")
+    pert_onehot_map_path = os.path.join(args.model_dir, "pert_onehot_map.pt")
     pert_onehot_map = torch.load(pert_onehot_map_path, weights_only=False)
 
     logger.info(f"Data module has {len(pert_onehot_map)} perturbations in mapping")
@@ -116,6 +123,8 @@ def run_sets_infer(args):
 
     # Check if there's a control perturbation that might match
     control_pert = cfg["data"]["kwargs"]["control_pert"]
+    if args.pert_col == "drugname_drugconc": # quick hack for tahoe
+        control_pert = "[('DMSO_TF', 0.0, 'uM')]"
     logger.info(f"Control perturbation in data module: '{control_pert}'")
 
     matched_count = 0

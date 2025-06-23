@@ -222,14 +222,14 @@ class PerturbationModel(ABC, LightningModule):
                     logger.info(f"DEBUG: Creating gene_decoder, checking conditions...")
                     if gene_dim > 10000:
                         hidden_dims = [1024, 512, 256]
-                    elif self.embed_key in ["X_vci_1.5.2", "X_vci_1.5.2_4"]:
-                        hidden_dims = [1024, 1024, 512]
                     else:
                         if "DMSO_TF" in self.control_pert:
                             if self.residual_decoder:
                                 hidden_dims = [2058, 2058, 2058, 2058, 2058]
                             else:
                                 hidden_dims = [4096, 2048, 2048]
+                        elif "PBS" in self.control_pert:
+                            hidden_dims = [2048, 1024, 1024]
                         else:
                             hidden_dims = [1024, 1024, 512]  # make this config
 

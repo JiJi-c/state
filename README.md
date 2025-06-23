@@ -1,10 +1,15 @@
-# Modeling Perturbational Effects with State-Sets
+# Predicting cellular responses to perturbation across diverse contexts with State
 
-> Train Sets perturbation models or pretrain State embedding models
+> Train State perturbation models or pretrain State embedding models. See the State [paper](https://arcinstitute.org/manuscripts/State). 
+
+## Associated repositories
+
+- Model evaluation framework: [cell-eval](https://github.com/ArcInstitute/cell-eval)
+- Dataloaders and preprocessing: [cell-load](https://github.com/ArcInstitute/cell-load)
 
 ## Installation
 
-Distributed via [`uv`](https://docs.astral.sh/uv).
+This package is distributed via [`uv`](https://docs.astral.sh/uv).
 
 ```bash
 # Clone repo
@@ -18,18 +23,26 @@ uv venv
 uv tool install -e .
 ```
 
-state-sets --help
+## CLI Usage
+
+You can access the CLI help menu with:
+
+```state-sets --help```
+
+Output:
+```
 usage: state-sets [-h] {state,sets} ...
 
 positional arguments:
   {state,sets}
 
 options:
-  -h, --help    show this help message and exit
+  -h, --help
+```
 
-## Sets
+## State Transition Model (SM)
 
-An example training command for a sets model:
+Example: Training an SM:
 
 ```bash
 state-sets sets train \
@@ -54,7 +67,7 @@ state-sets sets train \
   name="test"
 ```
 
-An example evaluation command for a sets model:
+Example: Evaluating an SM
 
 ```bash
 state-sets sets predict --output_dir /home/aadduri/state-sets/test/ --checkpoint last.ckpt
@@ -112,9 +125,9 @@ replogle = "train"
 [fewshot]
 ```
 
-## State
+## State Embedding Model (SE)
 
-To train a State model:
+Example: Pre-training an SE instance:
 
 ```bash
 state-sets state train --conf ${CONFIG}
@@ -130,3 +143,10 @@ state-sets state embed \
   --output "/home/aadduri/vci_pretrain/test_output.h5ad" \
   --embed-key "X_vci_1.5.2"
 ```
+
+## Licenses
+State code is [licensed](LICENSE) under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0). 
+
+The model weights and output are licensed under the [Arc Research Institute State Model Non-Commercial License](MODEL_LICENSE.md) and subject to the [Arc Research Institute State Model Acceptable Use Policy](MODEL_ACCEPTABLE_USE_POLICY.md).
+
+Any publication that uses this source code or model parameters should cite the State [paper](https://arcinstitute.org/manuscripts/State). 
