@@ -39,7 +39,7 @@ Unless otherwise expressly permitted pursuant to the License, you may not use th
 
 ## Attribution
 
-If You redistribute the State Model, or any outputs or derivatives thereof, you must also include a prominent and readable citation to the State Model research paper: Adduri, A. et al. (2025) State: Learning Perturbation Effects across Heterogenous Cellular Contexts at Scale.
+If You redistribute the State Model, or any outputs or derivatives thereof, you must also include a prominent and readable citation to the State Model research paper: Adduri, A. et al. (2025) Predicting cellular responses to perturbation across diverse contexts with State.
 
 ## Disclaimer
 
