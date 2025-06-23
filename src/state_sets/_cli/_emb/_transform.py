@@ -1,8 +1,7 @@
 import argparse as ap
-import torch
 
 
-def add_arguments_embed(parser: ap.ArgumentParser):
+def add_arguments_transform(parser: ap.ArgumentParser):
     """Add arguments for state embedding CLI."""
     parser.add_argument("--model-folder", required=True, help="Path to the model checkpoint folder")
     parser.add_argument("--input", required=True, help="Path to input anndata file (h5ad)")
@@ -10,14 +9,15 @@ def add_arguments_embed(parser: ap.ArgumentParser):
     parser.add_argument("--embed-key", default="X_state", help="Name of key to store embeddings")
 
 
-def run_state_embed(args: ap.ArgumentParser):
+def run_emb_transform(args: ap.ArgumentParser):
     """
     Compute embeddings for an input anndata file using a pre-trained VCI model checkpoint.
     """
-    import os
     import glob
     import logging
+    import os
 
+    import torch
     from omegaconf import OmegaConf
 
     logging.basicConfig(level=logging.INFO)

@@ -1,15 +1,15 @@
 import argparse as ap
 
 
-def add_arguments_train(parser: ap.ArgumentParser):
-    """Add arguments for state training CLI."""
+def add_arguments_fit(parser: ap.ArgumentParser):
+    """Add arguments for embedding training CLI."""
     parser.add_argument("--conf", type=str, default=None, help="Path to config YAML file")
     parser.add_argument(
         "hydra_overrides", nargs="*", help="Hydra configuration overrides (e.g., embeddings.current=esm2-cellxgene)"
     )
 
 
-def run_state_train(cfg, args):
+def run_emb_fit(cfg, args):
     """
     Run state training with the provided config and overrides.
     """

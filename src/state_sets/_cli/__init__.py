@@ -1,12 +1,12 @@
-from ._sets import add_arguments_sets, run_sets_predict, run_sets_train, run_sets_infer
-from ._state import add_arguments_state, run_state_embed, run_state_train
+from ._emb import add_arguments_emb, run_emb_fit, run_emb_transform
+from ._tx import add_arguments_tx, run_tx_infer, run_tx_predict, run_tx_train
 
 __all__ = [
-    "add_arguments_state",
-    "add_arguments_sets",
-    "run_sets_train",
-    "run_state_embed",
-    "run_sets_predict",
-    "run_sets_infer",
-    "run_state_train",
+    "add_arguments_emb",
+    "add_arguments_tx",
+    "run_tx_train",
+    "run_tx_predict",
+    "run_tx_infer",
+    "run_emb_fit",
+    "run_emb_transform",
 ]

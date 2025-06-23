@@ -8,27 +8,24 @@ def add_arguments_train(parser: ap.ArgumentParser):
     parser.add_argument("hydra_overrides", nargs="*", help="Hydra configuration overrides (e.g., data.batch_size=32)")
 
 
-def run_sets_train(cfg: DictConfig):
+def run_tx_train(cfg: DictConfig):
     import json
+    import logging
     import os
     import pickle
-    from pathlib import Path
     import shutil
-    from os.path import join, exists
-
-    import torch
+    from os.path import exists, join
+    from pathlib import Path
 
     import lightning.pytorch as pl
+    import torch
+    from cell_load.data_modules import PerturbationDataModule
+    from cell_load.utils.modules import get_datamodule
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.plugins.precision import MixedPrecision
 
-    from cell_load.data_modules import PerturbationDataModule
-    from cell_load.utils.modules import get_datamodule
-
     from ...sets.callbacks import BatchSpeedMonitorCallback
     from ...sets.utils import get_checkpoint_callbacks, get_lightning_module, get_loggers
-
-    import logging
 
     logger = logging.getLogger(__name__)
     torch.set_float32_matmul_precision("medium")
