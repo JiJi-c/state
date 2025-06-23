@@ -1,5 +1,5 @@
 [project]
-name = "state-sets"
+name = "arc-state"
 version = "0.8.2"
 description = "Add your description here"
 readme = "README.md"
@@ -35,8 +35,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-state-sets = "state_sets.__main__:main"
+state = "state.__main__:main"
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/state"]
