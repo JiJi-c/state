@@ -41,7 +41,7 @@ def add_arguments_predict(parser: ap.ArgumentParser):
     )
 
 
-def run_sets_predict(args: ap.ArgumentParser):
+def run_tx_predict(args: ap.ArgumentParser):
     import logging
     import os
     import sys

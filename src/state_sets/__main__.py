@@ -1,14 +1,16 @@
 import argparse as ap
-from hydra import initialize, compose
+
+from hydra import compose, initialize
 from omegaconf import DictConfig
+
 from ._cli import (
-    add_arguments_sets,
-    add_arguments_state,
-    run_sets_predict,
-    run_sets_train,
-    run_sets_infer,
-    run_state_embed,
-    run_state_train,
+    add_arguments_emb,
+    add_arguments_tx,
+    run_emb_fit,
+    run_emb_transform,
+    run_tx_infer,
+    run_tx_predict,
+    run_tx_train,
 )
 
 
@@ -16,8 +18,8 @@ def get_args() -> tuple[ap.Namespace, list[str]]:
     """Parse known args and return remaining args for Hydra overrides"""
     parser = ap.ArgumentParser()
     subparsers = parser.add_subparsers(required=True, dest="command")
-    add_arguments_state(subparsers.add_parser("state"))
-    add_arguments_sets(subparsers.add_parser("sets"))
+    add_arguments_emb(subparsers.add_parser("emb"))
+    add_arguments_tx(subparsers.add_parser("tx"))
 
     # Use parse_known_args to get both known args and remaining args
     return parser.parse_args()
@@ -45,25 +47,25 @@ def main():
     args = get_args()
 
     match args.command:
-        case "state":
+        case "emb":
             match args.subcommand:
-                case "train":
+                case "fit":
                     cfg = load_hydra_config("state", args.hydra_overrides)
-                    run_state_train(cfg, args)
-                case "embed":
-                    run_state_embed(args)
-        case "sets":
+                    run_emb_fit(cfg, args)
+                case "transform":
+                    run_emb_transform(args)
+        case "tx":
             match args.subcommand:
                 case "train":
                     # Load Hydra config with overrides for sets training
                     cfg = load_hydra_config("sets", args.hydra_overrides)
-                    run_sets_train(cfg)
+                    run_tx_train(cfg)
                 case "predict":
                     # For now, predict uses argparse and not hydra
-                    run_sets_predict(args)
+                    run_tx_predict(args)
                 case "infer":
                     # Run inference using argparse, similar to predict
-                    run_sets_infer(args)
+                    run_tx_infer(args)
 
 
 if __name__ == "__main__":

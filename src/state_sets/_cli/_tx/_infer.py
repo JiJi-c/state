@@ -1,18 +1,13 @@
 import argparse
-import scanpy as sc
-import torch
-import numpy as np
-import os
-import pandas as pd
-from tqdm import tqdm
-import yaml
-import pickle
-
-from ...sets.models.pert_sets import PertSetsPerturbationModel
 
 
 def add_arguments_infer(parser: argparse.ArgumentParser):
-    parser.add_argument("--checkpoint", type=str, required=False, help="Path to model checkpoint (.ckpt). If not provided, will use model_dir/checkpoints/final.ckpt")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        required=False,
+        help="Path to model checkpoint (.ckpt). If not provided, will use model_dir/checkpoints/final.ckpt",
+    )
     parser.add_argument("--adata", type=str, required=True, help="Path to input AnnData file (.h5ad)")
     parser.add_argument("--embed_key", type=str, default="X_hvg", help="Key in adata.obsm for input features")
     parser.add_argument(
@@ -34,8 +29,18 @@ def add_arguments_infer(parser: argparse.ArgumentParser):
     parser.add_argument("--batch_size", type=int, default=1000, help="Batch size for inference (default: 1000)")
 
 
-def run_sets_infer(args):
+def run_tx_infer(args):
     import logging
+    import os
+    import pickle
+
+    import numpy as np
+    import scanpy as sc
+    import torch
+    import yaml
+    from tqdm import tqdm
+
+    from ...sets.models.pert_sets import PertSetsPerturbationModel
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -123,7 +128,7 @@ def run_sets_infer(args):
 
     # Check if there's a control perturbation that might match
     control_pert = cfg["data"]["kwargs"]["control_pert"]
-    if args.pert_col == "drugname_drugconc": # quick hack for tahoe
+    if args.pert_col == "drugname_drugconc":  # quick hack for tahoe
         control_pert = "[('DMSO_TF', 0.0, 'uM')]"
     logger.info(f"Control perturbation in data module: '{control_pert}'")
 
