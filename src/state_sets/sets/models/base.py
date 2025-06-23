@@ -215,6 +215,56 @@ class PerturbationModel(ABC, LightningModule):
         """Build the core neural network components."""
         pass
 
+    def _build_decoder(self):
+        """Create self.gene_decoder from self.decoder_cfg (or leave None)."""
+        if self.decoder_cfg is None:
+            self.gene_decoder = None
+            return
+        self.gene_decoder = LatentToGeneDecoder(**self.decoder_cfg)
+
+    def on_load_checkpoint(self, checkpoint: dict[str, tp.Any]) -> None:
+        """
+        Lightning calls this *before* the checkpoint's state_dict is loaded.
+        Re-create the decoder using the exact hyper-parameters saved in the ckpt,
+        so that parameter shapes match and load_state_dict succeeds.
+        """
+        if "decoder_cfg" in checkpoint["hyper_parameters"]:
+            self.decoder_cfg = checkpoint["hyper_parameters"]["decoder_cfg"]
+            self.gene_decoder = LatentToGeneDecoder(**self.decoder_cfg)
+            logger.info(f"Loaded decoder from checkpoint decoder_cfg: {self.decoder_cfg}")
+        else:
+            # Only fall back to old logic if no decoder_cfg was saved
+            self.decoder_cfg = None
+            self._build_decoder()
+            logger.info(f"DEBUG: output_space: {self.output_space}")
+            if self.gene_decoder is None:
+                gene_dim = self.hvg_dim if self.output_space == "gene" else self.gene_dim
+                logger.info(f"DEBUG: gene_dim: {gene_dim}")
+                if (self.embed_key and self.embed_key != "X_hvg" and self.output_space == "gene") or (
+                    self.embed_key and self.output_space == "all"
+                ):  # we should be able to decode from hvg to all
+                    logger.info(f"DEBUG: Creating gene_decoder, checking conditions...")
+                    if gene_dim > 10000:
+                        hidden_dims = [1024, 512, 256]
+                    else:
+                        if "DMSO_TF" in self.control_pert:
+                            if self.residual_decoder:
+                                hidden_dims = [2058, 2058, 2058, 2058, 2058]
+                            else:
+                                hidden_dims = [4096, 2048, 2048]
+                        else:
+                            hidden_dims = [1024, 1024, 512]  # make this config
+
+                    self.gene_decoder = LatentToGeneDecoder(
+                        latent_dim=self.output_dim,
+                        gene_dim=gene_dim,
+                        hidden_dims=hidden_dims,
+                        dropout=self.dropout,
+                        residual_decoder=self.residual_decoder,
+                    )
+                    logger.info(f"Initialized gene decoder for embedding {self.embed_key} to gene space")
+
+>>>>>>> d9b7632 (changed state embed to use model folder ckpt for now)
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step logic for both main model and decoder."""
         # Get model predictions (in latent space)
