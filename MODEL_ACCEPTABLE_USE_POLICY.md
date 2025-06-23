@@ -51,3 +51,12 @@ The Institute is not responsible for the content, security, or privacy practices
 
 ## Legal and Regulatory Compliance
 
+The State Model may not be appropriate or available for use in some jurisdictions. Any use of the State Model is at your own risk, and you must comply with applicable laws, rules, and regulations in doing so. This includes, but is not limited to, data protection, privacy, and export control laws.  
+
+## Enforcement and Disclaimer
+
+Violation of this Policy may result in suspension or termination of the License and access to the State Model, and may subject you to legal liability. We reserve the right to investigate suspected violations and to cooperate with law enforcement authorities. The Institute disclaims liability for any misuse of or unauthorized training of the State Model.
+
+## Contact
+
+For questions about this Policy or to report suspected violations, please contact the State Model administrator at <info@arcinstitute.org>.
