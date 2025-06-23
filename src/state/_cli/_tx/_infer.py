@@ -235,7 +235,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run inference on AnnData with a trained model checkpoint.")
     add_arguments_infer(parser)
     args = parser.parse_args()
-    run_sets_infer(args)
+    run_tx_infer(args)
 
 
 if __name__ == "__main__":
