@@ -1,40 +1,40 @@
 [project]
 name = "arc-state"
-version = "0.8.5"
+version = "0.8.6"
 description = "State is a machine learning model that predicts cellular perturbation response across diverse contexts."
 readme = "README.md"
 authors = [
-    { name = "Abhinav Adduri", email = "abhinav.adduri@arcinstitute.org" },
-    { name = "Yusuf Roohani", email = "yusuf.roohani@arcinstitute.org" },
-    { name = "Noam Teyssier", email = "noam.teyssier@arcinstitute.org" },
-    { name = "Rajesh Ilango" },
-    { name = "Dhruv Gautam", email = "dhruvgautam@berkeley.edu" },
+  { name = "Abhinav Adduri", email = "abhinav.adduri@arcinstitute.org" },
+  { name = "Yusuf Roohani", email = "yusuf.roohani@arcinstitute.org" },
+  { name = "Noam Teyssier", email = "noam.teyssier@arcinstitute.org" },
+  { name = "Rajesh Ilango" },
+  { name = "Dhruv Gautam", email = "dhruvgautam@berkeley.edu" },
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "anndata>=0.11.4",
-    "cell-load>=0.7.1",
-    "numpy>=2.2.6",
-    "pandas>=2.2.3",
-    "pyyaml>=6.0.2",
-    "scanpy>=1.11.2",
-    "scikit-learn>=1.6.1",
-    "seaborn>=0.13.2",
-    "torch>=2.7.0",
-    "tqdm>=4.67.1",
-    "wandb>=0.19.11",
-    "hydra-core>=1.3.2",
-    "geomloss>=0.2.6",
-    "zclip",
-    "transformers>=4.52.3",
-    "cell-eval>=0.5.22",
+  "anndata>=0.11.4",
+  "cell-load>=0.7.1",
+  "numpy>=2.2.6",
+  "pandas>=2.2.3",
+  "pyyaml>=6.0.2",
+  "scanpy>=1.11.2",
+  "scikit-learn>=1.6.1",
+  "seaborn>=0.13.2",
+  "torch>=2.7.0",
+  "tqdm>=4.67.1",
+  "wandb>=0.19.11",
+  "hydra-core>=1.3.2",
+  "geomloss>=0.2.6",
+  "zclip",
+  "transformers>=4.52.3",
+  "cell-eval>=0.5.22",
 ]
 
 [dependency-groups]
 dev = ["ruff>=0.11.11", "vulture>=2.14"]
 
 [tool.uv.sources]
-zclip = { git = "https://github.com/bluorion-com/ZClip.git" }
+zclip = { git = "https://github.com/bluorion-com/ZClip" }
 
 [build-system]
 requires = ["hatchling"]
