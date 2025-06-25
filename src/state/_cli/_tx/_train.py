@@ -24,8 +24,8 @@ def run_tx_train(cfg: DictConfig):
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.plugins.precision import MixedPrecision
 
-    from ...sets.callbacks import BatchSpeedMonitorCallback
-    from ...sets.utils import get_checkpoint_callbacks, get_lightning_module, get_loggers
+    from ...tx.callbacks import BatchSpeedMonitorCallback
+    from ...tx.utils import get_checkpoint_callbacks, get_lightning_module, get_loggers
 
     logger = logging.getLogger(__name__)
     torch.set_float32_matmul_precision("medium")
@@ -270,7 +270,7 @@ def run_tx_train(cfg: DictConfig):
                     f"pert_encoder input dimension mismatch: model.pert_dim = {model.pert_dim} but checkpoint expects {checkpoint_pert_dim}. Overriding model's pert_dim and rebuilding pert_encoder."
                 )
                 # Rebuild the pert_encoder with the new pert input dimension
-                from ...sets.models.utils import build_mlp
+                from ...tx.models.utils import build_mlp
 
                 model.pert_encoder = build_mlp(
                     in_dim=model.pert_dim,

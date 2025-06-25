@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
 
-from ...state.finetune_decoder import Finetune
+from ...emb.finetune_decoder import Finetune
 
 logger = logging.getLogger(__name__)
 

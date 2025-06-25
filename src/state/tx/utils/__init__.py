@@ -34,16 +34,26 @@ def get_loggers(
 
     # Add WandB if requested
     if use_wandb:
-        wandb_logger = WandbLogger(
-            name=name,
-            project=wandb_project,
-            entity=wandb_entity,
-            dir=local_wandb_dir,
-            tags=cfg["wandb"].get("tags", []) if cfg else [],
-        )
-        if cfg is not None:
-            wandb_logger.experiment.config.update(cfg)
-        loggers.append(wandb_logger)
+        try:
+            # Check if wandb is available
+            import wandb
+
+            wandb_logger = WandbLogger(
+                name=name,
+                project=wandb_project,
+                entity=wandb_entity,
+                dir=local_wandb_dir,
+                tags=cfg["wandb"].get("tags", []) if cfg else [],
+            )
+            if cfg is not None:
+                wandb_logger.experiment.config.update(cfg)
+            loggers.append(wandb_logger)
+        except ImportError:
+            print("Warning: wandb is not installed. Skipping wandb logging.")
+            print("To enable wandb logging, install it with: pip install wandb")
+        except Exception as e:
+            print(f"Warning: Failed to initialize wandb logger: {e}")
+            print("Continuing without wandb logging.")
 
     return loggers
 
@@ -98,7 +108,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         gene_dim = var_dims["gene_dim"]
 
     if model_type.lower() == "embedsum":
-        from ...sets.models.embed_sum import EmbedSumPerturbationModel
+        from ...tx.models.embed_sum import EmbedSumPerturbationModel
 
         return EmbedSumPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -110,7 +120,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "old_neuralot":
-        from ...sets.models.old_neural_ot import OldNeuralOTPerturbationModel
+        from ...tx.models.old_neural_ot import OldNeuralOTPerturbationModel
 
         return OldNeuralOTPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -122,7 +132,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "neuralot" or model_type.lower() == "pertsets":
-        from ...sets.models.pert_sets import PertSetsPerturbationModel
+        from ...tx.models.pert_sets import PertSetsPerturbationModel
 
         return PertSetsPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -134,7 +144,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "globalsimplesum":
-        from ...sets.models.global_simple_sum import GlobalSimpleSumPerturbationModel
+        from ...tx.models.global_simple_sum import GlobalSimpleSumPerturbationModel
 
         return GlobalSimpleSumPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -146,7 +156,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "celltypemean":
-        from ...sets.models.cell_type_mean import CellTypeMeanModel
+        from ...tx.models.cell_type_mean import CellTypeMeanModel
 
         return CellTypeMeanModel(
             input_dim=var_dims["input_dim"],
@@ -158,7 +168,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "cellcontextmean":
-        from ...sets.models.cell_context_mean import CellContextPerturbationModel
+        from ...tx.models.cell_context_mean import CellContextPerturbationModel
 
         return CellContextPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -170,7 +180,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "decoder_only":
-        from ...sets.models.decoder_only import DecoderOnlyPerturbationModel
+        from ...tx.models.decoder_only import DecoderOnlyPerturbationModel
 
         return DecoderOnlyPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -182,7 +192,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "pseudobulk":
-        from ...sets.models.pseudobulk import PseudobulkPerturbationModel
+        from ...tx.models.pseudobulk import PseudobulkPerturbationModel
 
         return PseudobulkPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -194,7 +204,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "cpa":
-        from ...sets.models.cpa import CPAPerturbationModel
+        from ...tx.models.cpa import CPAPerturbationModel
 
         return CPAPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -204,7 +214,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "scvi":
-        from ...sets.models.scvi import SCVIPerturbationModel
+        from ...tx.models.scvi import SCVIPerturbationModel
 
         return SCVIPerturbationModel(
             input_dim=var_dims["input_dim"],
@@ -216,7 +226,7 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             **module_config,
         )
     elif model_type.lower() == "scgpt-chemical" or model_type.lower() == "scgpt-genetic":
-        from ...sets.models.scgpt import scGPTForPerturbation
+        from ...tx.models.scgpt import scGPTForPerturbation
 
         pretrained_path = module_config["pretrained_path"]
         assert pretrained_path is not None, "pretrained_path must be provided for scGPT"

@@ -23,7 +23,7 @@ def run_emb_transform(args: ap.ArgumentParser):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    from ...state.inference import Inference
+    from ...emb.inference import Inference
 
     # look in the model folder with glob for *.ckpt, get the first one, and print it
     model_files = glob.glob(os.path.join(args.model_folder, "*.ckpt"))

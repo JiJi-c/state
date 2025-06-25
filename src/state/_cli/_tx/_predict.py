@@ -139,28 +139,28 @@ def run_tx_predict(args: ap.ArgumentParser):
 
     # Import the correct model class
     if model_class_name.lower() == "embedsum":
-        from ...sets.models.embed_sum import EmbedSumPerturbationModel
+        from ...tx.models.embed_sum import EmbedSumPerturbationModel
 
         ModelClass = EmbedSumPerturbationModel
     elif model_class_name.lower() == "old_neuralot":
-        from ...sets.models.old_neural_ot import OldNeuralOTPerturbationModel
+        from ...tx.models.old_neural_ot import OldNeuralOTPerturbationModel
 
         ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() in ["neuralot", "pertsets"]:
-        from ...sets.models.pert_sets import PertSetsPerturbationModel
+        from ...tx.models.pert_sets import PertSetsPerturbationModel
 
         ModelClass = PertSetsPerturbationModel
 
     elif model_class_name.lower() == "globalsimplesum":
-        from ...sets.models.global_simple_sum import GlobalSimpleSumPerturbationModel
+        from ...tx.models.global_simple_sum import GlobalSimpleSumPerturbationModel
 
         ModelClass = GlobalSimpleSumPerturbationModel
     elif model_class_name.lower() == "celltypemean":
-        from ...sets.models.cell_type_mean import CellTypeMeanModel
+        from ...tx.models.cell_type_mean import CellTypeMeanModel
 
         ModelClass = CellTypeMeanModel
     elif model_class_name.lower() == "decoder_only":
-        from ...sets.models.decoder_only import DecoderOnlyPerturbationModel
+        from ...tx.models.decoder_only import DecoderOnlyPerturbationModel
 
         ModelClass = DecoderOnlyPerturbationModel
     else:
