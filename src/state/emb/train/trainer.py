@@ -107,8 +107,18 @@ def main(cfg):
     )
 
     if cfg.wandb.enable:
-        exp_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
-        exp_logger.watch(model, log_freq=1000)
+        try:
+            import wandb
+            exp_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
+            exp_logger.watch(model, log_freq=1000)
+        except ImportError:
+            print("Warning: wandb is not installed. Skipping wandb logging.")
+            print("To enable wandb logging, install it with: pip install wandb")
+            exp_logger = None
+        except Exception as e:
+            print(f"Warning: Failed to initialize wandb logger: {e}")
+            print("Continuing without wandb logging.")
+            exp_logger = None
     else:
         exp_logger = None
 

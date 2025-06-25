@@ -34,16 +34,25 @@ def get_loggers(
 
     # Add WandB if requested
     if use_wandb:
-        wandb_logger = WandbLogger(
-            name=name,
-            project=wandb_project,
-            entity=wandb_entity,
-            dir=local_wandb_dir,
-            tags=cfg["wandb"].get("tags", []) if cfg else [],
-        )
-        if cfg is not None:
-            wandb_logger.experiment.config.update(cfg)
-        loggers.append(wandb_logger)
+        try:
+            # Check if wandb is available
+            import wandb
+            wandb_logger = WandbLogger(
+                name=name,
+                project=wandb_project,
+                entity=wandb_entity,
+                dir=local_wandb_dir,
+                tags=cfg["wandb"].get("tags", []) if cfg else [],
+            )
+            if cfg is not None:
+                wandb_logger.experiment.config.update(cfg)
+            loggers.append(wandb_logger)
+        except ImportError:
+            print("Warning: wandb is not installed. Skipping wandb logging.")
+            print("To enable wandb logging, install it with: pip install wandb")
+        except Exception as e:
+            print(f"Warning: Failed to initialize wandb logger: {e}")
+            print("Continuing without wandb logging.")
 
     return loggers
 
