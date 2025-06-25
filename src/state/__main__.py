@@ -34,9 +34,9 @@ def load_hydra_config(method: str, overrides: list[str] = None) -> DictConfig:
     # Adjust the path based on where this file is relative to configs/
     with initialize(version_base=None, config_path="configs"):
         match method:
-            case "state":
+            case "emb":
                 cfg = compose(config_name="state-defaults", overrides=overrides)
-            case "sets":
+            case "tx":
                 cfg = compose(config_name="config", overrides=overrides)
             case _:
                 raise ValueError(f"Unknown method: {method}")
@@ -50,7 +50,7 @@ def main():
         case "emb":
             match args.subcommand:
                 case "fit":
-                    cfg = load_hydra_config("state", args.hydra_overrides)
+                    cfg = load_hydra_config("emb", args.hydra_overrides)
                     run_emb_fit(cfg, args)
                 case "transform":
                     run_emb_transform(args)
@@ -58,7 +58,7 @@ def main():
             match args.subcommand:
                 case "train":
                     # Load Hydra config with overrides for sets training
-                    cfg = load_hydra_config("sets", args.hydra_overrides)
+                    cfg = load_hydra_config("tx", args.hydra_overrides)
                     run_tx_train(cfg)
                 case "predict":
                     # For now, predict uses argparse and not hydra

@@ -19,7 +19,7 @@ def run_emb_fit(cfg, args):
 
     from omegaconf import OmegaConf
 
-    from ...state.train.trainer import main as trainer_main
+    from ...emb.train.trainer import main as trainer_main
 
     log = logging.getLogger(__name__)
 

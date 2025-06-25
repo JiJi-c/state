@@ -40,7 +40,7 @@ def run_tx_infer(args):
     import yaml
     from tqdm import tqdm
 
-    from ...sets.models.pert_sets import PertSetsPerturbationModel
+    from ...tx.models.pert_sets import PertSetsPerturbationModel
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)

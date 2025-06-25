@@ -3,7 +3,7 @@ import sys
 
 # Set up VCI module aliases for backward compatibility
 def _setup_vci_aliases():
-    """Set up vci.* aliases to point to the current state module structure."""
+    """Set up vci.* aliases to point to the current emb module structure."""
     current_module = sys.modules[__name__]
 
     # Main vci alias
@@ -11,7 +11,7 @@ def _setup_vci_aliases():
 
     # Import and alias submodules
     try:
-        from state import nn
+        from emb import nn
 
         sys.modules["vci.nn"] = nn
         sys.modules["vci.nn.model"] = nn.model
@@ -19,7 +19,7 @@ def _setup_vci_aliases():
         pass
 
     try:
-        from state import train
+        from emb import train
 
         sys.modules["vci.train"] = train
         sys.modules["vci.train.trainer"] = train.trainer
@@ -27,7 +27,7 @@ def _setup_vci_aliases():
         pass
 
     try:
-        from state import data
+        from emb import data
 
         sys.modules["vci.data"] = data
         if hasattr(data, "loader"):
@@ -36,14 +36,14 @@ def _setup_vci_aliases():
         pass
 
     try:
-        from state import utils
+        from emb import utils
 
         sys.modules["vci.utils"] = utils
     except ImportError:
         pass
 
     try:
-        from state import eval as eval_module
+        from emb import eval as eval_module
 
         sys.modules["vci.eval"] = eval_module
     except ImportError:
