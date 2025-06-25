@@ -109,6 +109,7 @@ def main(cfg):
     if cfg.wandb.enable:
         try:
             import wandb
+
             exp_logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
             exp_logger.watch(model, log_freq=1000)
         except ImportError:

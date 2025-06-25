@@ -37,6 +37,7 @@ def get_loggers(
         try:
             # Check if wandb is available
             import wandb
+
             wandb_logger = WandbLogger(
                 name=name,
                 project=wandb_project,
