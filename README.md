@@ -12,7 +12,7 @@
 This package is distributed via [`uv`](https://docs.astral.sh/uv).
 
 ```bash
-uv tool install arc-state
+uv tool install --from git+https://github.com/ArcInstitute/state arc-state
 ```
 
 ## CLI Usage
