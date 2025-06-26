@@ -25,17 +25,12 @@ dependencies = [
   "wandb>=0.19.11",
   "hydra-core>=1.3.2",
   "geomloss>=0.2.6",
-  "zclip",
   "transformers>=4.52.3",
   "cell-eval>=0.5.22",
 ]
 
 [dependency-groups]
 dev = ["ruff>=0.11.11", "vulture>=2.14"]
-
-[tool.uv.sources]
-zclip = { git = "https://github.com/bluorion-com/ZClip" }
-cell-load = { git = "https://github.com/ArcInstitute/cell-load", branch = "aadduri/add_barcodes" }
 
 [build-system]
 requires = ["hatchling"]

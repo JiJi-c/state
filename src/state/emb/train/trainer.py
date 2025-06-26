@@ -9,7 +9,6 @@ from datetime import timedelta
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
-from zclip import ZClipLightningCallback
 
 from ..nn.model import StateEmbeddingModel
 from ..data import H5adSentenceDataset, VCIDatasetSentenceCollator
@@ -129,12 +128,6 @@ def main(cfg):
         ema_decay = getattr(cfg.model, "ema_decay", 0.999)
         callbacks.append(EMACallback(decay=ema_decay))
 
-    if getattr(cfg.optimizer, "zclip", False):
-        zclip_cb = ZClipLightningCallback(
-            mode="zscore", alpha=0.97, z_thresh=2.5, clip_option="adaptive_scaling", max_grad_norm=1.0, clip_factor=1.0
-        )
-        callbacks.append(zclip_cb)
-
     max_steps = -1
     if cfg.experiment.profile.enable_profiler:
         callbacks.append(ProfilerCallback(cfg=cfg))
@@ -148,7 +141,7 @@ def main(cfg):
         devices=cfg.experiment.num_gpus_per_node,
         num_nodes=cfg.experiment.num_nodes,
         # Accumulation
-        gradient_clip_val=None if cfg.optimizer.zclip else cfg.optimizer.max_grad_norm,
+        gradient_clip_val=cfg.optimizer.max_grad_norm,
         accumulate_grad_batches=cfg.optimizer.gradient_accumulation_steps,
         precision="bf16-mixed",
         strategy=DDPStrategy(
