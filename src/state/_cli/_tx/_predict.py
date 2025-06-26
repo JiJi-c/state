@@ -250,7 +250,7 @@ def run_tx_predict(args: ap.ArgumentParser):
                 all_pert_names.extend(batch_preds["pert_name"])
             else:
                 all_pert_names.append(batch_preds["pert_name"])
-            
+
             if isinstance(batch_preds["pert_cell_barcode"], list):
                 all_pert_barcodes.extend(batch_preds["pert_cell_barcode"])
                 all_ctrl_barcodes.extend(batch_preds["ctrl_cell_barcode"])
