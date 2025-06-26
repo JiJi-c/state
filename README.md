@@ -15,6 +15,12 @@ This package is distributed via [`uv`](https://docs.astral.sh/uv).
 uv tool install --from git+https://github.com/ArcInstitute/state arc-state
 ```
 
+When making fundamental changes to State, reinstall from your local copy with:
+
+```bash
+uv tool install --from . arc-state
+```
+
 ## CLI Usage
 
 You can access the CLI help menu with:
