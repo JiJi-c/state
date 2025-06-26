@@ -1,6 +1,6 @@
 [project]
 name = "arc-state"
-version = "0.9.0"
+version = "0.9.1"
 description = "State is a machine learning model that predicts cellular perturbation response across diverse contexts."
 readme = "README.md"
 authors = [
@@ -10,10 +10,10 @@ authors = [
   { name = "Rajesh Ilango" },
   { name = "Dhruv Gautam", email = "dhruvgautam@berkeley.edu" },
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
   "anndata>=0.11.4",
-  "cell-load>=0.7.1",
+  "cell-load>=0.7.2",
   "numpy>=2.2.6",
   "pandas>=2.2.3",
   "pyyaml>=6.0.2",
@@ -25,16 +25,12 @@ dependencies = [
   "wandb>=0.19.11",
   "hydra-core>=1.3.2",
   "geomloss>=0.2.6",
-  "zclip",
   "transformers>=4.52.3",
   "cell-eval>=0.5.22",
 ]
 
 [dependency-groups]
 dev = ["ruff>=0.11.11", "vulture>=2.14"]
-
-[tool.uv.sources]
-zclip = { git = "https://github.com/bluorion-com/ZClip" }
 
 [build-system]
 requires = ["hatchling"]
