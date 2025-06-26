@@ -233,6 +233,8 @@ def run_tx_predict(args: ap.ArgumentParser):
     all_pert_names = []
     all_celltypes = []
     all_gem_groups = []
+    all_pert_barcodes = []
+    all_ctrl_barcodes = []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Predicting", unit="batch")):
@@ -248,6 +250,13 @@ def run_tx_predict(args: ap.ArgumentParser):
                 all_pert_names.extend(batch_preds["pert_name"])
             else:
                 all_pert_names.append(batch_preds["pert_name"])
+            
+            if isinstance(batch_preds["pert_cell_barcode"], list):
+                all_pert_barcodes.extend(batch_preds["pert_cell_barcode"])
+                all_ctrl_barcodes.extend(batch_preds["ctrl_cell_barcode"])
+            else:
+                all_pert_barcodes.append(batch_preds["pert_cell_barcode"])
+                all_ctrl_barcodes.append(batch_preds["ctrl_cell_barcode"])
 
             # Handle celltype_name
             if isinstance(batch_preds["celltype_name"], list):
@@ -288,6 +297,8 @@ def run_tx_predict(args: ap.ArgumentParser):
             data_module.pert_col: all_pert_names,
             data_module.cell_type_key: all_celltypes,
             data_module.batch_col: all_gem_groups,
+            "pert_cell_barcode": all_pert_barcodes,
+            "ctrl_cell_barcode": all_ctrl_barcodes,
         }
     )
 
@@ -305,10 +316,6 @@ def run_tx_predict(args: ap.ArgumentParser):
         adata_pred = anndata.AnnData(X=final_pert_cell_counts_preds, obs=obs, var=var)
         # Create adata for real - using the true gene expression values
         adata_real = anndata.AnnData(X=final_X_hvg, obs=obs, var=var)
-
-        # for some reason log transformed - let's exp them?
-        # adata_pred.X = np.expm1(adata_pred.X)
-        # adata_real.X = np.expm1(adata_real.X)
 
         # add the embedding predictions
         adata_pred.obsm[data_module.embed_key] = final_preds
@@ -388,5 +395,5 @@ def run_tx_predict(args: ap.ArgumentParser):
                 }
                 if data_module.embed_key and data_module.embed_key != "X_hvg"
                 else {},
-                skip_metrics=["clustering_agreement"],
+                skip_metrics=["pearson_edistance", "clustering_agreement"],
             )

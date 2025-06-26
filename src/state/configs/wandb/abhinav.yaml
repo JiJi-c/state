@@ -1,0 +1,4 @@
+entity: arcinstitute
+project: vci1
+local_wandb_dir: /large_storage/ctc/userspace/aadduri/wandb_dir/vci1
+tags: []

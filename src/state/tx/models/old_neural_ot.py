@@ -231,6 +231,7 @@ class OldNeuralOTPerturbationModel(PerturbationModel):
             "celltype_name": batch.get("cell_type", None),
             "batch": batch.get("batch", None),
             "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
+            "pert_cell_barcode": batch.get("pert_cell_barcode", None),
         }
 
         if self.gene_decoder is not None:
