@@ -9,16 +9,28 @@
 
 ## Installation
 
+### Installation from PyPI
+
 This package is distributed via [`uv`](https://docs.astral.sh/uv).
 
 ```bash
-uv tool install --from git+https://github.com/ArcInstitute/state arc-state
+uv tool install arc-state
 ```
 
-When making fundamental changes to State, reinstall from your local copy with:
+### Installation from Source
 
 ```bash
-uv tool install --from . arc-state
+git clone git@github.com:ArcInstitute/state.git
+cd state
+uv run state
+```
+
+When making fundamental changes to State, install an editable version with the `-e` flag.
+
+```bash
+git clone git@github.com:ArcInstitute/state.git
+cd state
+uv tool install -e .
 ```
 
 ## CLI Usage
@@ -38,21 +50,13 @@ options:
   -h, --help  show this help message and exit
 ```
 
-## Installation from Source
-
-```bash
-git clone git@github.com:ArcInstitute/state.git
-cd state
-uv run python -m src.state
-```
-
 ## State Transition Model (ST)
 
-To start an experiment, write a TOML file (see `examples/zeroshot.toml` or 
+To start an experiment, write a TOML file (see `examples/zeroshot.toml` or
 `examples/fewshot.toml` to start). The TOML file specifies the dataset paths
 (containing h5ad files) as well as the machine learning task.
 
-Training an ST example below. 
+Training an ST example below.
 
 ```bash
 state tx train \
@@ -76,7 +80,7 @@ output_dir="$HOME/state" \
 name="test"
 ```
 
-The cell lines and perturbations specified in the TOML should match the values appearing in the 
+The cell lines and perturbations specified in the TOML should match the values appearing in the
 `data.kwargs.cell_type_key` and `data.kwargs.pert_col` used above. To evaluate STATE on the specified task,
 you can use the `tx predict` command:
 
@@ -155,7 +159,7 @@ replogle = "train"
 # Empty - no perturbation-level splits
 ```
 
-#### Example 2: Pure Fewshot Evaluation  
+#### Example 2: Pure Fewshot Evaluation
 ```toml
 # Evaluate with limited examples of specific perturbations
 [datasets]
@@ -172,7 +176,7 @@ replogle = "train"
 val = ["AARS"]                 # Limited AARS examples for validation
 test = ["NUP107", "RPUSD4"]    # Limited examples of these genes for testing
 
-[fewshot."replogle.jurkat"]  
+[fewshot."replogle.jurkat"]
 val = ["TUFM"]
 test = ["MYC", "TP53"]
 ```
@@ -183,7 +187,7 @@ test = ["MYC", "TP53"]
 [datasets]
 replogle = "/data/replogle/"
 
-[training] 
+[training]
 replogle = "train"
 
 [zeroshot]
@@ -191,7 +195,7 @@ replogle = "train"
 
 [fewshot]
 [fewshot."replogle.k562"]      # Fewshot: limited perturbation examples
-val = ["STAT1"] 
+val = ["STAT1"]
 test = ["MYC", "TP53"]
 ```
 
