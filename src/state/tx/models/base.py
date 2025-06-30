@@ -154,6 +154,7 @@ class PerturbationModel(ABC, LightningModule):
         super().__init__()
         self.decoder_cfg = decoder_cfg
         self.save_hyperparameters()
+        self.gene_decoder_bool = kwargs.get("gene_decoder_bool", True) 
 
         # Core architecture settings
         self.input_dim = input_dim
@@ -193,6 +194,9 @@ class PerturbationModel(ABC, LightningModule):
 
     def _build_decoder(self):
         """Create self.gene_decoder from self.decoder_cfg (or leave None)."""
+        if self.gene_decoder_bool == False:
+            self.gene_decoder = None
+            return
         if self.decoder_cfg is None:
             self.gene_decoder = None
             return
@@ -206,7 +210,10 @@ class PerturbationModel(ABC, LightningModule):
         """
         # Check if decoder_cfg was already set externally (e.g., by training script for output_space mismatch)
         decoder_already_configured = hasattr(self, '_decoder_externally_configured') and self._decoder_externally_configured
-        
+
+        if self.gene_decoder_bool == False:
+            self.gene_decoder = None
+            return
         if not decoder_already_configured and "decoder_cfg" in checkpoint["hyper_parameters"]:
             self.decoder_cfg = checkpoint["hyper_parameters"]["decoder_cfg"]
             self.gene_decoder = LatentToGeneDecoder(**self.decoder_cfg)

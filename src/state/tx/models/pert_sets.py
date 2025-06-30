@@ -236,7 +236,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         """
         self.pert_encoder = build_mlp(
             in_dim=self.pert_dim,
-            out_dim=self.input_dim,
+            out_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             n_layers=self.n_encoder_layers,
             dropout=self.dropout,
@@ -244,7 +244,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         )
 
         # Simple linear layer that maintains the input dimension
-        self.basal_encoder = nn.Linear(self.input_dim, self.input_dim)
+        self.basal_encoder = nn.Linear(self.input_dim, self.hidden_dim)
 
         self.transformer_backbone, self.transformer_model_dim = get_transformer_backbone(
             self.transformer_backbone_key,
@@ -252,7 +252,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         )
 
         # Project from input_dim to hidden_dim for transformer input
-        self.project_to_hidden = nn.Linear(self.input_dim, self.hidden_dim)
+        # self.project_to_hidden = nn.Linear(self.input_dim, self.hidden_dim)
 
         self.project_out = build_mlp(
             in_dim=self.hidden_dim,
@@ -299,8 +299,8 @@ class PertSetsPerturbationModel(PerturbationModel):
         # Add encodings in input_dim space, then project to hidden_dim
         print(f"pert_embedding: {pert_embedding.shape}")
         print(f"control_cells: {control_cells.shape}")
-        combined_input = pert_embedding + control_cells  # Shape: [B, S, input_dim]
-        seq_input = self.project_to_hidden(combined_input)  # Shape: [B, S, hidden_dim]
+        combined_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
+        seq_input = combined_input  # Shape: [B, S, hidden_dim]
 
         if self.batch_encoder is not None:
             # Extract batch indices (assume they are integers or convert from one-hot)
@@ -352,9 +352,9 @@ class PertSetsPerturbationModel(PerturbationModel):
         # add to basal if predicting residual
         if self.predict_residual:
             # Project control_cells to hidden_dim space to match res_pred
-            control_cells_hidden = self.project_to_hidden(control_cells)
+            # control_cells_hidden = self.project_to_hidden(control_cells)
             # treat the actual prediction as a residual sum to basal
-            out_pred = self.project_out(res_pred + control_cells_hidden)
+            out_pred = self.project_out(res_pred + control_cells)
         else:
             out_pred = self.project_out(res_pred)
 
