@@ -160,6 +160,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         # Add an optional encoder that introduces a batch variable
         self.batch_encoder = None
         self.batch_dim = None
+        self.predict_mean = kwargs.get("predict_mean", False)
         if kwargs.get("batch_encoder", False) and batch_dim is not None:
             self.batch_encoder = nn.Embedding(
                 num_embeddings=batch_dim,
@@ -172,6 +173,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
         if is_gene_space or self.gene_decoder is None:
             self.relu = torch.nn.ReLU()
+        self.mean_cell_state = torch.load("/home/aadduri/h1_mean_pert.pt").to(self.device)
 
         # initialize a confidence token
         self.confidence_token = None
@@ -263,6 +265,12 @@ class PertSetsPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
+        self.final_down_then_up = nn.Sequential(
+            nn.Linear(self.output_dim, self.output_dim // 8),
+            nn.GELU(),
+            nn.Linear(self.output_dim // 8, self.output_dim),
+        )
+
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
         return self.pert_encoder(pert)
@@ -350,11 +358,15 @@ class PertSetsPerturbationModel(PerturbationModel):
             res_pred = transformer_output
 
         # add to basal if predicting residual
-        if self.predict_residual:
+        if self.predict_mean:
+            mean_cell_state_expanded = self.mean_cell_state.expand(res_pred.shape[0], res_pred.shape[1], -1)
+            out_pred = self.project_out(res_pred) + mean_cell_state_expanded
+        elif self.predict_residual:
             # Project control_cells to hidden_dim space to match res_pred
             # control_cells_hidden = self.project_to_hidden(control_cells)
             # treat the actual prediction as a residual sum to basal
-            out_pred = self.project_out(res_pred + control_cells)
+            out_pred = self.project_out(res_pred) + basal
+            out_pred = self.final_down_then_up(out_pred)
         else:
             out_pred = self.project_out(res_pred)
 
