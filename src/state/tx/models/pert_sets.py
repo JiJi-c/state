@@ -151,6 +151,8 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
         elif loss_name == "mse":
             self.loss_fn = nn.MSELoss()
+        elif loss_name == "sinkhorn":
+            self.loss_fn = SamplesLoss(loss="sinkhorn", blur=blur)
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 
@@ -505,9 +507,9 @@ class PertSetsPerturbationModel(PerturbationModel):
             else:
                 # Get decoder predictions
                 pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(
-                    -1, self.cell_sentence_len, self.gene_dim
+                    -1, self.cell_sentence_len, self.gene_decoder.gene_dim()
                 )
-                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
+                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
                 decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log the validation metric
@@ -533,7 +535,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         if self.confidence_token is None:
-            pred, confidence_pred = self.forward(batch, padded=False)
+            pred, confidence_pred = self.forward(batch, padded=False), None
         else:
             pred, confidence_pred = self.forward(batch, padded=False)
 
