@@ -213,21 +213,11 @@ def run_tx_train(cfg: DictConfig):
         accelerator = "gpu"
     else:
         accelerator = "cpu"
-
-    # Get device configuration from config, with fallback to 1 for backward compatibility
-    num_devices = cfg["training"].get("devices", 1)
-    strategy = cfg["training"].get("strategy", "auto")
-    
-    # For multi-GPU training, use DDP strategy
-    if num_devices > 1 and accelerator == "gpu":
-        if strategy == "auto":
-            strategy = "ddp"
     
     # Decide on trainer params
     trainer_kwargs = dict(
         accelerator=accelerator,
-        devices=num_devices,
-        strategy=strategy if num_devices > 1 else "auto",
+        devices=1,
         max_steps=cfg["training"]["max_steps"],  # for normal models
         check_val_every_n_epoch=None,
         val_check_interval=cfg["training"]["val_freq"],
