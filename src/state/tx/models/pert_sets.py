@@ -17,6 +17,21 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 
+class CombinedLoss(nn.Module):
+    """
+    Combined Sinkhorn + Energy loss
+    """
+    def __init__(self, sinkhorn_weight=0.001, energy_weight=1.0, blur=0.05):
+        super().__init__()
+        self.sinkhorn_weight = sinkhorn_weight
+        self.energy_weight = energy_weight
+        self.sinkhorn_loss = SamplesLoss(loss="sinkhorn", blur=blur)
+        self.energy_loss = SamplesLoss(loss="energy", blur=blur)
+    
+    def forward(self, pred, target):
+        sinkhorn_val = self.sinkhorn_loss(pred, target)
+        energy_val = self.energy_loss(pred, target)
+        return self.sinkhorn_weight * sinkhorn_val + self.energy_weight * energy_val
 
 class ConfidenceToken(nn.Module):
     """
@@ -151,6 +166,10 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
         elif loss_name == "mse":
             self.loss_fn = nn.MSELoss()
+        elif loss_name == "se":
+            sinkhorn_weight = kwargs.get("sinkhorn_weight", 0.01)  # 1/100 = 0.01
+            energy_weight = kwargs.get("energy_weight", 1.0)
+            self.loss_fn = CombinedLoss(sinkhorn_weight=sinkhorn_weight, energy_weight=energy_weight, blur=blur)
         elif loss_name == "sinkhorn":
             self.loss_fn = SamplesLoss(loss="sinkhorn", blur=blur)
         else:
@@ -406,6 +425,13 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         main_loss = self.loss_fn(pred, target).nanmean()
         self.log("train_loss", main_loss)
+        
+        # Log individual loss components if using combined loss
+        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
+            sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).nanmean()
+            energy_component = self.loss_fn.energy_loss(pred, target).nanmean()
+            self.log("train/sinkhorn_loss", sinkhorn_component)
+            self.log("train/energy_loss", energy_component)
 
         # Process decoder if available
         decoder_loss = None
@@ -492,6 +518,13 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
+        
+        # Log individual loss components if using combined loss
+        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
+            sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).mean()
+            energy_component = self.loss_fn.energy_loss(pred, target).mean()
+            self.log("val/sinkhorn_loss", sinkhorn_component)
+            self.log("val/energy_loss", energy_component)
 
         if self.gene_decoder is not None and "pert_cell_counts" in batch:
             gene_targets = batch["pert_cell_counts"]
