@@ -1,11 +1,11 @@
 name: PerturbationDataModule
 kwargs:
   toml_config_path: null
-  embed_key: X_hvg
-  output_space: gene
+  embed_key: null
+  output_space: all
   pert_rep: onehot
   basal_rep: sample
-  num_workers: 8
+  num_workers: 12
   pin_memory: true
   n_basal_samples: 1
   basal_mapping_strategy: random
