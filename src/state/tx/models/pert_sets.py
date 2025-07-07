@@ -194,7 +194,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         is_gene_space = kwargs["embed_key"] == "X_hvg" or kwargs["embed_key"] is None
         if is_gene_space or self.gene_decoder is None:
             self.relu = torch.nn.ReLU()
-        self.mean_cell_state = torch.load("/home/aadduri/h1_mean_pert.pt").to(self.device)
 
         # initialize a confidence token
         self.confidence_token = None
@@ -326,8 +325,6 @@ class PertSetsPerturbationModel(PerturbationModel):
         control_cells = self.encode_basal_expression(basal)
 
         # Add encodings in input_dim space, then project to hidden_dim
-        print(f"pert_embedding: {pert_embedding.shape}")
-        print(f"control_cells: {control_cells.shape}")
         combined_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
         seq_input = combined_input  # Shape: [B, S, hidden_dim]
 
@@ -379,10 +376,7 @@ class PertSetsPerturbationModel(PerturbationModel):
             res_pred = transformer_output
 
         # add to basal if predicting residual
-        if self.predict_mean:
-            mean_cell_state_expanded = self.mean_cell_state.expand(res_pred.shape[0], res_pred.shape[1], -1)
-            out_pred = self.project_out(res_pred) + mean_cell_state_expanded
-        elif self.predict_residual:
+        if self.predict_residual:
             # Project control_cells to hidden_dim space to match res_pred
             # control_cells_hidden = self.project_to_hidden(control_cells)
             # treat the actual prediction as a residual sum to basal
