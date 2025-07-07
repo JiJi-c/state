@@ -376,12 +376,12 @@ class PertSetsPerturbationModel(PerturbationModel):
             res_pred = transformer_output
 
         # add to basal if predicting residual
-        if self.predict_residual:
-            # Project control_cells to hidden_dim space to match res_pred
-            # control_cells_hidden = self.project_to_hidden(control_cells)
-            # treat the actual prediction as a residual sum to basal
+        
+        if self.predict_residual and self.output_space == "all":
             out_pred = self.project_out(res_pred) + basal
             out_pred = self.final_down_then_up(out_pred)
+        elif self.predict_residual:
+            out_pred = self.project_out(res_pred + control_cells)
         else:
             out_pred = self.project_out(res_pred)
 
