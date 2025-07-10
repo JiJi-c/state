@@ -2,8 +2,67 @@ import time
 import logging
 from contextlib import contextmanager
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
+from lightning.pytorch.loggers.csv_logs import CSVLogger as BaseCSVLogger
+import csv
+import os
 from lightning.pytorch.callbacks import ModelCheckpoint
 from os.path import join
+
+
+class RobustCSVLogger(BaseCSVLogger):
+    """
+    A CSV logger that handles dynamic metrics by allowing new columns to be added during training.
+    This fixes the issue where PyTorch Lightning's default CSV logger fails when new metrics
+    are added after the CSV file is created.
+    """
+    
+    def log_metrics(self, metrics, step):
+        """Override to handle dynamic metrics gracefully"""
+        try:
+            super().log_metrics(metrics, step)
+        except ValueError as e:
+            if "dict contains fields not in fieldnames" in str(e):
+                # Recreate the CSV file with the new fieldnames
+                self._recreate_csv_with_new_fields(metrics)
+                # Try logging again
+                super().log_metrics(metrics, step)
+            else:
+                raise e
+    
+    def _recreate_csv_with_new_fields(self, new_metrics):
+        """Recreate the CSV file with additional fields to accommodate new metrics"""
+        if not hasattr(self.experiment, 'metrics_file_path'):
+            return
+            
+        # Read existing data
+        existing_data = []
+        csv_file = self.experiment.metrics_file_path
+        
+        if os.path.exists(csv_file):
+            with open(csv_file, 'r', newline='') as f:
+                reader = csv.DictReader(f)
+                existing_data = list(reader)
+        
+        # Get all unique fieldnames from existing data and new metrics
+        all_fieldnames = set()
+        for row in existing_data:
+            all_fieldnames.update(row.keys())
+        all_fieldnames.update(new_metrics.keys())
+        
+        # Sort fieldnames for consistent ordering
+        sorted_fieldnames = sorted(all_fieldnames)
+        
+        # Rewrite the CSV file with new fieldnames
+        with open(csv_file, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=sorted_fieldnames)
+            writer.writeheader()
+            
+            # Write existing data (missing fields will be empty)
+            for row in existing_data:
+                writer.writerow(row)
+        
+        # Update the experiment's fieldnames
+        self.experiment.metrics_keys = sorted_fieldnames
 
 
 @contextmanager
@@ -25,12 +84,16 @@ def get_loggers(
     wandb_entity: str,
     local_wandb_dir: str,
     use_wandb: bool = False,
+    use_csv: bool = True,  # Enable CSV by default with robust logger
     cfg: dict = None,
 ):
     """Set up logging to local CSV and optionally WandB."""
-    # Always use CSV logger
-    csv_logger = CSVLogger(save_dir=output_dir, name=name, version=0)
-    loggers = [csv_logger]
+    loggers = []
+    
+    # Use robust CSV logger that handles dynamic metrics
+    if use_csv:
+        csv_logger = RobustCSVLogger(save_dir=output_dir, name=name, version=0)
+        loggers.append(csv_logger)
 
     # Add WandB if requested
     if use_wandb:
@@ -54,6 +117,12 @@ def get_loggers(
         except Exception as e:
             print(f"Warning: Failed to initialize wandb logger: {e}")
             print("Continuing without wandb logging.")
+
+    # Ensure at least one logger is present
+    if not loggers:
+        print("Warning: No loggers configured. Adding robust CSV logger as fallback.")
+        csv_logger = RobustCSVLogger(save_dir=output_dir, name=name, version=0)
+        loggers.append(csv_logger)
 
     return loggers
 

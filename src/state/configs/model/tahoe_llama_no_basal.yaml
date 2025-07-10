@@ -3,10 +3,9 @@ checkpoint: null
 device: cuda
 
 kwargs:
-  cell_set_len: 512
+  cell_set_len: 256
   blur: 0.05
-  hidden_dim: 1104      # hidden dimension going into the transformer backbone
-  decoder_hidden_dims: [5000, 5000, 5000]
+  hidden_dim: 2160      # hidden dimension going into the transformer backbone
   loss: energy
   confidence_head: False
   n_encoder_layers: 4
@@ -26,11 +25,11 @@ kwargs:
   transformer_backbone_kwargs:
       max_position_embeddings: ${model.kwargs.cell_set_len}
       hidden_size: ${model.kwargs.hidden_dim}
-      intermediate_size: 4416
-      num_hidden_layers: 4
+      intermediate_size: 8640
+      num_hidden_layers: 6
       num_attention_heads: 12
       num_key_value_heads: 12
-      head_dim: 92
+      head_dim: 180
       use_cache: false
       attention_dropout: 0.0
       hidden_dropout: 0.0

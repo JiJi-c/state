@@ -17,6 +17,21 @@ from .utils import build_mlp, get_activation_class, get_transformer_backbone
 
 logger = logging.getLogger(__name__)
 
+class CombinedLoss(nn.Module):
+    """
+    Combined Sinkhorn + Energy loss
+    """
+    def __init__(self, sinkhorn_weight=0.001, energy_weight=1.0, blur=0.05):
+        super().__init__()
+        self.sinkhorn_weight = sinkhorn_weight
+        self.energy_weight = energy_weight
+        self.sinkhorn_loss = SamplesLoss(loss="sinkhorn", blur=blur)
+        self.energy_loss = SamplesLoss(loss="energy", blur=blur)
+    
+    def forward(self, pred, target):
+        sinkhorn_val = self.sinkhorn_loss(pred, target)
+        energy_val = self.energy_loss(pred, target)
+        return self.sinkhorn_weight * sinkhorn_val + self.energy_weight * energy_val
 
 class ConfidenceToken(nn.Module):
     """
@@ -129,6 +144,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         # Save or store relevant hyperparams
         self.predict_residual = predict_residual
+        self.output_space = output_space
         self.n_encoder_layers = kwargs.get("n_encoder_layers", 2)
         self.n_decoder_layers = kwargs.get("n_decoder_layers", 2)
         self.activation_class = get_activation_class(kwargs.get("activation", "gelu"))
@@ -151,6 +167,12 @@ class PertSetsPerturbationModel(PerturbationModel):
             self.loss_fn = SamplesLoss(loss=self.distributional_loss, blur=blur)
         elif loss_name == "mse":
             self.loss_fn = nn.MSELoss()
+        elif loss_name == "se":
+            sinkhorn_weight = kwargs.get("sinkhorn_weight", 0.01)  # 1/100 = 0.01
+            energy_weight = kwargs.get("energy_weight", 1.0)
+            self.loss_fn = CombinedLoss(sinkhorn_weight=sinkhorn_weight, energy_weight=energy_weight, blur=blur)
+        elif loss_name == "sinkhorn":
+            self.loss_fn = SamplesLoss(loss="sinkhorn", blur=blur)
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 
@@ -160,6 +182,7 @@ class PertSetsPerturbationModel(PerturbationModel):
         # Add an optional encoder that introduces a batch variable
         self.batch_encoder = None
         self.batch_dim = None
+        self.predict_mean = kwargs.get("predict_mean", False)
         if kwargs.get("batch_encoder", False) and batch_dim is not None:
             self.batch_encoder = nn.Embedding(
                 num_embeddings=batch_dim,
@@ -243,20 +266,16 @@ class PertSetsPerturbationModel(PerturbationModel):
             activation=self.activation_class,
         )
 
-        # Map the input embedding to the hidden space
-        self.basal_encoder = build_mlp(
-            in_dim=self.input_dim,
-            out_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            n_layers=self.n_encoder_layers,
-            dropout=self.dropout,
-            activation=self.activation_class,
-        )
+        # Simple linear layer that maintains the input dimension
+        self.basal_encoder = nn.Linear(self.input_dim, self.hidden_dim)
 
         self.transformer_backbone, self.transformer_model_dim = get_transformer_backbone(
             self.transformer_backbone_key,
             self.transformer_backbone_kwargs,
         )
+
+        # Project from input_dim to hidden_dim for transformer input
+        # self.project_to_hidden = nn.Linear(self.input_dim, self.hidden_dim)
 
         self.project_out = build_mlp(
             in_dim=self.hidden_dim,
@@ -266,6 +285,13 @@ class PertSetsPerturbationModel(PerturbationModel):
             dropout=self.dropout,
             activation=self.activation_class,
         )
+
+        if self.output_space == 'all':
+            self.final_down_then_up = nn.Sequential(
+                nn.Linear(self.output_dim, self.output_dim // 8),
+                nn.GELU(),
+                nn.Linear(self.output_dim // 8, self.output_dim),
+            )
 
     def encode_perturbation(self, pert: torch.Tensor) -> torch.Tensor:
         """If needed, define how we embed the raw perturbation input."""
@@ -296,11 +322,13 @@ class PertSetsPerturbationModel(PerturbationModel):
             pert = batch["pert_emb"].reshape(1, -1, self.pert_dim)
             basal = batch["ctrl_cell_emb"].reshape(1, -1, self.input_dim)
 
-        # Shape: [B, S, hidden_dim]
+        # Shape: [B, S, input_dim]
         pert_embedding = self.encode_perturbation(pert)
         control_cells = self.encode_basal_expression(basal)
 
-        seq_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
+        # Add encodings in input_dim space, then project to hidden_dim
+        combined_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
+        seq_input = combined_input  # Shape: [B, S, hidden_dim]
 
         if self.batch_encoder is not None:
             # Extract batch indices (assume they are integers or convert from one-hot)
@@ -350,8 +378,13 @@ class PertSetsPerturbationModel(PerturbationModel):
             res_pred = transformer_output
 
         # add to basal if predicting residual
-        if self.predict_residual:
+        if self.predict_residual and self.output_space == "all":
+            # Project control_cells to hidden_dim space to match res_pred
+            # control_cells_hidden = self.project_to_hidden(control_cells)
             # treat the actual prediction as a residual sum to basal
+            out_pred = self.project_out(res_pred) + basal
+            out_pred = self.final_down_then_up(out_pred)
+        elif self.predict_residual:
             out_pred = self.project_out(res_pred + control_cells)
         else:
             out_pred = self.project_out(res_pred)
@@ -390,6 +423,13 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         main_loss = self.loss_fn(pred, target).nanmean()
         self.log("train_loss", main_loss)
+        
+        # Log individual loss components if using combined loss
+        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
+            sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).nanmean()
+            energy_component = self.loss_fn.energy_loss(pred, target).nanmean()
+            self.log("train/sinkhorn_loss", sinkhorn_component)
+            self.log("train/energy_loss", energy_component)
 
         # Process decoder if available
         decoder_loss = None
@@ -476,6 +516,13 @@ class PertSetsPerturbationModel(PerturbationModel):
 
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
+        
+        # Log individual loss components if using combined loss
+        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
+            sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).mean()
+            energy_component = self.loss_fn.energy_loss(pred, target).mean()
+            self.log("val/sinkhorn_loss", sinkhorn_component)
+            self.log("val/energy_loss", energy_component)
 
         if self.gene_decoder is not None and "pert_cell_counts" in batch:
             gene_targets = batch["pert_cell_counts"]
@@ -491,9 +538,9 @@ class PertSetsPerturbationModel(PerturbationModel):
             else:
                 # Get decoder predictions
                 pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(
-                    -1, self.cell_sentence_len, self.gene_dim
+                    -1, self.cell_sentence_len, self.gene_decoder.gene_dim()
                 )
-                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_dim)
+                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
                 decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log the validation metric
@@ -519,7 +566,7 @@ class PertSetsPerturbationModel(PerturbationModel):
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         if self.confidence_token is None:
-            pred, confidence_pred = self.forward(batch, padded=False)
+            pred, confidence_pred = self.forward(batch, padded=False), None
         else:
             pred, confidence_pred = self.forward(batch, padded=False)
 

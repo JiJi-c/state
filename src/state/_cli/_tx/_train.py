@@ -213,7 +213,7 @@ def run_tx_train(cfg: DictConfig):
         accelerator = "gpu"
     else:
         accelerator = "cpu"
-
+    
     # Decide on trainer params
     trainer_kwargs = dict(
         accelerator=accelerator,
@@ -258,9 +258,40 @@ def run_tx_train(cfg: DictConfig):
         print(f"Loading manual checkpoint from {manual_init}")
         checkpoint_path = manual_init
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         model_state = model.state_dict()
         checkpoint_state = checkpoint["state_dict"]
+
+        # Check if output_space differs between current config and checkpoint
+        checkpoint_output_space = checkpoint.get("hyper_parameters", {}).get("output_space", "gene")
+        current_output_space = cfg["data"]["kwargs"]["output_space"]
+        
+        if checkpoint_output_space != current_output_space:
+            print(f"Output space mismatch: checkpoint has '{checkpoint_output_space}', current config has '{current_output_space}'")
+            print("Creating new decoder for the specified output space...")
+
+            if cfg["model"]["kwargs"].get("gene_decoder_bool", True) == False:
+                model._decoder_externally_configured = False
+            else:
+                # Override the decoder_cfg to match the new output_space
+                if current_output_space == "gene":
+                    new_gene_dim = var_dims.get("hvg_dim", 2000)
+                else:  # output_space == "all"
+                    new_gene_dim = var_dims.get("gene_dim", 2000)
+                
+                new_decoder_cfg = dict(
+                    latent_dim=var_dims["output_dim"],
+                    gene_dim=new_gene_dim,
+                    hidden_dims=cfg["model"]["kwargs"].get("decoder_hidden_dims", [1024, 1024, 512]),
+                    dropout=cfg["model"]["kwargs"].get("decoder_dropout", 0.1),
+                    residual_decoder=cfg["model"]["kwargs"].get("residual_decoder", False),
+                )
+                
+                # Update the model's decoder_cfg and rebuild decoder
+                model.decoder_cfg = new_decoder_cfg
+                model._build_decoder()
+                model._decoder_externally_configured = True  # Mark that decoder was configured externally
+                print(f"Created new decoder for output_space='{current_output_space}' with gene_dim={new_gene_dim}")
 
         pert_encoder_weight_key = "pert_encoder.0.weight"
         if pert_encoder_weight_key in checkpoint_state:
