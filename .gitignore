@@ -8,3 +8,4 @@ log/
 uv.lock
 src/state/configs/wandb/*
 !src/state/configs/wandb/defaults.yaml
+*.sif
