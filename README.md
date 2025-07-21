@@ -230,10 +230,40 @@ To run inference with a trained State checkpoint, e.g., the State trained to 4 e
 
 ```bash
 state emb transform \
-  --model-folder "/large_storage/ctc/userspace/aadduri/SE-600M" \
-  --input "/large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad" \
-  --output "/home/aadduri/vci_pretrain/test_output.h5ad"
+  --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+  --checkpoint /large_storage/ctc/userspace/aadduri/SE-600M/se600m_epoch15.ckpt \
+  --input /large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad \
+  --output /home/aadduri/vci_pretrain/test_output.h5ad
 ```
+
+# Singularity
+
+Containerization for STATE is available via the `singularity.def` file.
+
+Build the container:
+
+```bash
+singularity build state.sif singularity.def
+```
+
+Run the container:
+
+```bash
+singularity run state.sif --help
+```
+
+Example run of `state emb transform`:
+
+```bash
+singularity run --nv -B /large_storage:/large_storage \
+  state.sif emb transform \
+    --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+    --checkpoint /large_storage/ctc/userspace/aadduri/SE-600M/se600m_epoch15.ckpt \
+    --input /large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad \
+    --output test_output.h5ad
+```
+
+
 
 ## Licenses
 State code is [licensed](LICENSE) under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0).
