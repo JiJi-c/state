@@ -226,13 +226,14 @@ After following the same installation commands above:
 state emb fit --conf ${CONFIG}
 ```
 
-To run inference with a trained State checkpoint, e.g., the State trained to 4 epochs:
+To run inference with a trained State checkpoint, e.g., the State trained to 16 epochs:
 
 ```bash
 state emb transform \
-  --model-folder "/large_storage/ctc/userspace/aadduri/SE-600M" \
-  --input "/large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad" \
-  --output "/home/aadduri/vci_pretrain/test_output.h5ad"
+  --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+  --checkpoint /large_storage/ctc/userspace/aadduri/SE-600M/se600m_epoch15.ckpt \
+  --input /large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad \
+  --output /home/aadduri/vci_pretrain/test_output.h5ad
 ```
 
 Notes on the h5ad file format:
@@ -285,6 +286,32 @@ state emb query \
   --input tmp/SRX27532046.h5ad \
   --output tmp/similar_cells.csv \
   --k 3
+
+# Singularity
+
+Containerization for STATE is available via the `singularity.def` file.
+
+Build the container:
+
+```bash
+singularity build state.sif singularity.def
+```
+
+Run the container:
+
+```bash
+singularity run state.sif --help
+```
+
+Example run of `state emb transform`:
+
+```bash
+singularity run --nv -B /large_storage:/large_storage \
+  state.sif emb transform \
+    --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+    --checkpoint /large_storage/ctc/userspace/aadduri/SE-600M/se600m_epoch15.ckpt \
+    --input /large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad \
+    --output test_output.h5ad
 ```
 
 
