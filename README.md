@@ -247,6 +247,12 @@ Install the optional dependencies:
 uv tool install ".[vectordb]"
 ```
 
+If working off a previous installation, you may need to run:
+
+```bash
+uv sync --extra vectordb
+```
+
 #### Build the vector database
 
 ```bash
@@ -256,6 +262,8 @@ state emb transform \
   --lancedb tmp/state_embeddings.lancedb \
   --gene-column gene_symbols
 ```
+
+Running this command multiple times with the same lancedb appends the new data to the provided database.
 
 #### Query the database
 
