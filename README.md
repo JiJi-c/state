@@ -1,6 +1,6 @@
 # Predicting cellular responses to perturbation across diverse contexts with State
 
-> Train State transition models or pretrain State embedding models. See the State [paper](https://arcinstitute.org/manuscripts/State).
+> Train State transition models or pretrain State embedding models. See the State [paper](https://www.biorxiv.org/content/10.1101/2025.06.26.661135v2).
 > 
 > See the [Google Colab](https://colab.research.google.com/drive/1QKOtYP7bMpdgDJEipDxaJqOchv7oQ-_l) to train STATE for the [Virtual Cell Challenge](https://virtualcellchallenge.org/).
 
