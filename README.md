@@ -226,7 +226,7 @@ After following the same installation commands above:
 state emb fit --conf ${CONFIG}
 ```
 
-To run inference with a trained State checkpoint, e.g., the State trained to 4 epochs:
+To run inference with a trained State checkpoint, e.g., the State trained to 16 epochs:
 
 ```bash
 state emb transform \
@@ -235,6 +235,57 @@ state emb transform \
   --input /large_storage/ctc/datasets/replogle/rpe1_raw_singlecell_01.h5ad \
   --output /home/aadduri/vci_pretrain/test_output.h5ad
 ```
+
+Notes on the h5ad file format:
+ - CSR matrix format is required
+ - `gene_name` is required in the `var` dataframe
+
+### Vector Database
+
+Install the optional dependencies:
+
+```bash
+uv tool install ".[vectordb]"
+```
+
+If working off a previous installation, you may need to run:
+
+```bash
+uv sync --extra vectordb
+```
+
+#### Build the vector database
+
+```bash
+state emb transform \
+  --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+  --input /large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/GeneFull_Ex50pAS/Homo_sapiens/SRX27532045.h5ad \
+  --lancedb tmp/state_embeddings.lancedb \
+  --gene-column gene_symbols
+```
+
+Running this command multiple times with the same lancedb appends the new data to the provided database.
+
+#### Query the database
+
+Obtain the embeddings:
+
+```bash
+state emb transform \
+  --model-folder /large_storage/ctc/userspace/aadduri/SE-600M \
+  --input /large_storage/ctc/public/scBasecamp/GeneFull_Ex50pAS/GeneFull_Ex50pAS/Homo_sapiens/SRX27532046.h5ad \
+  --output tmp/SRX27532046.h5ad \
+  --gene-column gene_symbols
+```
+
+Query the database with the embeddings:
+
+```bash
+state emb query \
+  --lancedb tmp/state_embeddings.lancedb \
+  --input tmp/SRX27532046.h5ad \
+  --output tmp/similar_cells.csv \
+  --k 3
 
 # Singularity
 
