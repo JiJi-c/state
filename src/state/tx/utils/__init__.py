@@ -212,10 +212,10 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
-    elif model_type.lower() == "globalsimplesum":
-        from ...tx.models.global_simple_sum import GlobalSimpleSumPerturbationModel
+    elif model_type.lower() == "globalsimplesum" or model_type.lower() == "perturb_mean":
+        from ...tx.models.perturb_mean import PerturbMeanPerturbationModel
 
-        return GlobalSimpleSumPerturbationModel(
+        return PerturbMeanPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
             hvg_dim=var_dims["hvg_dim"],
@@ -228,18 +228,6 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
         from ...tx.models.cell_type_mean import CellTypeMeanModel
 
         return CellTypeMeanModel(
-            input_dim=var_dims["input_dim"],
-            gene_dim=gene_dim,
-            hvg_dim=var_dims["hvg_dim"],
-            output_dim=var_dims["output_dim"],
-            pert_dim=var_dims["pert_dim"],
-            batch_dim=var_dims["batch_dim"],
-            **module_config,
-        )
-    elif model_type.lower() == "cellcontextmean":
-        from ...tx.models.cell_context_mean import CellContextPerturbationModel
-
-        return CellContextPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
             hvg_dim=var_dims["hvg_dim"],
