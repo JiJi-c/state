@@ -156,9 +156,9 @@ def run_tx_predict(args: ap.ArgumentParser):
 
         ModelClass = PerturbMeanPerturbationModel
     elif model_class_name.lower() == "celltypemean":
-        from ...tx.models.cell_type_mean import CellTypeMeanModel
+        from ...tx.models.context_mean import ContextMeanPerturbationModel
 
-        ModelClass = CellTypeMeanModel
+        ModelClass = ContextMeanPerturbationModel
     elif model_class_name.lower() == "decoder_only":
         from ...tx.models.decoder_only import DecoderOnlyPerturbationModel
 

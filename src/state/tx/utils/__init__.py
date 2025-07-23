@@ -224,10 +224,10 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
-    elif model_type.lower() == "celltypemean":
-        from ...tx.models.cell_type_mean import CellTypeMeanModel
+    elif model_type.lower() == "celltypemean" or model_type.lower() == "context_mean":
+        from ...tx.models.context_mean import ContextMeanPerturbationModel
 
-        return CellTypeMeanModel(
+        return ContextMeanPerturbationModel(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
             hvg_dim=var_dims["hvg_dim"],
