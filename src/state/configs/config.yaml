@@ -4,7 +4,7 @@ defaults:
   - data: perturbation
   - model: pertsets
   - training: default
-  - wandb: abhinav
+  - wandb: default
   - _self_
   
 
