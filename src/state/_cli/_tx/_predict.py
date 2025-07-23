@@ -147,9 +147,9 @@ def run_tx_predict(args: ap.ArgumentParser):
 
         ModelClass = OldNeuralOTPerturbationModel
     elif model_class_name.lower() in ["neuralot", "pertsets"]:
-        from ...tx.models.pert_sets import PertSetsPerturbationModel
+        from ...tx.models.state_transition import StateTransitionPerturbationModel
 
-        ModelClass = PertSetsPerturbationModel
+        ModelClass = StateTransitionPerturbationModel
 
     elif model_class_name.lower() == "globalsimplesum":
         from ...tx.models.perturb_mean import PerturbMeanPerturbationModel

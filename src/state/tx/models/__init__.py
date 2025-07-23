@@ -4,7 +4,7 @@ from .decoder_only import DecoderOnlyPerturbationModel
 from .embed_sum import EmbedSumPerturbationModel
 from .perturb_mean import PerturbMeanPerturbationModel
 from .old_neural_ot import OldNeuralOTPerturbationModel
-from .pert_sets import PertSetsPerturbationModel
+from .state_transition import StateTransitionPerturbationModel
 from .pseudobulk import PseudobulkPerturbationModel
 
 __all__ = [
@@ -12,7 +12,7 @@ __all__ = [
     "PerturbMeanPerturbationModel",
     "ContextMeanPerturbationModel",
     "EmbedSumPerturbationModel",
-    "PertSetsPerturbationModel",
+    "StateTransitionPerturbationModel",
     "OldNeuralOTPerturbationModel",
     "DecoderOnlyPerturbationModel",
     "PseudobulkPerturbationModel",
