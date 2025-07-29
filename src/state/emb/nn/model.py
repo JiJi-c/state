@@ -106,7 +106,7 @@ class StateEmbeddingModel(L.LightningModule):
         collater=None,
     ):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['cfg'])  # Don't save cfg as hyperparameter
         self.cfg = cfg
         self.compiled = compiled
         self.model_type = "Transformer"
@@ -686,3 +686,7 @@ class StateEmbeddingModel(L.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "monitor": "train_loss", "interval": "step", "frequency": 1},
         }
+
+    def update_config(self, new_cfg):
+        """Update the model's config after loading from checkpoint."""
+        self.cfg = new_cfg
