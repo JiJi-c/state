@@ -6,7 +6,7 @@ def add_arguments_preprocess(parser: ap.ArgumentParser):
     """Add arguments for embedding preprocessing CLI."""
     parser.add_argument(
         "--profile-name", required=True,
-        help="Name for the new profile (used for both embeddings and dataset)"
+        help="Name for the new profile (used for embeddings and dataset)"
     )
     parser.add_argument(
         "--train-csv", required=True,
@@ -38,7 +38,6 @@ def run_emb_preprocess(args):
     import sys
     import pandas as pd
     import torch
-    import h5py as h5
     from omegaconf import OmegaConf
     from tqdm import tqdm
 
@@ -62,14 +61,16 @@ def run_emb_preprocess(args):
         if not isinstance(all_embeddings, dict):
             log.error("All embeddings file must be a dict mapping gene names to tensors")
             sys.exit(1)
-        # normalize keys to uppercase
+        # normalize keys
         all_embeddings = {str(k).upper(): v for k, v in all_embeddings.items()}
         emb_size = next(iter(all_embeddings.values())).shape[0]
         gene_to_idx = {g: i for i, g in enumerate(all_embeddings.keys())}
+        use_onehot = False
     else:
         all_embeddings = None
         gene_to_idx = {}
         emb_size = None
+        use_onehot = True
 
     # Load CSVs
     log.info("Loading training and validation CSV files...")
@@ -92,21 +93,19 @@ def run_emb_preprocess(args):
     # Collect dataset info and all genes
     dataset_info = {}
     all_genes = set()
-    gene_strategy = None
 
     def process_df(df, label):
-        nonlocal gene_strategy, all_genes, dataset_info
+        nonlocal all_genes, dataset_info
         for _, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {label}" ):
             name = row["names"]
             path = row["path"]
             if not os.path.exists(path):
                 log.error(f"Dataset file not found: {path}")
                 sys.exit(1)
-            # extract info
-            if gene_strategy is None:
-                gene_strategy = detect_gene_name_strategy(path)
-                log.info(f"Using gene field: {gene_strategy}")
-            num_cells, num_genes, genes = extract_dataset_info(path, gene_strategy)
+            # detect gene field per file
+            gene_field = detect_gene_name_strategy(path)
+            log.info(f"{label} {name}: using gene field '{gene_field}'")
+            num_cells, num_genes, genes = extract_dataset_info(path, gene_field)
             dataset_info[name] = {"num_cells": num_cells, "num_genes": num_genes, "genes": genes}
             all_genes.update(genes)
 
@@ -117,7 +116,7 @@ def run_emb_preprocess(args):
 
     # Create embeddings and masks
     valid_genes_masks = {}
-    if all_embeddings is None:
+    if use_onehot:
         log.info("Creating one-hot embeddings...")
         all_embeddings = create_onehot_embeddings(all_genes)
         emb_size = len(all_genes)
@@ -173,7 +172,7 @@ def run_emb_preprocess(args):
              args.config_file, args.profile_name, args.profile_name)
 
 
-def detect_gene_name_strategy(dataset_path, all_embeddings=None):
+def detect_gene_name_strategy(dataset_path):
     """Detect which var field under /var/ holds gene names."""
     import h5py as h5
     with h5.File(dataset_path, 'r') as f:
@@ -206,8 +205,7 @@ def extract_dataset_info(dataset_path, gene_field):
         # read genes
         grp = f['var'][gene_field]
         raw = grp['categories'][:] if 'categories' in grp else grp[:]
-        genes = [item.decode('utf-8').upper() if isinstance(item, (bytes,bytearray)) else str(item).upper()
-                 for item in raw]
+        genes = [item.decode('utf-8').upper() if isinstance(item, (bytes,bytearray)) else str(item).upper() for item in raw]
         if len(genes) != num_genes:
             raise ValueError(f"Gene count mismatch {len(genes)} vs {num_genes}")
     return num_cells, num_genes, genes
