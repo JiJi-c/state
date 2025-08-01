@@ -1,12 +1,18 @@
 import argparse as ap
 import os
-
+import logging
+import sys
+import pandas as pd
+import torch
+from omegaconf import OmegaConf
+from tqdm import tqdm
+import h5py as h5
 
 def add_arguments_preprocess(parser: ap.ArgumentParser):
     """Add arguments for embedding preprocessing CLI."""
     parser.add_argument(
         "--profile-name", required=True,
-        help="Name for the new profile (used for embeddings and dataset)"
+        help="Name for the new profile (used for both embeddings and dataset)"
     )
     parser.add_argument(
         "--train-csv", required=True,
@@ -34,13 +40,6 @@ def run_emb_preprocess(args):
     """
     Preprocess datasets and embeddings to create a new profile.
     """
-    import logging
-    import sys
-    import pandas as pd
-    import torch
-    from omegaconf import OmegaConf
-    from tqdm import tqdm
-
     log = logging.getLogger(__name__)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -61,7 +60,6 @@ def run_emb_preprocess(args):
         if not isinstance(all_embeddings, dict):
             log.error("All embeddings file must be a dict mapping gene names to tensors")
             sys.exit(1)
-        # normalize keys
         all_embeddings = {str(k).upper(): v for k, v in all_embeddings.items()}
         emb_size = next(iter(all_embeddings.values())).shape[0]
         gene_to_idx = {g: i for i, g in enumerate(all_embeddings.keys())}
@@ -81,32 +79,50 @@ def run_emb_preprocess(args):
         log.error(f"Error loading CSV files: {e}")
         sys.exit(1)
 
-    # Validate CSV columns
     for name, df in [("train", train_df), ("val", val_df)]:
         missing = set(["species", "path", "names"]) - set(df.columns)
         if missing:
             log.error(f"{name} CSV missing required columns: {missing}")
             sys.exit(1)
 
-    log.info(f"Processing {len(train_df)} training and {len(val_df)} validation datasets...")
+    log.info(f"Processing {len(train_df)} training datasets and {len(val_df)} validation datasets...")
 
-    # Collect dataset info and all genes
     dataset_info = {}
     all_genes = set()
 
     def process_df(df, label):
         nonlocal all_genes, dataset_info
-        for _, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {label}" ):
+        pbar = tqdm(df.iterrows(), total=len(df), desc=f"Processing {label}")
+        for _, row in pbar:
             name = row["names"]
             path = row["path"]
             if not os.path.exists(path):
                 log.error(f"Dataset file not found: {path}")
                 sys.exit(1)
-            # detect gene field per file
-            gene_field = detect_gene_name_strategy(path)
-            log.info(f"{label} {name}: using gene field '{gene_field}'")
+            gene_field = detect_gene_name_strategy(path, all_embeddings)
+            pbar.set_postfix({"name": name[:30], "field": gene_field})
             num_cells, num_genes, genes = extract_dataset_info(path, gene_field)
+
+            mapping = []
+            mask = []
+            for g in genes:
+                if use_onehot:
+                    mapping.append(gene_to_idx[g])
+                    mask.append(True)
+                else:
+                    if g in gene_to_idx:
+                        mapping.append(gene_to_idx[g])
+                        mask.append(True)
+                    else:
+                        mapping.append(-1)
+                        mask.append(False)
+
+            assert mask.count(False) == mapping.count(-1), \
+                f"Dataset {name}: mask False count != mapping -1 count"
+
             dataset_info[name] = {"num_cells": num_cells, "num_genes": num_genes, "genes": genes}
+            dataset_info[name]["mapping"] = torch.tensor(mapping, dtype=torch.long)
+            dataset_info[name]["mask"] = torch.tensor(mask, dtype=torch.bool)
             all_genes.update(genes)
 
     process_df(train_df, "training")
@@ -114,52 +130,35 @@ def run_emb_preprocess(args):
 
     log.info(f"Found {len(all_genes)} unique genes across datasets")
 
-    # Create embeddings and masks
-    valid_genes_masks = {}
     if use_onehot:
         log.info("Creating one-hot embeddings...")
         all_embeddings = create_onehot_embeddings(all_genes)
         emb_size = len(all_genes)
         gene_to_idx = {g: i for i, g in enumerate(sorted(all_genes))}
-        for name, info in dataset_info.items():
-            valid_genes_masks[name] = torch.ones(len(info["genes"]), dtype=torch.bool)
-    else:
-        missing = []
-        for name, info in dataset_info.items():
-            genes = info["genes"]
-            mask = torch.tensor([g in all_embeddings for g in genes], dtype=torch.bool)
-            valid_genes_masks[name] = mask
-            missing.extend([g for g, ok in zip(genes, mask) if not ok])
-        if missing:
-            log.error(f"Missing genes in embeddings: {sorted(set(missing))[:20]} (+{len(set(missing))-20})")
-            sys.exit(1)
 
-    # Build ds_emb_mapping
-    ds_emb_mapping = {
-        name: torch.tensor([gene_to_idx[g] for g in info["genes"]], dtype=torch.long)
-        for name, info in dataset_info.items()
-    }
+    embeddings_file = os.path.join(args.output_dir, f"all_embeddings_{args.profile_name}.pt")
+    torch.save(all_embeddings, embeddings_file)
+    log.info(f"Saved embeddings to {embeddings_file}")
 
-    # Save outputs
-    emb_file = os.path.join(args.output_dir, f"all_embeddings_{args.profile_name}.pt")
-    torch.save(all_embeddings, emb_file)
-    map_file = os.path.join(args.output_dir, f"ds_emb_mapping_{args.profile_name}.torch")
-    torch.save(ds_emb_mapping, map_file)
+    ds_map = {name: info["mapping"] for name, info in dataset_info.items()}
+    mapping_file = os.path.join(args.output_dir, f"ds_emb_mapping_{args.profile_name}.torch")
+    torch.save(ds_map, mapping_file)
+    log.info(f"Saved dataset mapping to {mapping_file}")
+
+    masks = {name: info["mask"] for name, info in dataset_info.items()}
     masks_file = os.path.join(args.output_dir, f"valid_genes_masks_{args.profile_name}.torch")
-    torch.save(valid_genes_masks, masks_file)
-    log.info("Saved embeddings, mapping, and masks")
+    torch.save(masks, masks_file)
+    log.info(f"Saved valid gene masks to {masks_file}")
 
-    # Write updated CSVs
     train_out = create_updated_csv(train_df, dataset_info, args.output_dir, f"train_{args.profile_name}.csv")
     val_out = create_updated_csv(val_df, dataset_info, args.output_dir, f"val_{args.profile_name}.csv")
 
-    # Update config
     total_ds = len(train_df) + len(val_df)
     update_config_file(
         args.config_file,
         args.profile_name,
-        emb_file,
-        map_file,
+        embeddings_file,
+        mapping_file,
         masks_file,
         train_out,
         val_out,
@@ -168,25 +167,56 @@ def run_emb_preprocess(args):
         total_ds,
     )
 
-    log.info("Preprocessing completed. Run: uv run state emb fit --conf %s embeddings.current=%s dataset.current=%s",
-             args.config_file, args.profile_name, args.profile_name)
+    log.info(
+        "Preprocessing completed. Run: uv run state emb fit --conf %s embeddings.current=%s dataset.current=%s",
+        args.config_file,
+        args.profile_name,
+        args.profile_name,
+    )
 
 
-def detect_gene_name_strategy(dataset_path):
-    """Detect which var field under /var/ holds gene names."""
-    import h5py as h5
+def detect_gene_name_strategy(dataset_path, all_embeddings=None):
+    """Detect which var field under /var/ holds gene names by max overlap."""
     with h5.File(dataset_path, 'r') as f:
         if 'var' not in f:
             raise ValueError(f"No var/ in {dataset_path}")
-        for fld in ['_index', 'gene_name', 'gene_symbols', 'feature_name', 'gene_id', 'symbol']:
-            if fld in f['var']:
-                return fld
-    raise ValueError(f"No gene field found in var/ of {dataset_path}")
+
+        # candidate fields in order of preference
+        fields = [fld for fld in (
+            '_index', 'gene_name', 'gene_symbols', 'feature_name', 'gene_id', 'symbol'
+        ) if fld in f['var']]
+        if not fields:
+            raise ValueError(f"No gene field found in var/ of {dataset_path}")
+
+        # if no embeddings provided, just pick the first one
+        if all_embeddings is None:
+            return fields[0]
+
+        best_field = fields[0]
+        best_count = -1
+
+        # for each candidate, count how many genes appear in all_embeddings
+        for fld in fields:
+            grp = f['var'][fld]
+            raw = grp['categories'][:] if 'categories' in grp else grp[:]
+            genes = [
+                item.decode('utf-8').upper() if isinstance(item, (bytes, bytearray))
+                else str(item).upper()
+                for item in raw
+            ]
+            # count overlap
+            match_count = sum(1 for g in genes if g in all_embeddings)
+
+            # pick the field with the highest overlap
+            if match_count > best_count:
+                best_count = match_count
+                best_field = fld
+
+        return best_field
 
 
 def extract_dataset_info(dataset_path, gene_field):
-    """Extract num_cells, num_genes, and uppercase gene list."""
-    import h5py as h5
+    """Extract num_cells, num_genes, and uppercase gene list, handling categorical codes correctly."""
     with h5.File(dataset_path, 'r') as f:
         X = f['X']
         attrs = dict(X.attrs)
@@ -200,20 +230,34 @@ def extract_dataset_info(dataset_path, gene_field):
             if hasattr(X, 'shape') and len(X.shape) == 2:
                 num_cells, num_genes = X.shape
             else:
-                num_cells = len(X['indptr'])-1
-                num_genes = int(X['indices'][:].max())+1
-        # read genes
+                num_cells = len(X['indptr']) - 1
+                num_genes = int(X['indices'][:].max()) + 1
+
         grp = f['var'][gene_field]
-        raw = grp['categories'][:] if 'categories' in grp else grp[:]
-        genes = [item.decode('utf-8').upper() if isinstance(item, (bytes,bytearray)) else str(item).upper() for item in raw]
+        # Handle categorical with codes
+        if 'categories' in grp and 'codes' in grp:
+            raw_cats = grp['categories'][:]
+            codes = grp['codes'][:]
+            cats = [
+                c.decode('utf-8').upper() if isinstance(c, (bytes, bytearray)) else str(c).upper()
+                for c in raw_cats
+            ]
+            genes = [cats[int(code)] for code in codes]
+        else:
+            raw = grp['categories'][:] if 'categories' in grp else grp[:]
+            genes = [
+                item.decode('utf-8').upper() if isinstance(item, (bytes, bytearray)) else str(item).upper()
+                for item in raw
+            ]
+
         if len(genes) != num_genes:
             raise ValueError(f"Gene count mismatch {len(genes)} vs {num_genes}")
+
     return num_cells, num_genes, genes
 
 
 def create_onehot_embeddings(all_genes):
     """Make one-hot embeddings for each gene."""
-    import torch
     genes_sorted = sorted(all_genes)
     emb = {}
     for i, g in enumerate(genes_sorted):
@@ -223,12 +267,11 @@ def create_onehot_embeddings(all_genes):
     return emb
 
 
-def create_updated_csv(df, info_map, out_dir, filename):
+def create_updated_csv(df, dataset_info, out_dir, filename):
     """Add num_cells, num_genes, groupid_for_de and save."""
-    import pandas as pd
     out = df.copy()
-    out['num_cells'] = out['names'].map(lambda n: info_map[n]['num_cells'])
-    out['num_genes'] = out['names'].map(lambda n: info_map[n]['num_genes'])
+    out['num_cells'] = out['names'].map(lambda n: dataset_info[n]['num_cells'])
+    out['num_genes'] = out['names'].map(lambda n: dataset_info[n]['num_genes'])
     out['groupid_for_de'] = 'leiden'
     path = os.path.join(out_dir, filename)
     out.to_csv(path, index=False)
@@ -240,7 +283,6 @@ def update_config_file(config_path, profile_name,
                        train_csv, val_csv,
                        embedding_size, num_embeddings, num_datasets):
     """Insert new profile into config YAML."""
-    from omegaconf import OmegaConf
     if os.path.exists(config_path):
         cfg = OmegaConf.load(config_path)
     else:
@@ -257,11 +299,18 @@ def update_config_file(config_path, profile_name,
         'num': num_embeddings,
     }
     cfg.dataset[profile_name] = {
-        'ds_type': 'h5ad',
+        'ds_type': 'filtered_h5ad',
         'train': train_csv,
         'val': val_csv,
-        'filter': False,
+        'filter': True,
         'num_datasets': num_datasets,
     }
     with open(config_path, 'w') as f:
         OmegaConf.save(cfg, f)
+
+
+if __name__ == '__main__':
+    parser = ap.ArgumentParser()
+    add_arguments_preprocess(parser)
+    args = parser.parse_args()
+    run_emb_preprocess(args)
