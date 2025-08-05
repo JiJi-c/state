@@ -161,7 +161,7 @@ class StateEmbeddingModel(L.LightningModule):
 
         if getattr(self.cfg.model, "dataset_correction", False):
             self.dataset_token = nn.Parameter(torch.randn(1, token_dim))
-            self.dataset_embedder = nn.Linear(output_dim, 10)
+            self.dataset_embedder = nn.Linear(output_dim, self.z_dim_ds)
 
             # Assume self.cfg.model.num_datasets is set to the number of unique datasets.
             num_dataset = get_dataset_cfg(self.cfg).num_datasets
@@ -389,32 +389,7 @@ class StateEmbeddingModel(L.LightningModule):
         self.log("validation/val_loss", loss)
         return loss
 
-    def on_validation_epoch_end(self):
-        self.eval()
-        current_step = self.global_step
-        try:
-            current_step = self.global_step
-            if self.global_rank == 0 and self.cfg.validations.diff_exp.enable:
-                interval = self.cfg.validations.diff_exp.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                if current_step - self._last_val_de_check >= interval:
-                    self._compute_val_de()
-                    self._last_val_de_check = current_step
-            self.trainer.strategy.barrier()
-
-            if self.global_rank == 0 and self.cfg.validations.perturbation.enable:
-                interval = (
-                    self.cfg.validations.perturbation.eval_interval_multiple * self.cfg.experiment.val_check_interval
-                )
-                if current_step - self._last_val_perturbation_check >= interval:
-                    self._compute_val_perturbation(current_step)
-                    self._last_val_perturbation_check = current_step
-            self.trainer.strategy.barrier()
-
-        finally:
-            self.train()
-
     def configure_optimizers(self):
-        # Marcel Code
         max_lr = self.max_lr
         optimizer = torch.optim.AdamW(self.parameters(), lr=max_lr, weight_decay=self.cfg.optimizer.weight_decay)
         total_steps = self.trainer.estimated_stepping_batches * 2  # not sure why need to do this
