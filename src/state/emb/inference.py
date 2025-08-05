@@ -254,7 +254,7 @@ class Inference:
         gene_embeds = self.get_gene_embedding(genes)
         with torch.autocast(device_type=device_type, dtype=precision):
             for i in tqdm(range(0, cell_embs.size(0), batch_size), total=int(cell_embs.size(0) // batch_size)):
-            cell_embeds_batch = cell_embs[i : i + batch_size]
+                cell_embeds_batch = cell_embs[i : i + batch_size]
                 task_counts = torch.full((cell_embeds_batch.shape[0],), read_depth, device=self.model.device, dtype=precision)
 
                 ds_emb = cell_embeds_batch[:, -self.model.z_dim_ds:] # last ten columns are the dataset embeddings
