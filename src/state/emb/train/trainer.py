@@ -11,7 +11,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from ..nn.model import StateEmbeddingModel
-from ..data import H5adSentenceDataset, GeneFilterDataset,VCIDatasetSentenceCollator
+from ..data import H5adSentenceDataset, VCIDatasetSentenceCollator
 from ..train.callbacks import LogLR, ProfilerCallback, ResumeCallback, EMACallback, PerfProfilerCallback
 from ..utils import get_latest_checkpoint, get_embedding_cfg, get_dataset_cfg
 
@@ -45,8 +45,6 @@ def main(cfg):
 
     if get_dataset_cfg(cfg).ds_type == "h5ad":
         DatasetClass = H5adSentenceDataset
-    elif get_dataset_cfg(cfg).ds_type == 'filtered_h5ad':
-        DatasetClass = GeneFilterDataset
     else:
         raise ValueError(f"Unknown dataset type: {get_dataset_cfg(cfg).ds_type}")
 

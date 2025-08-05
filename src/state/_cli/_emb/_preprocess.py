@@ -299,7 +299,7 @@ def update_config_file(config_path, profile_name,
         'num': num_embeddings,
     }
     cfg.dataset[profile_name] = {
-        'ds_type': 'filtered_h5ad',
+        'ds_type': 'h5ad',
         'train': train_csv,
         'val': val_csv,
         'filter': True,

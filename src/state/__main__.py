@@ -10,6 +10,7 @@ from ._cli import (
     run_emb_transform,
     run_emb_query,
     run_emb_preprocess,
+    run_emb_eval,
     run_tx_infer,
     run_tx_predict,
     run_tx_preprocess_infer,
@@ -106,6 +107,8 @@ def main():
                     run_emb_query(args)
                 case "preprocess":
                     run_emb_preprocess(args)
+                case "eval":
+                    run_emb_eval(args)
         case "tx":
             match args.subcommand:
                 case "train":
