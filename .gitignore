@@ -6,8 +6,6 @@ lightning_logs/
 outputs/
 log/
 uv.lock
-src/state/configs/wandb/*
-!src/state/configs/wandb/defaults.yaml
 tmp/
 notebooks/
 *.sif
