@@ -1,5 +1,6 @@
 import argparse as ap
 import logging
+from typing import Optional
 
 import anndata as ad
 import numpy as np
@@ -22,13 +23,13 @@ def add_arguments_preprocess_infer(parser: ap.ArgumentParser):
         help="Path to output preprocessed AnnData file (.h5ad)",
     )
     parser.add_argument(
-        "--control_condition",
+        "--control-condition",
         type=str,
         required=True,
         help="Control condition identifier (e.g., \"[('DMSO_TF', 0.0, 'uM')]\")",
     )
     parser.add_argument(
-        "--pert_col",
+        "--pert-col",
         type=str,
         required=True,
         help="Column name containing perturbation information (e.g., 'drugname_drugconc')",
@@ -39,6 +40,12 @@ def add_arguments_preprocess_infer(parser: ap.ArgumentParser):
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
+    parser.add_argument(
+        "--embed-key",
+        type=str,
+        required=False,
+        help="Data source to paste basal expression from",
+    )
 
 
 def run_tx_preprocess_infer(
@@ -46,6 +53,7 @@ def run_tx_preprocess_infer(
     output_path: str, 
     control_condition: str, 
     pert_col: str, 
+    embed_key: Optional[str] = None,
     seed: int = 42
 ):
     """
@@ -60,6 +68,7 @@ def run_tx_preprocess_infer(
         output_path: Path to save preprocessed AnnData file
         control_condition: Control condition identifier
         pert_col: Column name containing perturbation information
+        embed_key: Optional key in obsm to use instead of X
         seed: Random seed for reproducibility
     """
     logger.info(f"Loading AnnData from {adata_path}")
@@ -111,7 +120,10 @@ def run_tx_preprocess_infer(
             sampled_control_indices = np.random.choice(control_indices, size=n_pert_cells, replace=True)
             
             # Replace the expression data
-            adata_modified.X[pert_indices] = adata.X[sampled_control_indices]
+            if embed_key is not None:
+                adata_modified.obsm[embed_key][pert_indices] = adata.obsm[embed_key][sampled_control_indices]
+            else:
+                adata_modified.X[pert_indices] = adata.X[sampled_control_indices]
             total_replaced_cells += n_pert_cells
             
             # Print progress for every 50 perturbations
@@ -129,6 +141,10 @@ def run_tx_preprocess_infer(
     logger.info(f"  - Control cells: {len(control_indices)} (unchanged)")
     logger.info(f"  - Perturbed cells: {total_replaced_cells} (replaced with control expression)")
     logger.info(f"  - Perturbations processed: {len(non_control_perturbations)}")
+    if embed_key is not None:
+        logger.info(f"  - Using obsm key: {embed_key}")
+    else:
+        logger.info("  - Using expression matrix (X)")
     logger.info("")
     logger.info("USAGE:")
     logger.info("  The output file contains cells with control expression but original")
