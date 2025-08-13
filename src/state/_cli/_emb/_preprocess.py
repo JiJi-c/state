@@ -96,34 +96,37 @@ def run_emb_preprocess(args):
         for _, row in pbar:
             name = row["names"]
             path = row["path"]
-            if not os.path.exists(path):
-                log.error(f"Dataset file not found: {path}")
-                sys.exit(1)
-            gene_field = detect_gene_name_strategy(path, all_embeddings)
-            pbar.set_postfix({"name": name[:30], "field": gene_field})
-            num_cells, num_genes, genes = extract_dataset_info(path, gene_field)
+            try:
+                if not os.path.exists(path):
+                    log.error(f"Dataset file not found: {path}")
+                    sys.exit(1)
+                gene_field = detect_gene_name_strategy(path, all_embeddings)
+                pbar.set_postfix({"name": name[:30], "field": gene_field})
+                num_cells, num_genes, genes = extract_dataset_info(path, gene_field)
 
-            mapping = []
-            mask = []
-            for g in genes:
-                if use_onehot:
-                    mapping.append(gene_to_idx[g])
-                    mask.append(True)
-                else:
-                    if g in gene_to_idx:
+                mapping = []
+                mask = []
+                for g in genes:
+                    if use_onehot:
                         mapping.append(gene_to_idx[g])
                         mask.append(True)
                     else:
-                        mapping.append(-1)
-                        mask.append(False)
+                        if g in gene_to_idx:
+                            mapping.append(gene_to_idx[g])
+                            mask.append(True)
+                        else:
+                            mapping.append(-1)
+                            mask.append(False)
 
-            assert mask.count(False) == mapping.count(-1), \
-                f"Dataset {name}: mask False count != mapping -1 count"
+                assert mask.count(False) == mapping.count(-1), \
+                    f"Dataset {name}: mask False count != mapping -1 count"
 
-            dataset_info[name] = {"num_cells": num_cells, "num_genes": num_genes, "genes": genes}
-            dataset_info[name]["mapping"] = torch.tensor(mapping, dtype=torch.long)
-            dataset_info[name]["mask"] = torch.tensor(mask, dtype=torch.bool)
-            all_genes.update(genes)
+                dataset_info[name] = {"num_cells": num_cells, "num_genes": num_genes, "genes": genes}
+                dataset_info[name]["mapping"] = torch.tensor(mapping, dtype=torch.long)
+                dataset_info[name]["mask"] = torch.tensor(mask, dtype=torch.bool)
+                all_genes.update(genes)
+            except:
+                print(f"Skipping: {path}")
 
     process_df(train_df, "training")
     process_df(val_df, "validation")
