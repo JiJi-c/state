@@ -94,11 +94,7 @@ class Inference:
             raise ValueError("Model already initialized")
 
         # Load and initialize model for eval
-        self.model = StateEmbeddingModel.load_from_checkpoint(checkpoint, dropout=0.0, strict=False)
-        
-        # Ensure model uses the provided config, not the stored one
-        if self._vci_conf is not None:
-            self.model.update_config(self._vci_conf)
+        self.model = StateEmbeddingModel.load_from_checkpoint(checkpoint, dropout=0.0, strict=False, cfg=self._vci_conf)
         
         # Convert model to appropriate precision for faster inference
         device_type = 'cuda' if torch.cuda.is_available() else 'cpu'

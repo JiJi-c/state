@@ -595,6 +595,9 @@ class VCIDatasetSentenceCollator(object):
             # make sure that the CLS token is never masked out.
             mask[c, 0] = False
 
+            assert not task_counts.isnan().any()
+            assert not counts.isnan().any()
+
         return (
             cell_sentences,
             task_sentence,

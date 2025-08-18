@@ -5,6 +5,7 @@ def add_arguments_transform(parser: ap.ArgumentParser):
     """Add arguments for state embedding CLI."""
     parser.add_argument("--model-folder", required=True, help="Path to the model checkpoint folder")
     parser.add_argument("--checkpoint", required=False, help="Path to the specific model checkpoint")
+    parser.add_argument("--config", required=False, help="Path to config override")
     parser.add_argument("--input", required=True, help="Path to input anndata file (h5ad)")
     parser.add_argument("--output", required=False, help="Path to output embedded anndata file (h5ad)")
     parser.add_argument("--embed-key", default="X_state", help="Name of key to store embeddings")
@@ -51,7 +52,7 @@ def run_emb_transform(args: ap.ArgumentParser):
     embedding_file = os.path.join(args.model_folder, "protein_embeddings.pt")
     protein_embeds = torch.load(embedding_file, weights_only=False, map_location="cpu")
 
-    config_file = os.path.join(args.model_folder, "config.yaml")
+    config_file = args.config or os.path.join(args.model_folder, "config.yaml")
     conf = OmegaConf.load(config_file)
 
     inferer = Inference(cfg=conf, protein_embeds=protein_embeds)
