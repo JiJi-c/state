@@ -226,12 +226,11 @@ def run_tx_infer(args):
     # Concatenate all predictions
     preds_np = np.concatenate(all_preds, axis=0)
 
-    # Save predictions to AnnData
-    # if embed_key is not None, we need to replace the embeddings with the predictions
-    if args.embed_key is not None:
+    if args.embed_key in adata.obsm:
         adata.obsm[args.embed_key] = preds_np
     else:
         adata.X = preds_np
+        
     output_path = args.output or args.adata.replace(".h5ad", "_with_preds.h5ad")
     adata.write_h5ad(output_path)
     logger.info(f"Saved predictions to {output_path} (in adata.X)")
