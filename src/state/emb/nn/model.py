@@ -84,8 +84,8 @@ class StateEmbeddingModel(L.LightningModule):
         collater=None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=['cfg'])  # Don't save cfg as hyperparameter
         self.cfg = cfg
+        self.save_hyperparameters()
         self.compiled = compiled
         self.model_type = "Transformer"
         self.cls_token = nn.Parameter(torch.randn(1, token_dim))
@@ -310,7 +310,16 @@ class StateEmbeddingModel(L.LightningModule):
         z = embs.unsqueeze(1).repeat(1, X.shape[1], 1)  # CLS token
 
         if self.z_dim_rd == 1:
-            mu = torch.nanmean(Y.masked_fill(Y == 0, float("nan")), dim=1) if self.cfg.model.rda else None
+            mu = (
+                torch.nan_to_num(
+                    torch.nanmean(
+                        Y.float().masked_fill(Y == 0, float("nan")),  # ignore zeros
+                        dim=1
+                    ),
+                    nan=0.0  # if all were 0→NaN, make it 0
+                )
+                if self.cfg.model.rda else None
+            )
             reshaped_counts = mu.unsqueeze(1).unsqueeze(2)
             reshaped_counts = reshaped_counts.repeat(1, X.shape[1], 1)
 
