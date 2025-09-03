@@ -1,0 +1,25 @@
+# 使用model:[state_sm,grpo]来配置model,在grpo中存储grpomode 
+# 在grpo的grpo_config下存储gaussian_decoder_hidden_dim等参数
+
+kwargs:
+  grpo_mode: true
+  grpo_config:
+    # Gaussian Decoder 配置
+    decoder_hidden_dim: 512
+    
+    # GRPO 采样和训练参数
+    k_samples: 16           # 每次采样的候选数量
+    ppo_eps: 0.2           # PPO clipping 参数
+    alpha_kl: 0.1          # KL散度损失权重
+    alpha_ent: 0.01        # 熵正则化权重
+    alpha_sup: 1.0         # 监督学习损失权重
+    
+    # 奖励函数权重
+    reward_weights:
+      mae: 1.0             # Mean Absolute Error 奖励权重
+      pds: 1.0             # Perturbation Discrimination Score 权重
+      des: 1.0             # Differential Expression Score 权重
+    
+    # 其他GRPO参数
+    min_perts_for_pds: 3   # PDS计算的最小扰动数
+    des_k_percentage: 0.05 # DES计算的top-k基因比例

@@ -8,6 +8,10 @@ import os
 from lightning.pytorch.callbacks import ModelCheckpoint
 from os.path import join
 
+# SwanLab
+from swanlab.integration.pytorch_lightning import SwanLabLogger
+
+
 
 class RobustCSVLogger(BaseCSVLogger):
     """
@@ -84,10 +88,13 @@ def get_loggers(
     wandb_entity: str,
     local_wandb_dir: str,
     use_wandb: bool = False,
+    use_swanlab: bool = False,  
+    swanlab_project: str = None,
+    swanlab_config: dict = None,  # SwanLab完整配置
     use_csv: bool = True,  # Enable CSV by default with robust logger
     cfg: dict = None,
 ):
-    """Set up logging to local CSV and optionally WandB."""
+    """Set up logging to local CSV and optionally WandB/SwanLab."""
     loggers = []
     
     # Use robust CSV logger that handles dynamic metrics
@@ -117,6 +124,22 @@ def get_loggers(
         except Exception as e:
             print(f"Warning: Failed to initialize wandb logger: {e}")
             print("Continuing without wandb logging.")
+
+    # Add SwanLab
+    if use_swanlab:      
+        swanlab_cfg = swanlab_config or {}
+        swanlab_logger = SwanLabLogger(
+            project=swanlab_project or wandb_project,
+            experiment_name=name,
+            description=swanlab_cfg.get("description", f"GRPO实验: {name}"),
+            workspace=swanlab_cfg.get("workspace"),
+            tags=swanlab_cfg.get("tags", []),
+            config=cfg
+        )
+        loggers.append(swanlab_logger)
+        print(f"SwanLab官方Logger已初始化，项目: {swanlab_project or wandb_project}")
+
+
 
     # Ensure at least one logger is present
     if not loggers:

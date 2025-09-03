@@ -1,4 +1,5 @@
 import argparse as ap
+from cgi import print_exception
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -24,10 +25,16 @@ def run_tx_train(cfg: DictConfig):
     from cell_load.data_modules import PerturbationDataModule
     from cell_load.utils.modules import get_datamodule
     from lightning.pytorch.loggers import WandbLogger
+    
+    from swanlab.integration.pytorch_lightning import SwanLabLogger
     from lightning.pytorch.plugins.precision import MixedPrecision
 
     from ...tx.callbacks import BatchSpeedMonitorCallback
     from ...tx.utils import get_checkpoint_callbacks, get_lightning_module, get_loggers
+    import torch.multiprocessing as mp
+
+    mp.set_start_method('spawn', force=True)
+    print("multiprocessing start method set to 'spawn'")
 
     logger = logging.getLogger(__name__)
     torch.set_float32_matmul_precision("medium")
@@ -103,17 +110,24 @@ def run_tx_train(cfg: DictConfig):
     elif cfg["model"]["name"].lower() == "scvi":
         cfg["data"]["kwargs"]["transform"] = None
 
+    model_kwargs = cfg.get("model", {}).get("kwargs", {})
+
+    cfg["data"]["kwargs"]["drop_last"] = True
+    cfg["data"]["kwargs"]["should_yield_control_cells"] = False
     data_module: PerturbationDataModule = get_datamodule(
         cfg["data"]["name"],
         cfg["data"]["kwargs"],
         batch_size=cfg["training"]["batch_size"],
         cell_sentence_len=sentence_len,
     )
-
+    
     with open(join(run_output_dir, "data_module.torch"), "wb") as f:
         # TODO-Abhi: only save necessary data
         data_module.save_state(f)
-
+        
+    if cfg["data"]["kwargs"]["store_raw_expression"] is True:
+        data_module.store_raw_expression = True
+        
     data_module.setup(stage="fit")
     dl = data_module.train_dataloader()
     print("num_workers:", dl.num_workers)
@@ -176,6 +190,9 @@ def run_tx_train(cfg: DictConfig):
         wandb_entity=cfg["wandb"]["entity"],
         local_wandb_dir=cfg["wandb"]["local_wandb_dir"],
         use_wandb=cfg["use_wandb"],
+        use_swanlab=cfg.get("use_swanlab", False),
+        swanlab_project=cfg["swanlab"]["project"] if cfg.get("use_swanlab") else None,
+        swanlab_config=cfg.get("swanlab", {}) if cfg.get("use_swanlab") else {},
         cfg=cfg,
     )
 
@@ -187,7 +204,15 @@ def run_tx_train(cfg: DictConfig):
             with open(wandb_info_path, "w") as f:
                 f.write(lg.experiment.path)
             break
-
+        elif SwanLabLogger and isinstance(lg, SwanLabLogger):
+            # SwanLab官方Logger - 简洁的信息保存
+            swanlab_info_path = os.path.join(run_output_dir, "swanlab_path.txt")
+            with open(swanlab_info_path, "w") as f:
+                project = getattr(lg, 'project', 'unknown')
+                name = getattr(lg, 'name', 'unknown')
+                version = getattr(lg, 'version', 'unknown')
+                f.write(f"project: {project}, name: {name}, version: {version}")
+            break
     # Set up callbacks
     ckpt_callbacks = get_checkpoint_callbacks(
         cfg["output_dir"],
@@ -215,11 +240,11 @@ def run_tx_train(cfg: DictConfig):
         accelerator = "gpu"
     else:
         accelerator = "cpu"
-    
+    devices  = cfg["training"].get("devices", 2)    
     # Decide on trainer params
     trainer_kwargs = dict(
         accelerator=accelerator,
-        devices=1,
+        devices=devices,
         max_steps=cfg["training"]["max_steps"],  # for normal models
         check_val_every_n_epoch=None,
         val_check_interval=cfg["training"]["val_freq"],
@@ -227,7 +252,10 @@ def run_tx_train(cfg: DictConfig):
         plugins=plugins,
         callbacks=callbacks,
         gradient_clip_val=cfg["training"]["gradient_clip_val"] if cfg["model"]["name"].lower() != "cpa" else None,
-    )
+        use_distributed_sampler=False,
+        log_every_n_steps=1,
+        num_sanity_val_steps=0,
+        )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
     if cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum" or cfg["model"]["name"].lower() == "perturb_mean" or cfg["model"]["name"].lower() == "context_mean":
@@ -235,10 +263,17 @@ def run_tx_train(cfg: DictConfig):
         # delete max_steps to avoid conflicts
         del trainer_kwargs["max_steps"]
 
+    precision_cfg = cfg["training"].get("precision", None)
+    if precision_cfg is not None:
+        trainer_kwargs["precision"] = precision_cfg
+        
     # Build trainer
     print(f"Building trainer with kwargs: {trainer_kwargs}")
+
     trainer = pl.Trainer(**trainer_kwargs)
+
     print("Trainer built successfully")
+
 
     # Load checkpoint if exists
     checkpoint_path = join(ckpt_callbacks[0].dirpath, "last.ckpt")
@@ -314,18 +349,26 @@ def run_tx_train(cfg: DictConfig):
                     activation=model.activation_class,
                 )
 
+        
         # Filter out mismatched size parameters
         filtered_state = {}
         for name, param in checkpoint_state.items():
-            if name in model_state:
-                if param.shape == model_state[name].shape:
-                    filtered_state[name] = param
+            target_name = name
+            if model.grpo_mode:
+                if name.startswith("project_out."):
+                    target_name = f"gaussian_decoder.{name}"
+                elif name.startswith("final_down_then_up."):
+                    target_name = name.replace("final_down_then_up", "gaussian_decoder.mean_head")
+            
+            if target_name in model_state:
+                if param.shape == model_state[target_name].shape:
+                    filtered_state[target_name] = param
                 else:
                     print(
-                        f"Skipping parameter {name} due to shape mismatch: checkpoint={param.shape}, model={model_state[name].shape}"
+                        f"Skipping parameter {target_name} due to shape mismatch: checkpoint={param.shape}, model={model_state[target_name].shape}"
                     )
             else:
-                print(f"Skipping parameter {name} as it doesn't exist in the current model")
+                print(f"Skipping parameter {target_name} as it doesn't exist in the current model")
 
         # Load the filtered state dict
         model.load_state_dict(filtered_state, strict=False)
