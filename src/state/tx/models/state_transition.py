@@ -18,7 +18,7 @@ from .decoders import FinetuneVCICountsDecoder
 from .decoders_nb import NBDecoder, nb_nll
 from .utils import build_mlp, get_activation_class, get_transformer_backbone
 from .decoders_gaussian import GaussianDecoder, GaussianDecoder_v2
-from ._reward import RewardEvaluator
+from .new_reward import RewardEvaluator
 #from ._reward_official import MetricsEvaluator
 logger = logging.getLogger(__name__)
 
@@ -592,64 +592,43 @@ class StateTransitionPerturbationModel(PerturbationModel):
         return total_loss
 
     def _grpo_training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
-        """GRPO训练步骤"""
+        """GRPO training step"""
         confidence_pred = None
         if self.confidence_token is not None:
             mu, log_sigma, confidence_pred = self.forward(batch, padded=padded)
         else:
             mu, log_sigma = self.forward(batch, padded=padded)
         
-        # 2) Normalize shapes so we always operate on [N, G] where N=B*S (or N=B if 2D)
-        # if mu.dim() == 3:
-        B, S, G = mu.shape
-        mu_flat = mu.reshape(-1, G)                 # [B*S, G]
-        log_sigma_flat = log_sigma.reshape(-1, G)   # [B*S, G]
+        B, L, G = mu.shape
 
-        # Expand labels and basals across sequence dimension, then flatten to [B*S, G]
-        
-
-        # Build pert indices of length N=B*S (repeat each cell's perturbation S times)
-        
-
-        # 3) Sample K candidates from current policy: returns [K, N, G], [K, N]
-        y_samples, logp_new = self.gaussian_decoder.sample(mu_flat, log_sigma_flat, k=self.k_samples)
-
-        # 4) Compute rewards grouped by perturbation
-        y_real = batch["pert_cell_counts"]
-        basal_cells = batch["ctrl_cell_counts"]
+        y_samples, logp_new = self.gaussian_decoder.sample(mu, log_sigma, k=self.k_samples)   # [K,B,L,G]  [K,B,L]
+        y_real = batch["pert_cell_counts"].reshape(-1, L, G)
+        basal_cells = batch["ctrl_cell_counts"].reshape(-1, L, G)
         pert_names = batch["pert_name"]
-        with torch.no_grad():   
-            # R, mae_r, pds_r, des_r ,local_perts_num = aggregate_rewards(
-            #     y_samples=y_samples.detach(),      # [K, N, G]
-            #     y_real=y_real.detach(),            # [N, G]
-            #     basal_cells=basal_cells.detach(),  # [N, G]
-            #     batch=batch,              # contains pert_indices: [N]
-            #     reward_weights=self.reward_weights,
-            #     min_perts_for_pds=self.min_perts_for_pds,
-            #     k_percentage=self.k_percentage,
-            # ) final_rewards, mae_r, pds_r, des_r, M
-            R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
-                y_samples=y_samples.detach(),      # [K, N, G]
-                y_real=y_real.detach(),            # [N, G]
-                basal_cells=basal_cells.detach(),  # [N, G]
-                pert_names=pert_names,         # [N]
-            )
 
-        A = self._grpo_advantage(R)  # [K, N]
+        with torch.no_grad():
+            R, pds_r, mae_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
+                y_samples=y_samples.detach(),      # [K, B, L, G]
+                y_real=y_real.detach(),            # [B, L, G]
+                basal_cells=basal_cells.detach(),  # [B, L, G]
+                pert_names=pert_names,         # [B*L]
+            )   
+
+        A = self._grpo_advantage(R)  # [K, B, L]
         
-        if self.mu_old_buf is None or self.mu_old_buf.shape[0] != mu_flat.shape[0]:
+        if self.mu_old_buf is None :
             logp_old = logp_new.detach()
-            mu_old_use, logsig_old_use = mu_flat.detach(), log_sigma_flat.detach()
+            mu_old_use, logsig_old_use = mu.detach(), log_sigma.detach()
         else:
             with torch.no_grad():
                 dist_old = Normal(self.mu_old_buf, self.logsig_old_buf.exp())
-                logp_old = dist_old.log_prob(y_samples).sum(dim=-1)  # [K, N]
+                logp_old = dist_old.log_prob(y_samples).sum(dim=-1)  # [K, B, L]
             mu_old_use, logsig_old_use = self.mu_old_buf, self.logsig_old_buf
         
-        ppo_loss = self._ppo_clip_loss(logp_new, logp_old, A)
-        kl_loss = self._gaussian_kl(mu_flat, log_sigma_flat, mu_old_use, logsig_old_use)
-        entropy = (log_sigma_flat + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
-        loss_sup = F.l1_loss(mu_flat, y_real)
+        ppo_loss = self._ppo_clip_loss(logp_new, logp_old, A)   
+        kl_loss = self._gaussian_kl(mu, log_sigma, mu_old_use, logsig_old_use)
+        entropy = (log_sigma + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
+        loss_sup = F.l1_loss(mu, y_real)
 
         loss = (
             ppo_loss
@@ -657,21 +636,20 @@ class StateTransitionPerturbationModel(PerturbationModel):
             - self.alpha_ent * entropy
             + self.alpha_sup * loss_sup
         )
-        
-        # 8) Update old-policy buffers for next step
+
         with torch.no_grad():
-            self.mu_old_buf = mu_flat.detach().clone()
-            self.logsig_old_buf = log_sigma_flat.detach().clone()
+            self.mu_old_buf = mu.detach().clone()
+            self.logsig_old_buf = log_sigma.detach().clone()
         
-        # 9) Logging - 修改为每步记录
+        # 9) Logging 
         self.log("train/total_loss", loss, on_step=True, on_epoch=False)
         self.log("train/ppo_loss", ppo_loss, on_step=True, on_epoch=False)
         self.log("train/kl_loss", kl_loss, on_step=True, on_epoch=False)
         self.log("train/entropy", entropy, on_step=True, on_epoch=False)
         self.log("train/supervised_loss", loss_sup, on_step=True, on_epoch=False)
-        #self.log("train/mae_reward", mae_r.mean(), on_step=True, on_epoch=False)
+        self.log("train/mae_reward", mae_r.mean(), on_step=True, on_epoch=False)
         self.log("train/pds_reward", pds_r.mean(), on_step=True, on_epoch=False)
-        self.log("train/des_reward", des_r.mean(), on_step=True, on_epoch=False)
+        # self.log("train/des_reward", des_r.mean(), on_step=True, on_epoch=False)
         self.log("train/total_reward", R.mean(), on_step=True, on_epoch=False)
         self.log("train/local_perts_num", local_perts_num, on_step=True, on_epoch=False)
 
@@ -688,7 +666,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
         return loss
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
-        """训练步骤的统一入口"""
+        """training step"""
         if self.grpo_mode:
             return self._grpo_training_step(batch, batch_idx, padded)
         else:
@@ -696,8 +674,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
     
     def _grpo_validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        """GRPO validation step logic"""
-        
+        """GRPO validation step"""
         with torch.no_grad():
             # 1) 前向传播获得mu, log_sigma
             confidence_pred = None
@@ -707,53 +684,36 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 mu, log_sigma = self.forward(batch)
             
             # 2) 标准化形状处理，和训练保持一致
-            # if mu.dim() == 3:
-            B, S, G = mu.shape
-            mu_flat = mu.reshape(-1, G)                 # [B*S, G]
-            log_sigma_flat = log_sigma.reshape(-1, G)   # [B*S, G]
+            B, L, G = mu.shape
 
-            y_real = batch["pert_cell_counts"]
-            basal_cells = batch["ctrl_cell_counts"]
-
-            # 构建pert索引
+            y_real = batch["pert_cell_counts"].reshape(-1, L, G)
+            basal_cells = batch["ctrl_cell_counts"].reshape(-1, L, G)
             pert_names = batch["pert_name"]
-            # else:
-            #     B, G = mu.shape
-            #     mu_flat = mu
-            #     log_sigma_flat = log_sigma
-            #     y_real = batch["pert_cell_counts"]           # [N, G]
-            #     basal_cells = batch["ctrl_cell_counts"]      # [N, G]
-            #     pert_indices = torch.tensor(
-            #         [self.pert_to_idx.get(name, 0) for name in batch["pert_name"]],
-            #         device=self.device,
-            #         dtype=torch.long,
-            #     )  
-        
 
             # 3) 采样K个候选
-            y_samples, logp_new = self.gaussian_decoder.sample(mu_flat, log_sigma_flat, k=self.k_samples)
+            y_samples, logp_new = self.gaussian_decoder.sample(mu, log_sigma, k=self.k_samples)
             
             # 4) 计算奖励
-            R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
-                y_samples=y_samples.detach(),      # [K, N, G]
-                y_real=y_real.detach(),            # [N, G]
-                basal_cells=basal_cells.detach(),  # [N, G]
-                pert_names=pert_names,         # [N]
+            R, pds_r, mae_r, local_perts_num = self.reward_evaluator.aggregate_rewards_hpdex(
+                y_samples=y_samples.detach(),      # [K, B, L, G]
+                y_real=y_real.detach(),            # [B, L, G]
+                basal_cells=basal_cells.detach(),  # [B, L, G]
+                pert_names=pert_names,         # [B*L]
             )
             
             # 5) 计算损失
-            loss_sup = F.l1_loss(mu_flat, y_real) 
-            entropy = (log_sigma_flat + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
+            loss_sup = F.l1_loss(mu, y_real) 
+            entropy = (log_sigma + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
             
             # 6) 记录验证指标
             self.log("val_loss", loss_sup) 
             self.log("val/entropy", entropy)
             #self.log("val/mae_reward", mae_r.mean())
             self.log("val/pds_reward", pds_r.mean())
-            self.log("val/des_reward", des_r.mean())
+            self.log("val/mae_reward", mae_r.mean())
             self.log("val/total_reward", R.mean())
             
-            # 7) 如果有confidence prediction，也记录
+            # 7) 如果有confidence prediction,log    
             if confidence_pred is not None:
                 loss_target = loss_sup.clone() * 10  
                 if confidence_pred.dim() == 2:
@@ -867,7 +827,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
 
     def _grpo_test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        """GRPO测试步骤逻辑"""
+        """GRPO test step"""
         with torch.no_grad():
             # 1) 前向传播获得mu, log_sigma
             confidence_pred = None
@@ -877,13 +837,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 mu, log_sigma = self.forward(batch, padded=False)
             
             # 2) 标准化形状处理，测试时通常是单个batch，所以reshape为[1, -1, G]
-            # if mu.dim() == 3:
             B, S, G = mu.shape
             mu_flat = mu.reshape(-1, G)                 # [B*S, G]
             log_sigma_flat = log_sigma.reshape(-1, G)   # [B*S, G]
-            # else:
-            #     mu_flat = mu                               # [N, G]
-            #     log_sigma_flat = log_sigma                 # [N, G]
             
             y_real = batch["pert_cell_counts"]
             basal_cells = batch["ctrl_cell_counts"]
@@ -926,7 +882,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 self.log("test/confidence_loss", confidence_loss)
 
     def _original_test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        """原始模式的测试步骤逻辑"""
+        """original test step"""
         confidence_pred = None
         if self.confidence_token is None:
             pred, confidence_pred = self.forward(batch, padded=False), None
@@ -939,32 +895,23 @@ class StateTransitionPerturbationModel(PerturbationModel):
         loss = self.loss_fn(pred, target).mean()
         self.log("test_loss", loss)
 
-        # 添加reward计算用于对比实验
         with torch.no_grad():
-            # 将确定性预测reshape为适合reward计算的格式
             pred_flat = pred.reshape(-1, self.output_dim)  # [N, G]
             
-            # 准备数据
             y_real = batch["pert_cell_counts"]
             basal_cells = batch["ctrl_cell_counts"]
             
-            # 构建pert索引
             pert_names = batch["pert_name"]
             
-            # 将确定性预测作为单个"样本"用于reward计算
-            # 形状从 [N, G] 扩展到 [1, N, G]
             y_samples = pred_flat.unsqueeze(0)  # [1, N, G]
             
-            # 计算奖励（使用和GRPO相同的参数）
             R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
-                y_samples=y_samples,      # [1, N, G] - 确定性预测作为单个样本
+                y_samples=y_samples,      # [1, N, G]
                 y_real=y_real,            # [N, G]
                 basal_cells=basal_cells,  # [N, G]
                 pert_names=pert_names,         # [N]
             )
             
-            # 记录原始模式的奖励指标
-            # self.log("test/mae_reward", mae_r.mean())
             self.log("test/pds_reward", pds_r.mean())
             self.log("test/des_reward", des_r.mean())
             self.log("test/total_reward", R.mean())
@@ -985,7 +932,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
             self.log("test/confidence_loss", confidence_loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
-        """测试步骤的统一入口"""
+        """test step"""
         if self.grpo_mode:
             return self._grpo_test_step(batch, batch_idx)
         else:
@@ -1003,7 +950,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
             return self._original_predict_step(batch, batch_idx, padded, **kwargs)
 
     def _original_predict_step(self, batch, batch_idx, padded=True, **kwargs):
-        """原始模式的predict step"""
+        """original predict step"""
         if self.confidence_token is None:
             latent_output = self.forward(batch, padded=padded)  # shape [B, ...]
             confidence_pred = None
@@ -1038,7 +985,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
         return output_dict
 
     def _grpo_predict_step(self, batch, batch_idx, padded=True, **kwargs):
-        """GRPO模式的predict step - 兼容_infer.py脚本"""
+        """GRPO predict step"""
         with torch.no_grad():
             # 1) 前向传播获得mu, log_sigma
             confidence_pred = None
@@ -1047,12 +994,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
             else:
                 mu, log_sigma = self.forward(batch, padded=padded)
             
-            # 2) 标准化形状处理 - 兼容padded=False的情况
-            #if mu.dim() == 3:
+            # 2) 标准化形状处理
             B, S, G = mu.shape
             mu_flat = mu.reshape(-1, G)  # [B*S, G]
-            # else:
-            #     mu_flat = mu  # [N, G]
 
             # 3) 使用mu作为预测结果
             output_dict = {
@@ -1076,7 +1020,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
     
     def _grpo_advantage(self, R: torch.Tensor) -> torch.Tensor:
         """
-        R: [K,B] -> A: [K,B] 组内标准化优势，停止梯度回传
+        R: [K,B,L] -> A: [K,B,L] 组内标准化优势，停止梯度回传
         """
         mu = R.mean(0, keepdim=True)
         sd = R.std(0, keepdim=True) + 1e-8
@@ -1087,14 +1031,14 @@ class StateTransitionPerturbationModel(PerturbationModel):
         self, logp_new: torch.Tensor, logp_old: torch.Tensor, A: torch.Tensor
     ) -> torch.Tensor:
         """
-        所有量均为 [K,B]
+        所有量均为 [K,N]
         """
         # 计算原始 log_ratio
-        log_ratio_raw = logp_new - logp_old
-
+        log_ratio_raw = logp_new - logp_old # [K,B,L]
+        clamp_ratio = 5
         with torch.no_grad():
             # 统计被截断的比例
-            num_clipped = (log_ratio_raw > 5).sum().item()
+            num_clipped = (log_ratio_raw > clamp_ratio).sum().item()
             total_elements = log_ratio_raw.numel()
             clip_ratio = num_clipped / total_elements
             
@@ -1112,7 +1056,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
             self.log("debug/log_ratio_min", min_val, on_step=True, on_epoch=False)
         
         # 应用截断
-        log_ratio = log_ratio_raw.clamp(max=5)
+        log_ratio = log_ratio_raw.clamp(max=clamp_ratio)
         ratio = torch.exp(log_ratio)
 
         unclipped = ratio * A
@@ -1136,3 +1080,4 @@ class StateTransitionPerturbationModel(PerturbationModel):
         t2 = 2.0 * (logsig_old - logsig_new)
         kl = 0.5 * (t1 + t2 - 1.0)
         return kl.sum(dim=-1).mean()
+

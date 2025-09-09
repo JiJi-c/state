@@ -52,16 +52,18 @@ kwargs:
     
     # GRPO 采样和训练参数
     k_samples: 8          # 每次采样的候选数量
-    ppo_eps: 0.5    #0.2      # PPO clipping 参数
-    alpha_kl: 0.3   #0.1      # KL散度损失权重
+    ppo_eps: 0.2    #0.2      # PPO clipping 参数
+    alpha_kl: 0.01   #0.1      # KL散度损失权重
     alpha_ent: 1e-4  #1e-4 #0.01        # 熵正则化权重
-    alpha_sup: 10  #10.0        # 监督学习损失权重
+    alpha_sup: 5  #10.0        # 监督学习损失权重
     
     # 奖励函数权重
     reward_weights:        # MAE权重
       pds: 1.0             # PDS权重
       des: 1.0           # DES权重
+      mae: 1.0
     
     # 其他GRPO参数
     min_perts_for_pds: 3   # PDS计算的最小扰动数
     des_k_percentage: 0.1 #0.05  # DES计算的top-k基因比例
+    

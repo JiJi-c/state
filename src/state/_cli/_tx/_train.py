@@ -121,6 +121,7 @@ def run_tx_train(cfg: DictConfig):
         cell_sentence_len=sentence_len,
     )
     
+          
     with open(join(run_output_dir, "data_module.torch"), "wb") as f:
         # TODO-Abhi: only save necessary data
         data_module.save_state(f)
@@ -205,7 +206,7 @@ def run_tx_train(cfg: DictConfig):
                 f.write(lg.experiment.path)
             break
         elif SwanLabLogger and isinstance(lg, SwanLabLogger):
-            # SwanLab官方Logger - 简洁的信息保存
+            # SwanLab官方Logger
             swanlab_info_path = os.path.join(run_output_dir, "swanlab_path.txt")
             with open(swanlab_info_path, "w") as f:
                 project = getattr(lg, 'project', 'unknown')
@@ -255,6 +256,7 @@ def run_tx_train(cfg: DictConfig):
         use_distributed_sampler=False,
         log_every_n_steps=1,
         num_sanity_val_steps=0,
+        strategy="ddp_find_unused_parameters_true"
         )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.

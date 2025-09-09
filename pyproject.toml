@@ -50,3 +50,6 @@ venv = ".venv"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/state"]
+
+[tool.uv.extra-build-dependencies]
+    torch-unique = ["torch"]
