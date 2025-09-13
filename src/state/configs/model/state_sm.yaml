@@ -45,7 +45,7 @@ kwargs:
       use_rotary_embeddings: false
 
 
-  grpo_mode: true
+  grpo_mode: false
   grpo_config:
     # Gaussian Decoder 配置
     decoder_hidden_dim: 512

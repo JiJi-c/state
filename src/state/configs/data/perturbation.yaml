@@ -5,17 +5,17 @@ kwargs:
   output_space: all
   pert_rep: onehot
   basal_rep: sample
-  num_workers: 12
+  num_workers: 16
   pin_memory: true
   n_basal_samples: 1
   basal_mapping_strategy: random
   should_yield_control_cells: true
-  batch_col: gem_group
-  pert_col: gene
+  batch_col: batch_var
+  pert_col: target_gene
   cell_type_key: cell_type
-  control_pert: DMSO_TF
+  control_pert: non-targeting
   map_controls: true # for a control cell, should we use it as the target (learn identity) or sample a control?
-  perturbation_features_file: null
+  perturbation_features_file: /yuchang/shangyue/wd/data_state/competition_support_set/ESM2_pert_features.pt
   store_raw_basal: true
   store_raw_expression: true
   int_counts: false

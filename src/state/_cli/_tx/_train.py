@@ -112,7 +112,7 @@ def run_tx_train(cfg: DictConfig):
 
     model_kwargs = cfg.get("model", {}).get("kwargs", {})
 
-    cfg["data"]["kwargs"]["drop_last"] = True
+    # cfg["data"]["kwargs"]["drop_last"] = True
     cfg["data"]["kwargs"]["should_yield_control_cells"] = False
     data_module: PerturbationDataModule = get_datamodule(
         cfg["data"]["name"],
@@ -130,6 +130,28 @@ def run_tx_train(cfg: DictConfig):
         data_module.store_raw_expression = True
         
     data_module.setup(stage="fit")
+
+    # print("=" * 50)
+    # print("验证数据调试信息:")
+    # try:
+    #     val_dl = data_module.val_dataloader()
+    #     if val_dl is not None:
+    #         print(f"✅ 验证数据加载器存在")
+    #         print(f"📊 验证批次数: {len(val_dl)}")
+    #         print(f"💾 验证数据集大小: {len(val_dl.dataset) if hasattr(val_dl, 'dataset') else '未知'}")
+            
+    #         # 测试获取一个批次
+    #         try:
+    #             sample_batch = next(iter(val_dl))
+    #             print(f"🎯 样本批次键: {list(sample_batch.keys()) if isinstance(sample_batch, dict) else 'not dict'}")
+    #         except Exception as e:
+    #             print(f"❌ 获取验证批次失败: {e}")
+    #     else:
+    #         print("❌ 验证数据加载器为None")
+    # except Exception as e:
+    #     print(f"❌ 验证数据加载器错误: {e}")
+    # print("=" * 50)
+
     dl = data_module.train_dataloader()
     print("num_workers:", dl.num_workers)
     print("batch size:", dl.batch_size)
@@ -241,11 +263,11 @@ def run_tx_train(cfg: DictConfig):
         accelerator = "gpu"
     else:
         accelerator = "cpu"
-    devices  = cfg["training"].get("devices", 2)    
+    
     # Decide on trainer params
     trainer_kwargs = dict(
         accelerator=accelerator,
-        devices=devices,
+        devices  = cfg["training"].get("devices", 2),    
         max_steps=cfg["training"]["max_steps"],  # for normal models
         check_val_every_n_epoch=None,
         val_check_interval=cfg["training"]["val_freq"],
@@ -253,11 +275,12 @@ def run_tx_train(cfg: DictConfig):
         plugins=plugins,
         callbacks=callbacks,
         gradient_clip_val=cfg["training"]["gradient_clip_val"] if cfg["model"]["name"].lower() != "cpa" else None,
-        use_distributed_sampler=False,
+        #num_sanity_val_steps=2,  
         log_every_n_steps=1,
-        num_sanity_val_steps=0,
-        strategy="ddp_find_unused_parameters_true"
-        )
+        use_distributed_sampler=False,
+        strategy="ddp", #cfg["training"]["strategy"] #
+        #limit_val_batches=1,
+    )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
     if cfg["model"]["name"].lower() == "celltypemean" or cfg["model"]["name"].lower() == "globalsimplesum" or cfg["model"]["name"].lower() == "perturb_mean" or cfg["model"]["name"].lower() == "context_mean":

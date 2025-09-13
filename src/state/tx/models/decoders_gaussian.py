@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
+from torch.distributions import Normal,LogNormal
 from typing import Tuple
 from .utils import build_mlp
 
@@ -115,11 +115,15 @@ class GaussianDecoder_v2(nn.Module):
         #     nn.Linear(self.output_dim // 8, self.output_dim),
         # )
         self.logsig_head = nn.Linear(self.output_dim, self.output_dim)
+        self.upper = -1.0
+        self.lower = -2.0
+        for i in range(10):
+            print(f"log_sigma range: [{self.lower}, {self.upper}]") 
     
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         h = self.project_out(x)
         mu = self.mean_head(h)
-        log_sigma = self.logsig_head(h).clamp(-5.0, 2.0)
+        log_sigma = self.logsig_head(h).clamp(self.lower, self.upper)
         return mu, log_sigma
 
     @staticmethod
@@ -130,12 +134,12 @@ class GaussianDecoder_v2(nn.Module):
         Samples k candidates from N(mu, sigma) using the reparameterization trick.
         """
         sigma = torch.exp(log_sigma)
-        dist = Normal(mu, sigma)
-
+        dist = LogNormal(mu, sigma)
+        eps = 1e-10
         # rsample uses the reparameterization trick
-        y_samples = dist.rsample(sample_shape=(k,))  # Shape: [k, B, S, G]
+        y_samples = dist.rsample(sample_shape=(k,)).clamp(eps,10)  # Shape: [k, B, S, G]
 
         # Calculate log probability, summing over the gene dimension
-        log_p = dist.log_prob(y_samples).sum(dim=-1)  # Shape: [k, B, S]
+        log_p = dist.log_prob(y_samples).sum(dim=-1) # / torch.sqrt(torch.tensor(mu.shape[-1], dtype=torch.float32)) # [k, B, S]
 
         return y_samples, log_p
