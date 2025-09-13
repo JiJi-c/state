@@ -17,28 +17,36 @@ from .base import PerturbationModel
 from .decoders import FinetuneVCICountsDecoder
 from .decoders_nb import NBDecoder, nb_nll
 from .utils import build_mlp, get_activation_class, get_transformer_backbone
-from .decoders_gaussian import GaussianDecoder, GaussianDecoder_v2
+from .decoders_gaussian import VAE_Decoder
 from .new_reward import RewardEvaluator
+<<<<<<< Updated upstream
 from .validation_saver import ValidationSaver
 
 #from ._reward_official import MetricsEvaluator
+=======
+
+# from ._reward_official import MetricsEvaluator
+>>>>>>> Stashed changes
 logger = logging.getLogger(__name__)
+
 
 class CombinedLoss(nn.Module):
     """
     Combined Sinkhorn + Energy loss
     """
+
     def __init__(self, sinkhorn_weight=0.001, energy_weight=1.0, blur=0.05):
         super().__init__()
         self.sinkhorn_weight = sinkhorn_weight
         self.energy_weight = energy_weight
         self.sinkhorn_loss = SamplesLoss(loss="sinkhorn", blur=blur)
         self.energy_loss = SamplesLoss(loss="energy", blur=blur)
-    
+
     def forward(self, pred, target):
         sinkhorn_val = self.sinkhorn_loss(pred, target)
         energy_val = self.energy_loss(pred, target)
         return self.sinkhorn_weight * sinkhorn_val + self.energy_weight * energy_val
+
 
 class ConfidenceToken(nn.Module):
     """
@@ -81,7 +89,9 @@ class ConfidenceToken(nn.Module):
         # Concatenate along sequence dimension
         return torch.cat([seq_input, confidence_tokens], dim=1)
 
-    def extract_confidence_prediction(self, transformer_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def extract_confidence_prediction(
+        self, transformer_output: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Extract main output and confidence prediction from transformer output.
 
@@ -97,7 +107,9 @@ class ConfidenceToken(nn.Module):
         confidence_output = transformer_output[:, -1:, :]  # [B, 1, E]
 
         # Project confidence token output to scalar
-        confidence_pred = self.confidence_projection(confidence_output).squeeze(-1)  # [B, 1]
+        confidence_pred = self.confidence_projection(confidence_output).squeeze(
+            -1
+        )  # [B, 1]
 
         return main_output, confidence_pred
 
@@ -151,9 +163,18 @@ class StateTransitionPerturbationModel(PerturbationModel):
         # Save or store relevant hyperparams
         # decide whether to use GRPO mode
         self.grpo_mode = kwargs.get("grpo_mode", False)
+<<<<<<< Updated upstream
         self.validation_saver = ValidationSaver()
         self.gene_list_path = kwargs.get("gene_list_path", "/yuchang/shangyue/wd/data_state/competition_support_set/gene_names.csv")
         
+=======
+
+        self.gene_list_path = kwargs.get(
+            "gene_list_path",
+            "/yuchang/shangyue/wd/data_state/competition_support_set/gene_names.csv",
+        )
+
+>>>>>>> Stashed changes
         self.predict_residual = predict_residual
         self.output_space = output_space
         self.n_encoder_layers = kwargs.get("n_encoder_layers", 2)
@@ -166,13 +187,14 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
         self.transformer_backbone_key = transformer_backbone_key
         self.transformer_backbone_kwargs = transformer_backbone_kwargs
-        self.transformer_backbone_kwargs["n_positions"] = self.cell_sentence_len + kwargs.get("extra_tokens", 0)
+        self.transformer_backbone_kwargs["n_positions"] = (
+            self.cell_sentence_len + kwargs.get("extra_tokens", 0)
+        )
 
         self.distributional_loss = distributional_loss
         self.gene_dim = gene_dim
 
         self._setup_grpo_components(**kwargs)
-
 
         # Build the distributional loss from geomloss
         blur = kwargs.get("blur", 0.05)
@@ -184,7 +206,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
         elif loss_name == "se":
             sinkhorn_weight = kwargs.get("sinkhorn_weight", 0.01)  # 1/100 = 0.01
             energy_weight = kwargs.get("energy_weight", 1.0)
-            self.loss_fn = CombinedLoss(sinkhorn_weight=sinkhorn_weight, energy_weight=energy_weight, blur=blur)
+            self.loss_fn = CombinedLoss(
+                sinkhorn_weight=sinkhorn_weight, energy_weight=energy_weight, blur=blur
+            )
         elif loss_name == "sinkhorn":
             self.loss_fn = SamplesLoss(loss="sinkhorn", blur=blur)
         else:
@@ -216,7 +240,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
         self.confidence_token = None
         self.confidence_loss_fn = None
         if kwargs.get("confidence_token", False):
-            self.confidence_token = ConfidenceToken(hidden_dim=self.hidden_dim, dropout=self.dropout)
+            self.confidence_token = ConfidenceToken(
+                hidden_dim=self.hidden_dim, dropout=self.dropout
+            )
             self.confidence_loss_fn = nn.MSELoss()
 
         self.freeze_pert_backbone = kwargs.get("freeze_pert_backbone", False)
@@ -244,21 +270,27 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 # hvg's but for which dataset?
                 if "DMSO_TF" in control_pert:
                     gene_names = np.load(
-                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy", allow_pickle=True
+                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_to_2k_names.npy",
+                        allow_pickle=True,
                     )
                 elif "non-targeting" in control_pert:
-                    temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5")
+                    temp = ad.read_h5ad(
+                        "/large_storage/ctc/userspace/aadduri/datasets/hvg/replogle/jurkat.h5"
+                    )
                     # gene_names = temp.var.index.values
             else:
                 assert output_space == "all"
                 if "DMSO_TF" in control_pert:
                     gene_names = np.load(
-                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy", allow_pickle=True
+                        "/large_storage/ctc/userspace/aadduri/datasets/tahoe_19k_names.npy",
+                        allow_pickle=True,
                     )
                 elif "non-targeting" in control_pert:
                     # temp = ad.read_h5ad('/scratch/ctc/ML/vci/paper_replogle/jurkat.h5')
                     # gene_names = temp.var.index.values
-                    temp = ad.read_h5ad("/large_storage/ctc/userspace/aadduri/cross_dataset/replogle/jurkat.h5")
+                    temp = ad.read_h5ad(
+                        "/large_storage/ctc/userspace/aadduri/cross_dataset/replogle/jurkat.h5"
+                    )
                     gene_names = temp.var.index.values
 
             self.gene_decoder = FinetuneVCICountsDecoder(
@@ -268,16 +300,15 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
         print(self)
 
-
     def _setup_grpo_components(self, **kwargs):
         """GRPO mode setup"""
         grpo_config = kwargs.get("grpo_config", {})
-        self.reward_weights = grpo_config.get("reward_weights", 
-                                        kwargs.get("reward_weights", 
-                                            {"pds": 1.0, "des": 1.0}))
+        self.reward_weights = grpo_config.get(
+            "reward_weights", kwargs.get("reward_weights", {"pds": 1.0, "des": 1.0})
+        )
         # add a gaussian decoder outputing mu and log_sigma
         if self.grpo_mode:
-            self.gaussian_decoder = GaussianDecoder_v2(
+            self.vae_decoder = VAE_Decoder(
                 hidden_dim=self.hidden_dim,
                 output_dim=self.gene_dim,
                 n_decoder_layers=self.n_decoder_layers,
@@ -286,7 +317,6 @@ class StateTransitionPerturbationModel(PerturbationModel):
             )
             self.mu_old_buf = None
             self.logsig_old_buf = None
-
 
             # self.metrics_evaluator = MetricsEvaluator(
             #     gene_names=self.gene_list,
@@ -298,16 +328,23 @@ class StateTransitionPerturbationModel(PerturbationModel):
             self.alpha_kl = grpo_config.get("alpha_kl", kwargs.get("alpha_kl", 0.1))
             self.alpha_ent = grpo_config.get("alpha_ent", kwargs.get("alpha_ent", 0.01))
             self.alpha_sup = grpo_config.get("alpha_sup", kwargs.get("alpha_sup", 1.0))
-       
-        self.min_perts_for_pds = grpo_config.get("min_perts_for_pds", kwargs.get("min_perts_for_pds", 3))
-        self.k_percentage = grpo_config.get("des_k_percentage", kwargs.get("des_k_percentage", 0.05))
+
+        self.min_perts_for_pds = grpo_config.get(
+            "min_perts_for_pds", kwargs.get("min_perts_for_pds", 3)
+        )
+        self.k_percentage = grpo_config.get(
+            "des_k_percentage", kwargs.get("des_k_percentage", 0.05)
+        )
 
         self.gene_list = pd.read_csv(self.gene_list_path, header=None)[0].tolist()
 
+<<<<<<< Updated upstream
         self.des_baseline = 0.106
         self.pds_baseline = 0.516
         self.mae_baseline = 0.027
     
+=======
+>>>>>>> Stashed changes
     def _build_networks(self):
         """
         Here we instantiate the actual GPT2-based model.
@@ -334,9 +371,11 @@ class StateTransitionPerturbationModel(PerturbationModel):
         else:
             self.basal_encoder = nn.Linear(self.input_dim, self.hidden_dim)
 
-        self.transformer_backbone, self.transformer_model_dim = get_transformer_backbone(
-            self.transformer_backbone_key,
-            self.transformer_backbone_kwargs,
+        self.transformer_backbone, self.transformer_model_dim = (
+            get_transformer_backbone(
+                self.transformer_backbone_key,
+                self.transformer_backbone_kwargs,
+            )
         )
 
         # Project from input_dim to hidden_dim for transformer input
@@ -352,7 +391,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 activation=self.activation_class,
             )
 
-            if self.output_space == 'all':
+            if self.output_space == "all":
                 self.final_down_then_up = nn.Sequential(
                     nn.Linear(self.output_dim, self.output_dim // 8),
                     nn.GELU(),
@@ -380,9 +419,11 @@ class StateTransitionPerturbationModel(PerturbationModel):
         The `padded` argument here is set to True if the batch is padded. Otherwise, we
         expect a single batch, so that sentences can vary in length across batches.
         """
-        if padded: 
+        if padded:
             pert = batch["pert_emb"].reshape(-1, self.cell_sentence_len, self.pert_dim)
-            basal = batch["ctrl_cell_emb"].reshape(-1, self.cell_sentence_len, self.input_dim)
+            basal = batch["ctrl_cell_emb"].reshape(
+                -1, self.cell_sentence_len, self.input_dim
+            )
         else:
             # we are inferencing on a single batch, so accept variable length sentences
             pert = batch["pert_emb"].reshape(1, -1, self.pert_dim)
@@ -411,7 +452,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 batch_indices = batch_indices.reshape(1, -1)
 
             # Get batch embeddings and add to sequence input
-            batch_embeddings = self.batch_encoder(batch_indices.long())  # Shape: [B, S, hidden_dim]
+            batch_embeddings = self.batch_encoder(
+                batch_indices.long()
+            )  # Shape: [B, S, hidden_dim]
             seq_input = seq_input + batch_embeddings
 
         confidence_pred = None
@@ -432,39 +475,49 @@ class StateTransitionPerturbationModel(PerturbationModel):
             # repeat out to [B,H,S,S]
             attn_mask = base.repeat(batch_size, 1, 1)
 
-            outputs = self.transformer_backbone(inputs_embeds=seq_input, attention_mask=attn_mask)
+            outputs = self.transformer_backbone(
+                inputs_embeds=seq_input, attention_mask=attn_mask
+            )
             transformer_output = outputs.last_hidden_state
         else:
-            transformer_output = self.transformer_backbone(inputs_embeds=seq_input).last_hidden_state
+            transformer_output = self.transformer_backbone(
+                inputs_embeds=seq_input
+            ).last_hidden_state
 
         # Extract confidence prediction if confidence token was used
         if self.confidence_token is not None:
-            res_pred, confidence_pred = self.confidence_token.extract_confidence_prediction(transformer_output)
+            res_pred, confidence_pred = (
+                self.confidence_token.extract_confidence_prediction(transformer_output)
+            )
         else:
             res_pred = transformer_output
 
         # add to basal if predicting residual
         if self.grpo_mode:
             # GRPO mode, directly use transformer output
-            mu, logsig = self.gaussian_decoder(res_pred)
+            pred, mu, logsig = self.vae_decoder(res_pred)
             if self.confidence_token is not None:
                 return mu, logsig, confidence_pred
             else:
                 return mu, logsig
-        else: 
-            if self.predict_residual and self.output_space == "all":
-                # Project control_cells to hidden_dim space to match res_pred
-                # control_cells_hidden = self.project_to_hidden(control_cells)
-                # treat the actual prediction as a residual sum to basal
-                out_pred = self.project_out(res_pred) + basal
-                out_pred = self.final_down_then_up(out_pred)
-            elif self.predict_residual:
-                out_pred = self.project_out(res_pred + control_cells)
-            else:
-                out_pred = self.project_out(res_pred)
-
+        else:
+            # if self.predict_residual and self.output_space == "all":
+            #     # Project control_cells to hidden_dim space to match res_pred
+            #     # control_cells_hidden = self.project_to_hidden(control_cells)
+            #     # treat the actual prediction as a residual sum to basal
+            #     out_pred = self.project_out(res_pred) + basal
+            #     out_pred = self.final_down_then_up(out_pred)
+            # elif self.predict_residual:
+            #     out_pred = self.project_out(res_pred + control_cells)
+            # else:
+            #     out_pred = self.project_out(res_pred)
+            res_pred, mu, log_sigma = self.vae_decoder(res_pred)
+            out_pred = res_pred + basal
             # apply relu if specified and we output to HVG space
-            is_gene_space = self.hparams["embed_key"] == "X_hvg" or self.hparams["embed_key"] is None
+            is_gene_space = (
+                self.hparams["embed_key"] == "X_hvg"
+                or self.hparams["embed_key"] is None
+            )
             # logger.info(f"DEBUG: is_gene_space: {is_gene_space}")
             # logger.info(f"DEBUG: self.gene_decoder: {self.gene_decoder}")
             if is_gene_space or self.gene_decoder is None:
@@ -473,18 +526,16 @@ class StateTransitionPerturbationModel(PerturbationModel):
             output = out_pred.reshape(-1, self.output_dim)
 
             if confidence_pred is not None:
-                return output, confidence_pred
+                return out_pred, mu, log_sigma
             else:
-                return output
+                return output, mu, log_sigma
 
     def setup(self, stage: str = None):
         """Setup method to initialize mappings after data module is ready"""
         super().setup(stage)
         pert_onehot_map = self.trainer.datamodule.pert_onehot_map
         self.pert_list = list(pert_onehot_map.keys())
-        self.pert2idx = {
-            name: idx for idx, name in enumerate(pert_onehot_map.keys())
-        }
+        self.pert2idx = {name: idx for idx, name in enumerate(pert_onehot_map.keys())}
         self.num_unique_perts = len(self.pert2idx)
         self.reward_evaluator = RewardEvaluator(
             gene_list=self.gene_list,
@@ -494,14 +545,11 @@ class StateTransitionPerturbationModel(PerturbationModel):
             k_percentage=self.k_percentage,
         )
 
-    def _original_training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
+    def _original_training_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True
+    ) -> torch.Tensor:
         """原始的StateTransition训练逻辑"""
-        # Get model predictions (in latent space)
-        confidence_pred = None
-        if self.confidence_token is not None:
-            pred, confidence_pred = self.forward(batch, padded=padded)
-        else:
-            pred = self.forward(batch, padded=padded)
+        pred, mu, log_sigma = self.forward(batch, padded=padded)
 
         target = batch["pert_cell_emb"]
 
@@ -512,115 +560,62 @@ class StateTransitionPerturbationModel(PerturbationModel):
             pred = pred.reshape(1, -1, self.output_dim)
             target = target.reshape(1, -1, self.output_dim)
 
-        main_loss = self.loss_fn(pred, target).nanmean()
-        self.log("train_loss", main_loss)
-        
-        # Log individual loss components if using combined loss
-        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
-            sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).nanmean()
-            energy_component = self.loss_fn.energy_loss(pred, target).nanmean()
-            self.log("train/sinkhorn_loss", sinkhorn_component)
-            self.log("train/energy_loss", energy_component)
+        pred_loss = self.loss_fn(pred, target).nanmean()
 
-        # Process decoder if available
-        decoder_loss = None
-        total_loss = main_loss
+        kl_loss = self.vae_decoder.kl_loss(mu, log_sigma)
 
-        if self.gene_decoder is not None and "pert_cell_counts" in batch:
-            gene_targets = batch["pert_cell_counts"]
-            # Train decoder to map latent predictions to gene space
+        self.log("train/pred_loss", pred_loss)
+        self.log("train/kl_loss", kl_loss)
+        return pred_loss + kl_loss
 
-            if self.detach_decoder:
-                # with some random change, use the true targets
-                if np.random.rand() < 0.1:
-                    latent_preds = target.reshape_as(pred).detach()
-                else:
-                    latent_preds = pred.detach()
-            else:
-                latent_preds = pred
-
-            if isinstance(self.gene_decoder, NBDecoder):
-                mu, theta = self.gene_decoder(latent_preds)
-                gene_targets = batch["pert_cell_counts"].reshape_as(mu)
-                decoder_loss = nb_nll(gene_targets, mu, theta)
-            else:
-                pert_cell_counts_preds = self.gene_decoder(latent_preds)
-                if padded:
-                    gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
-                else:
-                    gene_targets = gene_targets.reshape(1, -1, self.gene_decoder.gene_dim())
-
-                decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
-
-            # Log decoder loss
-            self.log("decoder_loss", decoder_loss)
-
-            total_loss = total_loss + self.decoder_loss_weight * decoder_loss
-
-        if confidence_pred is not None:
-            # Detach main loss to prevent gradients flowing through it
-            loss_target = total_loss.detach().clone().unsqueeze(0) * 10
-
-            # Ensure proper shapes for confidence loss computation
-            if confidence_pred.dim() == 2:  # [B, 1]
-                loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
-            else:  # confidence_pred is [B,]
-                loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
-
-            # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
-            self.log("train/confidence_loss", confidence_loss)
-            self.log("train/actual_loss", loss_target.mean())
-
-            # Add to total loss with weighting
-            confidence_weight = 0.1  # You can make this configurable
-            total_loss = total_loss + confidence_weight * confidence_loss
-
-            # Add to total loss
-            total_loss = total_loss + confidence_loss
-
-        if self.regularization > 0.0:
-            ctrl_cell_emb = batch["ctrl_cell_emb"].reshape_as(pred)
-            delta = pred - ctrl_cell_emb
-
-            # compute l1 loss
-            l1_loss = torch.abs(delta).mean()
-
-            # Log the regularization loss
-            self.log("train/l1_regularization", l1_loss)
-
-            # Add regularization to total loss
-            total_loss = total_loss + self.regularization * l1_loss
-
-        return total_loss
-
-    def _grpo_training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
+    def _grpo_training_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True
+    ) -> torch.Tensor:
         """GRPO training step"""
         confidence_pred = None
         if self.confidence_token is not None:
             mu, log_sigma, confidence_pred = self.forward(batch, padded=padded)
         else:
             mu, log_sigma = self.forward(batch, padded=padded)
-        
+
         B, L, G = mu.shape
 
+<<<<<<< Updated upstream
         y_samples, logp_new = self.gaussian_decoder.sample(mu, log_sigma, k=self.k_samples)   # [K,B,L,G]  [K,B,L]
         logp_new = logp_new.mean(dim=1)
         y_real = batch["pert_cell_emb"].reshape(-1, L, G)
+=======
+        y_samples, logp_new = self.gaussian_decoder.sample(
+            mu, log_sigma, k=self.k_samples
+        )  # [K,B,L,G]  [K,B,L]
+        y_real = batch["pert_cell_counts"].reshape(-1, L, G)
+>>>>>>> Stashed changes
         basal_cells = batch["ctrl_cell_counts"].reshape(-1, L, G)
         pert_names = batch["pert_name"]
 
         with torch.no_grad():
+<<<<<<< Updated upstream
             R, pds_r, mae_r, local_perts_num, mae = self.reward_evaluator.aggregate_rewards(
                 y_samples=y_samples.detach(),      # [K, B, L, G]
                 y_real=y_real.detach(),            # [B, L, G]
+=======
+            R, pds_r, mae_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
+                y_samples=y_samples.detach(),  # [K, B, L, G]
+                y_real=y_real.detach(),  # [B, L, G]
+>>>>>>> Stashed changes
                 basal_cells=basal_cells.detach(),  # [B, L, G]
-                pert_names=pert_names,         # [B*L]
-            )   
+                pert_names=pert_names,  # [B*L]
+            )
 
+<<<<<<< Updated upstream
         A = self._grpo_advantage(R).mean(dim=1)  # [K, B, L]
         
         if self.mu_old_buf is None :
+=======
+        A = self._grpo_advantage(R)  # [K, B, L]
+
+        if self.mu_old_buf is None:
+>>>>>>> Stashed changes
             logp_old = logp_new.detach()
             mu_old_use, logsig_old_use = mu.detach(), log_sigma.detach()
         else:
@@ -628,8 +623,8 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 dist_old = Normal(self.mu_old_buf, self.logsig_old_buf.exp())
                 logp_old = dist_old.log_prob(y_samples).sum(dim=-1).mean(dim=1)  # [K, B, L]
             mu_old_use, logsig_old_use = self.mu_old_buf, self.logsig_old_buf
-        
-        ppo_loss = self._ppo_clip_loss(logp_new, logp_old, A)   
+
+        ppo_loss = self._ppo_clip_loss(logp_new, logp_old, A)
         kl_loss = self._gaussian_kl(mu, log_sigma, mu_old_use, logsig_old_use)
         entropy = (log_sigma + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
         loss_sup = F.l1_loss(mu, y_real)
@@ -644,11 +639,26 @@ class StateTransitionPerturbationModel(PerturbationModel):
         with torch.no_grad():
             self.mu_old_buf = mu.detach().clone()
             self.logsig_old_buf = log_sigma.detach().clone()
+<<<<<<< Updated upstream
         
         # 9) Logging 
         mae_prediction = mae.mean()
         mae_scaled = (self.mae_baseline - mae_prediction) / self.mae_baseline
         mae_baseline_delta = (self.mae_baseline - mae_prediction) / self.mae_baseline
+=======
+
+        # 9) Logging
+        self.log("train/total_loss", loss, on_step=True, on_epoch=False)
+        self.log("train/ppo_loss", ppo_loss, on_step=True, on_epoch=False)
+        self.log("train/kl_loss", kl_loss, on_step=True, on_epoch=False)
+        self.log("train/entropy", entropy, on_step=True, on_epoch=False)
+        self.log("train/supervised_loss", loss_sup, on_step=True, on_epoch=False)
+        self.log("train/mae_reward", mae_r.mean(), on_step=True, on_epoch=False)
+        self.log("train/pds_reward", pds_r.mean(), on_step=True, on_epoch=False)
+        # self.log("train/des_reward", des_r.mean(), on_step=True, on_epoch=False)
+        self.log("train/total_reward", R.mean(), on_step=True, on_epoch=False)
+        self.log("train/local_perts_num", local_perts_num, on_step=True, on_epoch=False)
+>>>>>>> Stashed changes
 
         pds_prediction = pds_r.mean()
         pds_scaled = (pds_prediction - self.pds_baseline) / (1 - self.pds_baseline)
@@ -675,24 +685,100 @@ class StateTransitionPerturbationModel(PerturbationModel):
         if confidence_pred is not None:
             loss_target = loss.detach().clone() * 10
             if confidence_pred.dim() == 2:
-                loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
+                loss_target = loss_target.unsqueeze(0).expand(
+                    confidence_pred.size(0), 1
+                )
             else:
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
-            confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
+            confidence_loss = self.confidence_loss_fn(
+                confidence_pred.squeeze(), loss_target.squeeze()
+            )
             self.log("train/confidence_loss", confidence_loss)
             loss = loss + 0.1 * confidence_loss
-        
+
         return loss
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True) -> torch.Tensor:
+    def training_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int, padded=True
+    ) -> torch.Tensor:
         """training step"""
         if self.grpo_mode:
             return self._grpo_training_step(batch, batch_idx, padded)
         else:
             return self._original_training_step(batch, batch_idx, padded)
 
+<<<<<<< Updated upstream
     @torch.no_grad()
     def _original_validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+=======
+    def _grpo_validation_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> None:
+        """GRPO validation step"""
+        with torch.no_grad():
+            # 1) 前向传播获得mu, log_sigma
+            confidence_pred = None
+            if self.confidence_token is not None:
+                mu, log_sigma, confidence_pred = self.forward(batch)
+            else:
+                mu, log_sigma = self.forward(batch)
+
+            # 2) 标准化形状处理，和训练保持一致
+            B, L, G = mu.shape
+
+            y_real = batch["pert_cell_counts"].reshape(-1, L, G)
+            basal_cells = batch["ctrl_cell_counts"].reshape(-1, L, G)
+            pert_names = batch["pert_name"]
+
+            # 3) 采样K个候选
+            y_samples, logp_new = self.gaussian_decoder.sample(
+                mu, log_sigma, k=self.k_samples
+            )
+
+            # 4) 计算奖励
+            R, pds_r, mae_r, local_perts_num = (
+                self.reward_evaluator.aggregate_rewards_hpdex(
+                    y_samples=y_samples.detach(),  # [K, B, L, G]
+                    y_real=y_real.detach(),  # [B, L, G]
+                    basal_cells=basal_cells.detach(),  # [B, L, G]
+                    pert_names=pert_names,  # [B*L]
+                )
+            )
+
+            # 5) 计算损失
+            loss_sup = F.l1_loss(mu, y_real)
+            entropy = (
+                (log_sigma + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
+            )
+
+            # 6) 记录验证指标
+            self.log("val_loss", loss_sup)
+            self.log("val/entropy", entropy)
+            # self.log("val/mae_reward", mae_r.mean())
+            self.log("val/pds_reward", pds_r.mean())
+            self.log("val/mae_reward", mae_r.mean())
+            self.log("val/total_reward", R.mean())
+
+            # 7) 如果有confidence prediction,log
+            if confidence_pred is not None:
+                loss_target = loss_sup.clone() * 10
+                if confidence_pred.dim() == 2:
+                    loss_target = loss_target.unsqueeze(0).expand(
+                        confidence_pred.size(0), 1
+                    )
+                else:
+                    loss_target = loss_target.unsqueeze(0).expand(
+                        confidence_pred.size(0)
+                    )
+                confidence_loss = self.confidence_loss_fn(
+                    confidence_pred.squeeze(), loss_target.squeeze()
+                )
+                self.log("val/confidence_loss", confidence_loss)
+
+    def _original_validation_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> None:
+>>>>>>> Stashed changes
         """original validation step logic"""
         confidence_pred = None
         if self.confidence_token is None:
@@ -706,14 +792,17 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
         loss = self.loss_fn(pred, target).mean()
         self.log("val_loss", loss)
-        
+
         # Log individual loss components if using combined loss
-        if hasattr(self.loss_fn, 'sinkhorn_loss') and hasattr(self.loss_fn, 'energy_loss'):
+        if hasattr(self.loss_fn, "sinkhorn_loss") and hasattr(
+            self.loss_fn, "energy_loss"
+        ):
             sinkhorn_component = self.loss_fn.sinkhorn_loss(pred, target).mean()
             energy_component = self.loss_fn.energy_loss(pred, target).mean()
             self.log("val/sinkhorn_loss", sinkhorn_component)
             self.log("val/energy_loss", energy_component)
 
+<<<<<<< Updated upstream
         B, L, G =  pred.shape
         self.validation_saver.add_batch(
             predictions=pred.unsqueeze(0),
@@ -761,6 +850,38 @@ class StateTransitionPerturbationModel(PerturbationModel):
         # self.log("val/des/des_baseline_delta", des_baseline_delta)
 
         # self.log("val/Score", S, on_step=True, on_epoch=False, prog_bar=True)
+=======
+        # 添加reward计算用于对比实验
+        with torch.no_grad():
+            # 将确定性预测reshape为适合reward计算的格式
+            pred_flat = pred.reshape(-1, self.output_dim)  # [B*S, G]
+
+            # 准备数据
+            y_real = batch["pert_cell_counts"]
+            basal_cells = batch["ctrl_cell_counts"]
+
+            # 构建pert索引
+            pert_names = batch["pert_name"]
+
+            # 将确定性预测作为单个"样本"用于reward计算
+            # 形状从 [N, G] 扩展到 [1, N, G]
+            y_samples = pred_flat.unsqueeze(0)  # [1, N, G]
+
+            # 计算奖励（使用和GRPO相同的参数）
+            R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
+                y_samples=y_samples.detach(),  # [K, N, G]
+                y_real=y_real.detach(),  # [N, G]
+                basal_cells=basal_cells.detach(),  # [N, G]
+                pert_names=pert_names,  # [N]
+            )
+
+            # 记录原始模式的奖励指标
+            # self.log("val/mae_reward", mae_r.mean())
+            self.log("val/pds_reward", pds_r.mean())
+            self.log("val/des_reward", des_r.mean())
+            self.log("val/total_reward", R.mean())
+            self.log("val/local_perts_num", local_perts_num)
+>>>>>>> Stashed changes
 
         if self.gene_decoder is not None and "pert_cell_counts" in batch:
             gene_targets = batch["pert_cell_counts"]
@@ -778,7 +899,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 pert_cell_counts_preds = self.gene_decoder(latent_preds).reshape(
                     -1, self.cell_sentence_len, self.gene_decoder.gene_dim()
                 )
-                gene_targets = gene_targets.reshape(-1, self.cell_sentence_len, self.gene_decoder.gene_dim())
+                gene_targets = gene_targets.reshape(
+                    -1, self.cell_sentence_len, self.gene_decoder.gene_dim()
+                )
                 decoder_loss = self.loss_fn(pert_cell_counts_preds, gene_targets).mean()
 
             # Log the validation metric
@@ -791,17 +914,22 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
             # Ensure proper shapes for confidence loss computation
             if confidence_pred.dim() == 2:  # [B, 1]
-                loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
+                loss_target = loss_target.unsqueeze(0).expand(
+                    confidence_pred.size(0), 1
+                )
             else:  # confidence_pred is [B,]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
 
             # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
+            confidence_loss = self.confidence_loss_fn(
+                confidence_pred.squeeze(), loss_target.squeeze()
+            )
             self.log("val/confidence_loss", confidence_loss)
             self.log("val/actual_loss", loss_target.mean())
 
         return {"loss": loss, "predictions": pred}
 
+<<<<<<< Updated upstream
 
     @torch.no_grad()
     def _grpo_validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -876,6 +1004,8 @@ class StateTransitionPerturbationModel(PerturbationModel):
             confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
             self.log("val/confidence_loss", confidence_loss)
 
+=======
+>>>>>>> Stashed changes
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step logic."""
         if self.grpo_mode:
@@ -883,6 +1013,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
         else:
             return self._original_validation_step(batch, batch_idx)
 
+<<<<<<< Updated upstream
     def on_validation_epoch_end(self):
         """Validation epoch结束时对所有数据跑reward"""
         predictions, targets, basals, pert_names = self.validation_saver.get_batches()
@@ -924,6 +1055,8 @@ class StateTransitionPerturbationModel(PerturbationModel):
         self.log("val/Score", S)
 
 
+=======
+>>>>>>> Stashed changes
     def _grpo_test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         """GRPO test step"""
         with torch.no_grad():
@@ -933,53 +1066,74 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 mu, log_sigma, confidence_pred = self.forward(batch, padded=False)
             else:
                 mu, log_sigma = self.forward(batch, padded=False)
-            
+
             # 2) 标准化形状处理，测试时通常是单个batch，所以reshape为[1, -1, G]
             B, S, G = mu.shape
+<<<<<<< Updated upstream
             mu_flat = mu.reshape(-1, G)                 # [B*S, G]
             log_sigma_flat = log_sigma.reshape(-1, G)   # [B*S, G]
             
             y_real = batch["pert_cell_emb"]
+=======
+            mu_flat = mu.reshape(-1, G)  # [B*S, G]
+            log_sigma_flat = log_sigma.reshape(-1, G)  # [B*S, G]
+
+            y_real = batch["pert_cell_counts"]
+>>>>>>> Stashed changes
             basal_cells = batch["ctrl_cell_counts"]
-            
+
             # 构建pert索引
             pert_names = batch["pert_name"]
-            
+
             # 3) 采样K个候选样本
-            y_samples, logp_new = self.gaussian_decoder.sample(mu_flat, log_sigma_flat, k=self.k_samples)
-            
+            y_samples, logp_new = self.gaussian_decoder.sample(
+                mu_flat, log_sigma_flat, k=self.k_samples
+            )
+
             # 4) 计算三项奖励指标
             R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
-                y_samples=y_samples,      # [K, N, G]
-                y_real=y_real,            # [N, G]
+                y_samples=y_samples,  # [K, N, G]
+                y_real=y_real,  # [N, G]
                 basal_cells=basal_cells,  # [N, G]
-                pert_names=pert_names,         # [N]
+                pert_names=pert_names,  # [N]
             )
-            
+
             # 5) 计算基础损失
-            loss_sup = F.l1_loss(mu_flat, y_real) 
-            entropy = (log_sigma_flat + 0.5 * math.log(2 * math.pi * math.e)).sum(dim=-1).mean()
-            
+            loss_sup = F.l1_loss(mu_flat, y_real)
+            entropy = (
+                (log_sigma_flat + 0.5 * math.log(2 * math.pi * math.e))
+                .sum(dim=-1)
+                .mean()
+            )
+
             # 6) 记录测试指标
-            self.log("test_loss", loss_sup) 
+            self.log("test_loss", loss_sup)
             self.log("test/entropy", entropy)
-            #self.log("test/mae_reward", mae_r.mean())
+            # self.log("test/mae_reward", mae_r.mean())
             self.log("test/pds_reward", pds_r.mean())
             self.log("test/des_reward", des_r.mean())
             self.log("test/total_reward", R.mean())
             self.log("test/local_perts_num", local_perts_num)
-            
+
             # 7) 如果有confidence prediction，也记录
             if confidence_pred is not None:
-                loss_target = loss_sup.clone() * 10  
+                loss_target = loss_sup.clone() * 10
                 if confidence_pred.dim() == 2:
-                    loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
+                    loss_target = loss_target.unsqueeze(0).expand(
+                        confidence_pred.size(0), 1
+                    )
                 else:
-                    loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
-                confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
+                    loss_target = loss_target.unsqueeze(0).expand(
+                        confidence_pred.size(0)
+                    )
+                confidence_loss = self.confidence_loss_fn(
+                    confidence_pred.squeeze(), loss_target.squeeze()
+                )
                 self.log("test/confidence_loss", confidence_loss)
 
-    def _original_test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+    def _original_test_step(
+        self, batch: Dict[str, torch.Tensor], batch_idx: int
+    ) -> None:
         """original test step"""
         confidence_pred = None
         if self.confidence_token is None:
@@ -995,21 +1149,26 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
         with torch.no_grad():
             pred_flat = pred.reshape(-1, self.output_dim)  # [N, G]
+<<<<<<< Updated upstream
             
             y_real = batch["pert_cell_emb"]
+=======
+
+            y_real = batch["pert_cell_counts"]
+>>>>>>> Stashed changes
             basal_cells = batch["ctrl_cell_counts"]
-            
+
             pert_names = batch["pert_name"]
-            
+
             y_samples = pred_flat.unsqueeze(0)  # [1, N, G]
-            
+
             R, pds_r, des_r, local_perts_num = self.reward_evaluator.aggregate_rewards(
-                y_samples=y_samples,      # [1, N, G]
-                y_real=y_real,            # [N, G]
+                y_samples=y_samples,  # [1, N, G]
+                y_real=y_real,  # [N, G]
                 basal_cells=basal_cells,  # [N, G]
-                pert_names=pert_names,         # [N]
+                pert_names=pert_names,  # [N]
             )
-            
+
             self.log("test/pds_reward", pds_r.mean())
             self.log("test/des_reward", des_r.mean())
             self.log("test/total_reward", R.mean())
@@ -1021,12 +1180,16 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
             # Ensure proper shapes for confidence loss computation
             if confidence_pred.dim() == 2:  # [B, 1]
-                loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0), 1)
+                loss_target = loss_target.unsqueeze(0).expand(
+                    confidence_pred.size(0), 1
+                )
             else:  # confidence_pred is [B,]
                 loss_target = loss_target.unsqueeze(0).expand(confidence_pred.size(0))
 
             # Compute confidence loss
-            confidence_loss = self.confidence_loss_fn(confidence_pred.squeeze(), loss_target.squeeze())
+            confidence_loss = self.confidence_loss_fn(
+                confidence_pred.squeeze(), loss_target.squeeze()
+            )
             self.log("test/confidence_loss", confidence_loss)
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -1036,10 +1199,9 @@ class StateTransitionPerturbationModel(PerturbationModel):
         else:
             return self._original_test_step(batch, batch_idx)
 
-
     def predict_step(self, batch, batch_idx, padded=True, **kwargs):
         """
-        Typically used for final inference. 
+        Typically used for final inference.
          returning 'preds', 'X', 'pert_name', etc.
         """
         if self.grpo_mode:
@@ -1090,7 +1252,12 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 mu, log_sigma, confidence_pred = self.forward(batch, padded=padded)
             else:
                 mu, log_sigma = self.forward(batch, padded=padded)
+<<<<<<< Updated upstream
             
+=======
+
+            # 2) 标准化形状处理
+>>>>>>> Stashed changes
             B, S, G = mu.shape
             mu_flat = mu.reshape(-1, G)  # [B*S, G]
 
@@ -1104,6 +1271,10 @@ class StateTransitionPerturbationModel(PerturbationModel):
                 "ctrl_cell_emb": batch.get("ctrl_cell_emb", None),
                 "pert_cell_barcode": batch.get("pert_cell_barcode", None),
                 "ctrl_cell_barcode": batch.get("ctrl_cell_barcode", None),
+<<<<<<< Updated upstream
+=======
+                "pert_cell_counts_preds": mu_flat,
+>>>>>>> Stashed changes
             }
 
             if confidence_pred is not None:
@@ -1111,7 +1282,6 @@ class StateTransitionPerturbationModel(PerturbationModel):
 
             return output_dict
 
-    
     def _grpo_advantage(self, R: torch.Tensor) -> torch.Tensor:
         """
         R: [K,B,L] -> A: [K,B,L] 组内标准化优势，停止梯度回传
@@ -1128,33 +1298,42 @@ class StateTransitionPerturbationModel(PerturbationModel):
         所有量均为 [K,N]
         """
         # 计算原始 log_ratio
-        log_ratio_raw = logp_new - logp_old # [K,B,L]
+        log_ratio_raw = logp_new - logp_old  # [K,B,L]
         clamp_ratio = 5
         with torch.no_grad():
             # 统计被截断的比例
             num_clipped = (log_ratio_raw > clamp_ratio).sum().item()
             total_elements = log_ratio_raw.numel()
             clip_ratio = num_clipped / total_elements
-            
+
             # 计算中位数和其他统计量
             median_val = torch.median(log_ratio_raw).item()
             mean_val = torch.mean(log_ratio_raw).item()
             max_val = torch.max(log_ratio_raw).item()
             min_val = torch.min(log_ratio_raw).item()
-            
+
             # 记录到日志中（每步都记录）
-            self.log("debug/log_ratio_clip_ratio", clip_ratio, on_step=True, on_epoch=False)
+            self.log(
+                "debug/log_ratio_clip_ratio", clip_ratio, on_step=True, on_epoch=False
+            )
             self.log("debug/log_ratio_median", median_val, on_step=True, on_epoch=False)
             self.log("debug/log_ratio_mean", mean_val, on_step=True, on_epoch=False)
             self.log("debug/log_ratio_max", max_val, on_step=True, on_epoch=False)
             self.log("debug/log_ratio_min", min_val, on_step=True, on_epoch=False)
-        
+
         # 应用截断
         log_ratio = log_ratio_raw.clamp(max=clamp_ratio)
         ratio = torch.exp(log_ratio)
 
         unclipped = ratio * A
-        clipped = torch.clamp(ratio,0 if 1.0 - self.ppo_eps<0 else 1.0 - self.ppo_eps, 1.0 + self.ppo_eps) * A
+        clipped = (
+            torch.clamp(
+                ratio,
+                0 if 1.0 - self.ppo_eps < 0 else 1.0 - self.ppo_eps,
+                1.0 + self.ppo_eps,
+            )
+            * A
+        )
         return -torch.min(unclipped, clipped).mean()
 
     def _gaussian_kl(
@@ -1174,4 +1353,3 @@ class StateTransitionPerturbationModel(PerturbationModel):
         t2 = 2.0 * (logsig_old - logsig_new)
         kl = 0.5 * (t1 + t2 - 1.0)
         return kl.sum(dim=-1).mean()
-

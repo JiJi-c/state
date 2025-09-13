@@ -1,8 +1,13 @@
 import torch
 import torch.nn as nn
+<<<<<<< Updated upstream
 from torch.distributions import Normal,LogNormal
+=======
+from torch.distributions import Normal, LogNormal
+>>>>>>> Stashed changes
 from typing import Tuple
 from .utils import build_mlp
+
 
 class GaussianDecoder(nn.Module):
     """
@@ -70,8 +75,6 @@ class GaussianDecoder(nn.Module):
         return y_samples, log_p
 
 
-
-
 class GaussianDecoder_v2(nn.Module):
     """
     A simple MLP-based decoder that maps a latent embedding to the parameters
@@ -80,7 +83,7 @@ class GaussianDecoder_v2(nn.Module):
     """
 
     def __init__(
-        self, 
+        self,
         hidden_dim: int = 512,
         output_dim: int = 512,
         n_decoder_layers: int = 2,
@@ -95,13 +98,13 @@ class GaussianDecoder_v2(nn.Module):
         self.activation_class = activation_class
 
         self.project_out = build_mlp(
-                in_dim=self.hidden_dim,
-                out_dim=self.output_dim,
-                hidden_dim=self.hidden_dim,
-                n_layers=self.n_decoder_layers,
-                dropout=self.dropout,
-                activation=self.activation_class,
-            )
+            in_dim=self.hidden_dim,
+            out_dim=self.output_dim,
+            hidden_dim=self.hidden_dim,
+            n_layers=self.n_decoder_layers,
+            dropout=self.dropout,
+            activation=self.activation_class,
+        )
 
         self.mean_head = nn.Sequential(
             nn.Linear(self.output_dim, self.output_dim // 8),
@@ -115,11 +118,15 @@ class GaussianDecoder_v2(nn.Module):
         #     nn.Linear(self.output_dim // 8, self.output_dim),
         # )
         self.logsig_head = nn.Linear(self.output_dim, self.output_dim)
+<<<<<<< Updated upstream
         self.upper = -1.0
         self.lower = -2.0
         for i in range(10):
             print(f"log_sigma range: [{self.lower}, {self.upper}]") 
     
+=======
+
+>>>>>>> Stashed changes
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         h = self.project_out(x)
         mu = self.mean_head(h)
@@ -141,5 +148,89 @@ class GaussianDecoder_v2(nn.Module):
 
         # Calculate log probability, summing over the gene dimension
         log_p = dist.log_prob(y_samples).sum(dim=-1) # / torch.sqrt(torch.tensor(mu.shape[-1], dtype=torch.float32)) # [k, B, S]
+
+        return y_samples, log_p
+
+
+class VAE_Decoder(nn.Module):
+    """
+    A simple MLP-based decoder that maps a hidden embedding to the parameters
+    of a Gaussian distribution (mean and log-variance) over gene expression.
+    using st's project out layer and final down then up layer
+
+    the hidden embedding is the output of the encoder
+    """
+
+    def __init__(
+        self,
+        latent_dim: int = 64,
+        hidden_dim: int = 512,
+        output_dim: int = 512,
+        n_decoder_layers: int = 2,
+        dropout: float = 0.0,
+        activation_class: nn.Module = nn.GELU(),
+    ):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.n_decoder_layers = n_decoder_layers
+        self.dropout = dropout
+        self.activation_class = activation_class
+
+        self.intermediate_dim = (self.hidden_dim + self.latent_dim) // 2
+
+        self.project_in = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.intermediate_dim),
+            self.activation_class,
+            nn.Dropout(self.dropout),
+        )
+
+        self.mu_head = nn.Linear(self.intermediate_dim, self.latent_dim)
+        self.logsig_head = nn.Linear(self.intermediate_dim, self.latent_dim)
+
+        self.project_out = build_mlp(
+            in_dim=self.latent_dim,
+            out_dim=self.output_dim,
+            hidden_dim=self.hidden_dim,
+            n_layers=self.n_decoder_layers + 1,
+            dropout=self.dropout,
+            activation=self.activation_class,
+        )
+
+    def forward(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x = self.project_in(x)
+        mu = self.mu_head(x)
+        log_sigma = self.logsig_head(x).clamp(-5.0, 1.0)
+        std = torch.exp(log_sigma)
+        sample = Normal(mu, std).rsample()
+        pred = self.project_out(sample)
+        return pred, mu, log_sigma
+
+    def kl_loss(self, mu: torch.Tensor, log_sigma: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the KL divergence between the prior and the posterior.
+        """
+        std = torch.exp(log_sigma)
+        kl = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - std.pow(2))
+        return kl
+
+    @staticmethod
+    def sample(
+        mu: torch.Tensor, log_sigma: torch.Tensor, k: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Samples k candidates from LogNormal(mu, sigma) using the reparameterization trick.
+        """
+        sigma = torch.exp(log_sigma)
+        dist = LogNormal(mu, sigma)
+
+        # rsample uses the reparameterization trick
+        y_samples = dist.rsample(sample_shape=(k,))  # Shape: [k, B, S, G]
+
+        # Calculate log probability, summing over the gene dimension
+        log_p = dist.log_prob(y_samples).sum(dim=-1)  # Shape: [k, B, S]
 
         return y_samples, log_p
