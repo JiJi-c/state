@@ -5,7 +5,7 @@ kwargs:
   output_space: all
   pert_rep: onehot
   basal_rep: sample
-  num_workers: 16
+  num_workers: 8
   pin_memory: true
   n_basal_samples: 1
   basal_mapping_strategy: random

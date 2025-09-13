@@ -1,10 +1,6 @@
 import torch
 import torch.nn as nn
-<<<<<<< Updated upstream
-from torch.distributions import Normal,LogNormal
-=======
 from torch.distributions import Normal, LogNormal
->>>>>>> Stashed changes
 from typing import Tuple
 from .utils import build_mlp
 
@@ -118,15 +114,11 @@ class GaussianDecoder_v2(nn.Module):
         #     nn.Linear(self.output_dim // 8, self.output_dim),
         # )
         self.logsig_head = nn.Linear(self.output_dim, self.output_dim)
-<<<<<<< Updated upstream
         self.upper = -1.0
         self.lower = -2.0
         for i in range(10):
             print(f"log_sigma range: [{self.lower}, {self.upper}]") 
     
-=======
-
->>>>>>> Stashed changes
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         h = self.project_out(x)
         mu = self.mean_head(h)
@@ -168,7 +160,7 @@ class VAE_Decoder(nn.Module):
         output_dim: int = 512,
         n_decoder_layers: int = 2,
         dropout: float = 0.0,
-        activation_class: nn.Module = nn.GELU(),
+        activation_class: nn.Module = nn.GELU,
     ):
         super().__init__()
         self.latent_dim = latent_dim
@@ -182,7 +174,7 @@ class VAE_Decoder(nn.Module):
 
         self.project_in = nn.Sequential(
             nn.Linear(self.hidden_dim, self.intermediate_dim),
-            self.activation_class,
+            self.activation_class(),
             nn.Dropout(self.dropout),
         )
 
@@ -206,7 +198,7 @@ class VAE_Decoder(nn.Module):
         log_sigma = self.logsig_head(x).clamp(-5.0, 1.0)
         std = torch.exp(log_sigma)
         sample = Normal(mu, std).rsample()
-        pred = self.project_out(sample)
+        pred = self.project_out(mu) ## TODO: use sample
         return pred, mu, log_sigma
 
     def kl_loss(self, mu: torch.Tensor, log_sigma: torch.Tensor) -> torch.Tensor:
@@ -214,8 +206,8 @@ class VAE_Decoder(nn.Module):
         Computes the KL divergence between the prior and the posterior.
         """
         std = torch.exp(log_sigma)
-        kl = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - std.pow(2))
-        return kl
+        kl = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - std.pow(2),dim=-1)
+        return kl.mean()
 
     @staticmethod
     def sample(

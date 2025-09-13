@@ -279,7 +279,8 @@ def run_tx_train(cfg: DictConfig):
         log_every_n_steps=1,
         use_distributed_sampler=False,
         strategy="ddp", #cfg["training"]["strategy"] #
-        #limit_val_batches=1,
+        limit_val_batches=0,
+        #limit_val_batches=0  ## TODO: for train delete this
     )
 
     # If it's SimpleSum, override to do exactly 1 epoch, ignoring `max_steps`.
